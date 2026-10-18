@@ -56,6 +56,16 @@ referenced by env var name, never written in the file:
   Defaults: `DAILY_TOKEN_CAP=2000000`, `DAILY_COST_CAP_USD=0.5`. When either is hit the bot replies
   "⏸️ Paused, budget hit" without calling the model. The prepaid Gemini balance remains the hard stop.
 
+## Weekly digest
+
+- The `weekly-digest` workflow is scheduled by Mastra for **Sunday 19:00 America/Bogota** (`0 19 * * 0`).
+- If the Mac was asleep or off at that time, the missed digest is sent at the next startup.
+  Each week is sent at most once, so the scheduler, the catch-up and retries can't double-send.
+- Apps contribute *sections* (`DigestSection` in `src/digest.ts`); the `reporter` agent writes the
+  message on `gemini-3.8-flash`. With no sections yet, a short placeholder is sent without a model call.
+- Run it now: `npm run digest`. It's safe while the service runs, because delivery uses a plain `sendMessage`.
+  Without Telegram configured, the digest is written to the log.
+
 ## Security notes
 
 - The Mastra server has **no auth**; it is only ever bound to loopback (config rejects anything else).
@@ -73,5 +83,7 @@ referenced by env var name, never written in the file:
 | `src/mcp/` | Registry parsing and the MCP toolbox |
 | `src/approvals.ts` | Which tools need approval |
 | `src/budget.ts` | Daily token/cost cap (counter + agent processor) |
+| `src/digest.ts`, `src/workflows/weekly-digest.ts` | Weekly digest and its schedule |
+| `src/notify.ts` | Proactive Telegram messages (digest, startup ping) |
 | `stub/echo-server.ts` | Echo MCP server for development |
 | `tests/` | Vitest tests; `tests/live` runs only with `npm run test:live` |

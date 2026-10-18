@@ -12,7 +12,8 @@
     "typecheck": "tsc --noEmit",
     "lint": "eslint .",
     "check": "npm run typecheck && npm run lint && npm test",
-    "stub:echo": "tsx stub/echo-server.ts"
+    "stub:echo": "tsx stub/echo-server.ts",
+    "digest": "tsx --env-file-if-exists=.env scripts/digest.ts"
   },
   "license": "UNLICENSED",
   "type": "module",
