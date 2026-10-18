@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest';
-import { homedir } from 'node:os';
+import { homedir, tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { loadConfig, ConfigError, isPlaceholder } from '../src/config.js';
+import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs';
+import { loadConfig, ConfigError, isPlaceholder, findUp } from '../src/config.js';
 
 const base = { GOOGLE_API_KEY: 'test-key' };
 
@@ -65,6 +66,15 @@ describe('loadConfig', () => {
   it('derives the memory resource id from the first allowed user', () => {
     expect(loadConfig(base).resourceId).toBe('dev:local');
     expect(loadConfig({ ...base, TELEGRAM_ALLOWED_USER_IDS: '42' }).resourceId).toBe('telegram:42');
+  });
+
+  it('finds mcp-servers.json in a parent directory (mastra dev runs from .mastra/output)', () => {
+    const root = mkdtempSync(join(tmpdir(), 'cfg-'));
+    const deep = join(root, '.mastra', 'output');
+    mkdirSync(deep, { recursive: true });
+    writeFileSync(join(root, 'mcp-servers.json'), '{"servers":{}}');
+    expect(findUp('mcp-servers.json', deep)).toBe(join(root, 'mcp-servers.json'));
+    expect(findUp('nope.json', deep)).toBeUndefined();
   });
 
   it('parses budget caps', () => {

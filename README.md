@@ -28,6 +28,24 @@ npm run dev       # Mastra Studio at http://localhost:4111
 Values set to `CHANGEME` are treated as not configured. With no Telegram token (or no
 `TELEGRAM_ALLOWED_USER_IDS`), the hub runs in Studio-only mode and logs a warning.
 
+## Apps (MCP servers)
+
+Apps are listed in `mcp-servers.json`. Adding an app means adding one entry; secrets are
+referenced by env var name, never written in the file:
+
+```json
+"finance": {
+  "url": "${FINANCE_MCP_URL}",
+  "headers": { "Authorization": { "env": "FINANCE_MCP_TOKEN", "prefix": "Bearer " } }
+}
+```
+
+- Tools keep a single app prefix (`finance_*`, `fitness_*`); unprefixed tools get `<server>_`.
+- A server that is down is skipped (the agent is told which app is unavailable) and retried every minute.
+- Plain `http://` is only accepted for loopback hosts; remote servers must use `https://`.
+- Tool errors use the shared shape `{"error":{"code","message","retryable"}}`.
+- Local stub for development: `npm run stub:echo` (serves `echo_say`, `echo_delete`, `echo_fail` on `127.0.0.1:8585`).
+
 ## Security notes
 
 - The Mastra server has **no auth**; it is only ever bound to loopback (config rejects anything else).
@@ -41,4 +59,7 @@ Values set to `CHANGEME` are treated as not configured. With no Telegram token (
 | `src/config.ts` | Env schema (Zod), placeholders, safe defaults |
 | `src/hub.ts` | Builds the Mastra instance (all wiring) |
 | `src/mastra/index.ts` | Entry point for `mastra dev` / `mastra build` |
+| `src/channels/telegram.ts` | Telegram channel (polling, allowlist, dedup) |
+| `src/mcp/` | Registry parsing and the MCP toolbox |
+| `stub/echo-server.ts` | Echo MCP server for development |
 | `tests/` | Vitest tests; `tests/live` runs only with `npm run test:live` |

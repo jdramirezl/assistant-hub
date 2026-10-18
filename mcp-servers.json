@@ -1,0 +1,19 @@
+{
+  "servers": {
+    "echo": {
+      "description": "Local stub (npm run stub:echo). Disable once real apps are connected.",
+      "url": "http://127.0.0.1:8585/mcp"
+    },
+    "fitness": {
+      "description": "Mason MFP MCP on this Mac (MFP fork)",
+      "url": "http://127.0.0.1:8484/mcp",
+      "enabled": false
+    },
+    "finance": {
+      "description": "finance-app /mcp on Vercel (Finance fork)",
+      "url": "${FINANCE_MCP_URL}",
+      "headers": { "Authorization": { "env": "FINANCE_MCP_TOKEN", "prefix": "Bearer " } },
+      "enabled": false
+    }
+  }
+}

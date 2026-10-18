@@ -11,7 +11,8 @@
     "test:live": "LIVE=1 vitest run tests/live",
     "typecheck": "tsc --noEmit",
     "lint": "eslint .",
-    "check": "npm run typecheck && npm run lint && npm test"
+    "check": "npm run typecheck && npm run lint && npm test",
+    "stub:echo": "tsx stub/echo-server.ts"
   },
   "license": "UNLICENSED",
   "type": "module",

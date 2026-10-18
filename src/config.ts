@@ -1,5 +1,6 @@
+import { existsSync } from 'node:fs';
 import { homedir } from 'node:os';
-import { isAbsolute, join } from 'node:path';
+import { dirname, isAbsolute, join } from 'node:path';
 import { z } from 'zod';
 
 /** Values that mean "not configured yet" (used while the bot/apps don't exist). */
@@ -54,7 +55,7 @@ const EnvSchema = z.object({
   ),
   DAILY_TOKEN_CAP: positiveNumber('DAILY_TOKEN_CAP'),
   DAILY_COST_CAP_USD: positiveNumber('DAILY_COST_CAP_USD'),
-  MCP_REGISTRY_PATH: optionalValue,
+  MCP_REGISTRY_PATH: optionalValue.refine((v) => v === undefined || isAbsolute(v), 'MCP_REGISTRY_PATH must be an absolute path'),
 });
 
 export interface HubConfig {
@@ -72,6 +73,22 @@ export interface HubConfig {
   healthcheckUrl?: string;
   budget: { dailyTokenCap: number; dailyCostCapUsd: number };
   mcpRegistryPath: string;
+}
+
+/**
+ * Find `name` in `start` or its ancestors. `mastra dev` runs from `.mastra/output`, so the
+ * repo-root `mcp-servers.json` is a few levels up.
+ */
+export function findUp(name: string, start: string = process.cwd()): string | undefined {
+  let dir = start;
+  for (let i = 0; i < 6; i++) {
+    const candidate = join(dir, name);
+    if (existsSync(candidate)) return candidate;
+    const parent = dirname(dir);
+    if (parent === dir) break;
+    dir = parent;
+  }
+  return undefined;
 }
 
 export const DEFAULT_DATA_DIR = join(homedir(), 'Library/Application Support/assistant-hub');
@@ -117,6 +134,6 @@ export function loadConfig(env: Record<string, string | undefined> = process.env
       dailyTokenCap: e.DAILY_TOKEN_CAP ?? 2_000_000,
       dailyCostCapUsd: e.DAILY_COST_CAP_USD ?? 0.5,
     },
-    mcpRegistryPath: e.MCP_REGISTRY_PATH ?? join(process.cwd(), 'mcp-servers.json'),
+    mcpRegistryPath: e.MCP_REGISTRY_PATH ?? findUp('mcp-servers.json') ?? join(process.cwd(), 'mcp-servers.json'),
   };
 }

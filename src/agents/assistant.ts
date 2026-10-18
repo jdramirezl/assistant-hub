@@ -41,6 +41,8 @@ export interface AssistantOptions {
   memory?: MastraMemory;
   /** Test seam: replaces the Gemini fallback chain. */
   model?: Agent['model'];
+  /** Extra, per-request lines appended to the instructions (e.g. which apps are down). */
+  extraInstructions?: () => string;
 }
 
 export function createAssistantAgent(opts: AssistantOptions): Agent {
@@ -48,7 +50,7 @@ export function createAssistantAgent(opts: AssistantOptions): Agent {
     id: ASSISTANT_ID,
     name: 'Assistant',
     description: 'Personal assistant for finance, fitness and future apps',
-    instructions: () => buildInstructions(opts.timezone),
+    instructions: () => [buildInstructions(opts.timezone), opts.extraInstructions?.()].filter(Boolean).join('\n'),
     model: (opts.model ?? modelChain('default')) as never,
     tools: (opts.tools ?? {}) as never,
     ...(opts.memory ? { memory: opts.memory } : {}),
