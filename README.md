@@ -66,11 +66,60 @@ referenced by env var name, never written in the file:
 - Run it now: `npm run digest`. It's safe while the service runs, because delivery uses a plain `sendMessage`.
   Without Telegram configured, the digest is written to the log.
 
+## Running 24/7 on the server Mac
+
+Do this on the always-on Mac itself; no SSH is needed.
+
+```bash
+git clone git@github.com:jdramirezl/assistant-hub.git ~/code/assistant-hub
+cd ~/code/assistant-hub
+scripts/setup-mac.sh           # add --dry-run to preview; it asks before sudo or installs
+$EDITOR .env                   # GOOGLE_API_KEY (+ Telegram, healthchecks when ready)
+scripts/deploy.sh              # anytime later: pull → ci → test → build → restart → health check
+```
+
+`setup-mac.sh`:
+- detects Apple Silicon or Intel and the macOS version
+- installs Homebrew `node@24`, which has a stable path for launchd
+- creates `~/Library/Application Support/assistant-hub` (mode 700) and `~/Library/Logs/assistant-hub`
+- sets `.env` to mode 600
+- offers `sudo pmset -c sleep 0 disksleep 0 displaysleep 10 womp 1 autorestart 1`
+- reminds you about the battery charge limit and the lid
+- installs two LaunchAgents:
+
+| LaunchAgent | What |
+|---|---|
+| `com.jdrami.assistant-hub` | `node .mastra/output/index.mjs`, `KeepAlive`, starts at login, restarts on crash (30s throttle) |
+| `com.jdrami.assistant-hub.backup` | 03:15 daily: consistent sqlite snapshot to iCloud Drive `assistant-hub-backups/`, keeps 7; trims logs over 10 MB |
+
+The plists are rendered from `launchd/*.plist.tmpl` by `scripts/render-plist.sh` using this machine's paths.
+
+In production (`NODE_ENV=production`), at startup the hub:
+- sends "✅ I'm up" on Telegram (at most once per 5 minutes, so crash loops stay quiet)
+- pings `HEALTHCHECK_URL` every 5 minutes, or `/fail` if its database check fails; set the healthchecks.io period to 5 min and the grace time to about 10 min
+- catches up a missed weekly digest
+
+Useful commands:
+
+```bash
+launchctl print gui/$(id -u)/com.jdrami.assistant-hub | head -20   # status
+launchctl kickstart -k gui/$(id -u)/com.jdrami.assistant-hub       # restart
+tail -f ~/Library/Logs/assistant-hub/hub.err.log                   # logs
+curl -s http://127.0.0.1:4111/health                               # health
+npm run backup                                                     # backup now
+launchctl bootout gui/$(id -u)/com.jdrami.assistant-hub            # stop (until next setup/deploy)
+```
+
+Restore a backup: stop the service, then copy a snapshot over
+`~/Library/Application Support/assistant-hub/mastra.db` (delete any `mastra.db-wal`/`-shm` first), then kickstart.
+
 ## Security notes
 
 - The Mastra server has **no auth**; it is only ever bound to loopback (config rejects anything else).
 - Telegram is fail-closed: it is not started unless `TELEGRAM_ALLOWED_USER_IDS` is set.
-- `.env` must be mode 600 and is git-ignored. Telemetry is disabled (`MASTRA_TELEMETRY_DISABLED=1`).
+- `.env` must be mode 600 and is git-ignored; the plists contain no secrets. Telemetry is disabled (`MASTRA_TELEMETRY_DISABLED=1`).
+- `deploy.sh`/`setup-mac.sh` fail if port 4111 is ever listening on a non-loopback address.
+- Backups go to iCloud Drive (your Apple ID); they contain chat history and preferences. Snapshot files are mode 600.
 
 ## Layout
 
@@ -85,5 +134,7 @@ referenced by env var name, never written in the file:
 | `src/budget.ts` | Daily token/cost cap (counter + agent processor) |
 | `src/digest.ts`, `src/workflows/weekly-digest.ts` | Weekly digest and its schedule |
 | `src/notify.ts` | Proactive Telegram messages (digest, startup ping) |
+| `src/ops.ts` | Startup "I'm up" ping and healthchecks.io heartbeat |
+| `launchd/`, `scripts/` | LaunchAgent templates, setup/deploy/backup scripts |
 | `stub/echo-server.ts` | Echo MCP server for development |
 | `tests/` | Vitest tests; `tests/live` runs only with `npm run test:live` |

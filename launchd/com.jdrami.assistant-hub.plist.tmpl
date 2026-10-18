@@ -1,0 +1,54 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  assistant-hub LaunchAgent. Rendered by scripts/render-plist.sh; do not edit the rendered copy.
+  Secrets are NOT stored here: the process loads @REPO@/.env (mode 600).
+  The server only listens on 127.0.0.1:4111 (no auth on the Mastra API).
+-->
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.jdrami.assistant-hub</string>
+
+  <key>ProgramArguments</key>
+  <array>
+    <string>@NODE@</string>
+    <string>--env-file-if-exists=@REPO@/.env</string>
+    <string>@REPO@/.mastra/output/index.mjs</string>
+  </array>
+
+  <key>WorkingDirectory</key>
+  <string>@REPO@</string>
+
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>NODE_ENV</key>
+    <string>production</string>
+    <key>MASTRA_TELEMETRY_DISABLED</key>
+    <string>1</string>
+    <key>HUB_HOST</key>
+    <string>127.0.0.1</string>
+    <key>HUB_PORT</key>
+    <string>4111</string>
+    <key>MCP_REGISTRY_PATH</key>
+    <string>@REPO@/mcp-servers.json</string>
+    <key>PATH</key>
+    <string>@NODE_DIR@:/usr/bin:/bin:/usr/sbin:/sbin</string>
+  </dict>
+
+  <key>RunAtLoad</key>
+  <true/>
+  <key>KeepAlive</key>
+  <true/>
+  <!-- Wait at least 30s between restarts if it keeps crashing. -->
+  <key>ThrottleInterval</key>
+  <integer>30</integer>
+  <key>ProcessType</key>
+  <string>Interactive</string>
+
+  <key>StandardOutPath</key>
+  <string>@LOG_DIR@/hub.out.log</string>
+  <key>StandardErrorPath</key>
+  <string>@LOG_DIR@/hub.err.log</string>
+</dict>
+</plist>

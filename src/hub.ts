@@ -13,6 +13,8 @@ import { modelChain } from './models.js';
 import { createNotifier, type Notify } from './notify.js';
 import { Digest, type DigestResult, type DigestSection } from './digest.js';
 import { createDigestWorkflow } from './workflows/weekly-digest.js';
+import { sendStartupPing, startHeartbeat, startupMessage } from './ops.js';
+import { hostname } from 'node:os';
 
 export interface HubDeps {
   /** Test seam: model used by the assistant and reporter instead of Gemini. */
@@ -25,6 +27,8 @@ export interface HubDeps {
   now?: () => number;
   /** Per-app weekly digest sections (empty until the app forks provide them). */
   digestSections?: DigestSection[];
+  /** healthchecks.io fetch (tests). */
+  fetch?: typeof fetch;
 }
 
 export interface Hub {
@@ -35,8 +39,11 @@ export interface Hub {
   digest: Digest;
   notify: Notify;
   telegram?: TelegramProvider;
-  /** Connect channels (network) and catch up a missed digest. Safe without Telegram. */
-  start(opts?: { connectRetries?: number }): Promise<void>;
+  /**
+   * Connect channels (network), catch up a missed digest, and (with `ops`) send the
+   * "I'm up" ping and start the healthchecks.io heartbeat. Safe without Telegram.
+   */
+  start(opts?: { connectRetries?: number; ops?: boolean }): Promise<void>;
   /** Run the weekly-digest workflow now. */
   runDigest(input?: { trigger?: string; force?: boolean }): Promise<DigestResult | undefined>;
   stop(): Promise<void>;
@@ -114,6 +121,8 @@ export function createHub(config: HubConfig, deps: HubDeps = {}): Hub {
     return res.result as DigestResult;
   }
 
+  let heartbeat: { stop(): void } | undefined;
+
   return {
     mastra,
     kv,
@@ -137,8 +146,23 @@ export function createHub(config: HubConfig, deps: HubDeps = {}): Hub {
       } catch (err) {
         log(`[digest] catch-up failed: ${(err as Error).message}`);
       }
+      if (opts.ops) {
+        await sendStartupPing({ kv, notify, text: startupMessage({ host: hostname(), apps: toolbox.status() }) }).catch((err) =>
+          log(`[ops] startup ping failed: ${(err as Error).message}`),
+        );
+        heartbeat = startHeartbeat({
+          url: config.healthcheckUrl,
+          fetch: deps.fetch,
+          log,
+          check: async () => {
+            await client.execute('SELECT 1');
+            return true;
+          },
+        });
+      }
     },
     async stop() {
+      heartbeat?.stop();
       await toolbox.close();
       if (!telegram) return;
       const install = await telegram.getInstallation(ASSISTANT_ID);
