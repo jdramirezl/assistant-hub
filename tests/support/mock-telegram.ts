@@ -212,3 +212,32 @@ export function voiceUpdate(fromId: number, fileId: string) {
     },
   };
 }
+
+/** A tap on an inline-keyboard button of a message the bot sent. */
+export function callbackUpdate(fromId: number, message: { message_id: number; text?: string }, data: string) {
+  return {
+    callback_query: {
+      id: `cb-${msgSeq++}`,
+      from: { id: fromId, is_bot: false, first_name: 'U' },
+      chat_instance: 'ci',
+      message: {
+        message_id: message.message_id,
+        date: Math.floor(Date.now() / 1000),
+        chat: { id: fromId, type: 'private', first_name: 'U' },
+        from: { id: 999, is_bot: true, first_name: 'Hub' },
+        text: message.text ?? '',
+      },
+      data,
+    },
+  };
+}
+
+/** Find the most recent inline button whose callback data contains `needle`. */
+export function findButton(tg: MockTelegram, needle: string): { messageId: number; data: string } | undefined {
+  for (const call of [...tg.calls].reverse()) {
+    const kb = (call.body.reply_markup as { inline_keyboard?: { callback_data?: string }[][] } | undefined)?.inline_keyboard;
+    const btn = kb?.flat().find((b) => b.callback_data?.includes(needle));
+    if (btn) return { messageId: Number(call.body.message_id ?? 0), data: btn.callback_data! };
+  }
+  return undefined;
+}

@@ -2,6 +2,7 @@ import { MCPClient } from '@mastra/mcp';
 import { createTool, type Tool } from '@mastra/core/tools';
 import { noopLogger } from '@mastra/core/logger';
 import { resolveHeaders, resolveUrl, type Registry } from './registry.js';
+import { requiresApproval } from '../approvals.js';
 
 export type ServerStatus =
   | { state: 'up'; tools: number }
@@ -177,12 +178,13 @@ export class McpToolbox {
   }
 
   private wrap(name: string, server: string, tool: AnyTool): AnyTool {
-    const t = tool as AnyTool & { mcp?: unknown };
+    const t = tool as AnyTool & { mcp?: { annotations?: ToolAnnotations } };
     return createTool({
       id: name,
       description: t.description ?? name,
       inputSchema: t.inputSchema as never,
       mcp: t.mcp as never,
+      requireApproval: requiresApproval(name, t.mcp?.annotations),
       execute: async (input: unknown, ctx: unknown) => {
         try {
           return normalizeResult(await (t.execute as (i: unknown, c: unknown) => Promise<unknown>)(input, ctx));

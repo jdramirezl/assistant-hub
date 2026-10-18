@@ -7,20 +7,24 @@ import { createTelegramChannel, connectTelegram, type TelegramDeps } from './cha
 import type { KvStore } from './kv.js';
 import { loadRegistry, parseRegistry } from './mcp/registry.js';
 import { McpToolbox } from './mcp/toolbox.js';
+import { Budget, BudgetGuard, BUDGET_MESSAGE } from './budget.js';
 
 export interface HubDeps {
   /** Test seam: model used by the assistant instead of Gemini. */
   model?: AssistantOptions['model'];
-  telegram?: Omit<TelegramDeps, 'kv'>;
+  telegram?: Omit<TelegramDeps, 'kv' | 'gate'>;
   /** Inline registry (tests); default: load config.mcpRegistryPath. */
   registry?: unknown;
   env?: Record<string, string | undefined>;
+  /** Clock for budget/scheduling (tests). */
+  now?: () => number;
 }
 
 export interface Hub {
   mastra: Mastra;
   kv: KvStore;
   toolbox: McpToolbox;
+  budget: Budget;
   telegram?: TelegramProvider;
   /** Connect channels (network). Safe to call when Telegram is disabled. */
   start(opts?: { connectRetries?: number }): Promise<void>;
@@ -36,6 +40,7 @@ export function createHub(config: HubConfig, deps: HubDeps = {}): Hub {
   const storage = createStorage(config, client);
   const kv = createKv(client);
   const memory = createMemory(storage);
+  const budget = new Budget(kv, config.budget, config.timezone, deps.now);
   const registry = deps.registry !== undefined ? parseRegistry(deps.registry) : loadRegistry(config.mcpRegistryPath);
   const toolbox = new McpToolbox(registry, deps.env ?? process.env, { log: deps.telegram?.log });
   const assistant = createAssistantAgent({
@@ -44,10 +49,12 @@ export function createHub(config: HubConfig, deps: HubDeps = {}): Hub {
     memory,
     tools: () => toolbox.getTools(),
     extraInstructions: () => toolbox.statusNote(),
+    guards: [new BudgetGuard(budget, (s) => (deps.telegram?.log ?? console.warn)(`[budget] blocked: ${s.tokens} tokens, $${s.costUsd.toFixed(4)} on ${s.day}`))],
   });
   const telegram = createTelegramChannel(config, {
     ...deps.telegram,
     kv,
+    gate: async () => ((await budget.check()).ok ? undefined : BUDGET_MESSAGE),
   });
 
   const mastra = new Mastra({
@@ -61,6 +68,7 @@ export function createHub(config: HubConfig, deps: HubDeps = {}): Hub {
     mastra,
     kv,
     toolbox,
+    budget,
     telegram,
     async start(opts = {}) {
       await toolbox.getTools(); // discover apps at boot so status is logged early

@@ -18,6 +18,11 @@ export interface TelegramDeps {
   /** Faster polling in tests. */
   longPolling?: { timeout?: number; retryDelayMs?: number };
   log?: (msg: string) => void;
+  /**
+   * Checked before the agent runs. Return a message to reply with *instead of* running the
+   * agent (e.g. the daily budget is used up); undefined to proceed.
+   */
+  gate?: () => Promise<string | undefined>;
 }
 
 /** Defense in depth: the adapter also filters by TELEGRAM_ALLOWED_USER_IDS. */
@@ -33,12 +38,22 @@ export function isAllowed(allowed: readonly string[], message: Pick<Message, 'au
  * crash mid-turn drops that message instead of replaying it (a replay could duplicate a
  * write such as a finance movement). The user just resends.
  */
-function guarded(allowed: readonly string[], kv: KvStore | undefined, log: (m: string) => void): ChannelHandler {
+function guarded(
+  allowed: readonly string[],
+  kv: KvStore | undefined,
+  log: (m: string) => void,
+  gate?: () => Promise<string | undefined>,
+): ChannelHandler {
   return async (thread: Thread, message: Message, defaultHandler) => {
     if (!thread.isDM) return log(`[telegram] ignoring non-DM message in ${thread.id}`);
     if (!isAllowed(allowed, message)) return log(`[telegram] ignoring message from non-allowlisted user ${message.author?.userId}`);
     if (kv && !(await kv.setIfNotExists(`telegram:handled:${message.id}`, Date.now(), DEDUP_TTL_MS))) {
       return log(`[telegram] skipping duplicate message ${message.id}`);
+    }
+    const blocked = await gate?.();
+    if (blocked) {
+      await thread.post(blocked);
+      return;
     }
     await defaultHandler(thread, message);
   };
@@ -57,7 +72,7 @@ export function createTelegramChannel(config: HubConfig, deps: TelegramDeps = {}
   // The adapter reads its allowlist from this env var; make it match config exactly.
   process.env.TELEGRAM_ALLOWED_USER_IDS = config.telegram.allowedUserIds.join(',');
 
-  const handler = guarded(config.telegram.allowedUserIds, deps.kv, log);
+  const handler = guarded(config.telegram.allowedUserIds, deps.kv, log, deps.gate);
   const handlers: ChannelHandlers = {
     onDirectMessage: handler,
     onSubscribedMessage: handler,
@@ -78,6 +93,9 @@ export function createTelegramChannel(config: HubConfig, deps: TelegramDeps = {}
     ],
     resolveResourceId: ({ defaultResourceId }) => defaultResourceId, // telegram:<userId>
     tools: false, // no reaction tools; keep the tool list for app MCPs
+    // 'cards' is what enables Approve/Deny inline-keyboard buttons for tools that need approval
+    // (with the default 'text', approval-gated tools would stay suspended with no way to answer).
+    toolDisplay: 'cards',
   });
 }
 

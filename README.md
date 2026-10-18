@@ -46,6 +46,16 @@ referenced by env var name, never written in the file:
 - Tool errors use the shared shape `{"error":{"code","message","retryable"}}`.
 - Local stub for development: `npm run stub:echo` (serves `echo_say`, `echo_delete`, `echo_fail` on `127.0.0.1:8585`).
 
+## Approvals and budget
+
+- **Smart writes:** reads and additive writes run directly. Tools marked `destructiveHint: true`,
+  or with a delete-like verb in the name (`_delete_`, `_remove_`, …), require approval:
+  Approve/Deny buttons in Telegram, an approval prompt in Studio. Only the requester can answer,
+  and pending approvals survive restarts (stored in LibSQL).
+- **Daily cap:** tokens and estimated cost are counted per day (America/Bogota midnight reset).
+  Defaults: `DAILY_TOKEN_CAP=2000000`, `DAILY_COST_CAP_USD=0.5`. When either is hit the bot replies
+  "⏸️ Paused, budget hit" without calling the model. The prepaid Gemini balance remains the hard stop.
+
 ## Security notes
 
 - The Mastra server has **no auth**; it is only ever bound to loopback (config rejects anything else).
@@ -61,5 +71,7 @@ referenced by env var name, never written in the file:
 | `src/mastra/index.ts` | Entry point for `mastra dev` / `mastra build` |
 | `src/channels/telegram.ts` | Telegram channel (polling, allowlist, dedup) |
 | `src/mcp/` | Registry parsing and the MCP toolbox |
+| `src/approvals.ts` | Which tools need approval |
+| `src/budget.ts` | Daily token/cost cap (counter + agent processor) |
 | `stub/echo-server.ts` | Echo MCP server for development |
 | `tests/` | Vitest tests; `tests/live` runs only with `npm run test:live` |
