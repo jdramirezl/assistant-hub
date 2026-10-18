@@ -38,7 +38,7 @@ describe('memory', () => {
     {
       const cfg = loadConfig(env);
       const hub = createHub(cfg, { model: createMockModel({ mockText: 'anotado', version: 'v2' }) as never });
-      await hub
+      await hub.mastra
         .getAgentById('assistant')
         .generate('Mi moneda por defecto es COP', { memory: { thread, resource: cfg.resourceId } });
       const memory = createMemory(createStorage(cfg));

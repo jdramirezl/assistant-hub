@@ -6,15 +6,15 @@ import { testConfig } from './helpers.js';
 describe('createHub', () => {
   it('boots a Mastra instance bound to loopback:4111 with persistent storage', () => {
     const hub = createHub(testConfig());
-    expect(hub.getServer()).toMatchObject({ host: '127.0.0.1', port: 4111 });
-    expect(hub.getStorage()).toBeDefined();
+    expect(hub.mastra.getServer()).toMatchObject({ host: '127.0.0.1', port: 4111 });
+    expect(hub.mastra.getStorage()).toBeDefined();
   });
 
   it('registers the assistant agent', async () => {
     const hub = createHub(testConfig(), {
       model: createMockModel({ mockText: 'pong', version: 'v2' }) as never,
     });
-    const res = await hub.getAgentById('assistant').generate('ping');
+    const res = await hub.mastra.getAgentById('assistant').generate('ping');
     expect(res.text).toBe('pong');
   });
 });

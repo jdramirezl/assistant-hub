@@ -4,4 +4,9 @@ import { createHub } from '../hub.js';
 
 process.env.MASTRA_TELEMETRY_DISABLED ??= '1';
 
-export const mastra = createHub(loadConfig());
+const hub = createHub(loadConfig());
+
+// Connect channels in the background so the server comes up even if Telegram is unreachable.
+void hub.start();
+
+export const mastra = hub.mastra;
