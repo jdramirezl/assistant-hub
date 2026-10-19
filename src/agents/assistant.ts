@@ -5,6 +5,7 @@ import type { InputProcessor, OutputProcessor } from '@mastra/core/processors';
 import { personaPrompt, type PersonaConfig } from '../persona.js';
 import { ALL_DOMAINS, type Domain } from '../telemetry/intent.js';
 import { usageContext } from '../telemetry/context.js';
+import { languageName } from '../meal.js';
 
 export const ASSISTANT_ID = 'assistant';
 
@@ -58,7 +59,7 @@ export function buildInstructions(
     '- NEVER say something was recorded, saved, logged, updated or deleted unless a tool call in this turn returned success. If an app is not connected, say so and show what you would record.',
     '- Never invent data a tool did not return. On {"error":{code,message,retryable}}, say what failed in one line and whether a retry may help.',
     '- Batch approvals: 2 or more approval-gated actions (deletes, fitness_modify_food, fitness_clear_food_pin, finance_delete_movement, anything destructive) → read what you need, then call propose_plan ONCE with every action (exact tool names and args; sections per meal or account; one "Item — kcal" / "Description — amount currency — account" line each), reply one line and stop. The hub runs exactly those calls after the user approves and sends you the results to summarize. Revisions: call propose_plan again with the full plan. A single gated action uses the normal approval card.',
-    '- Photos are usually receipts or meals; voice notes are requests. Read amounts, dates and items carefully and state any assumption.',
+    '- Photos are usually receipts or meals. "[voice note] …" is the transcript of the user\'s voice note: treat it as their request. Read amounts, dates and items carefully and state any assumption.',
     ...(persona ? ['', persona] : []),
     ...ALL_DOMAINS.filter((d) => domains.includes(d)).flatMap((d) => ['', ...DOMAIN_RULES[d]]),
   ].join('\n');
@@ -68,11 +69,13 @@ export function buildInstructions(
  * The parts of the prompt that change: kept at the END so everything before them (and the
  * tool list) is a byte-identical prefix that Gemini's implicit cache can reuse. Hour precision.
  */
-export function dynamicContext(timezone: string, now: Date = new Date(), statusNote = ''): string {
+export function dynamicContext(timezone: string, now: Date = new Date(), statusNote = '', language?: string): string {
   const { stamp, weekday } = localTime(timezone, now);
+  const lang = languageName(language);
   return [
     '## Now',
     `Local time: ${weekday} ${stamp.slice(0, 13)}h (${timezone}). Resolve relative dates ("ayer", "last Friday") and the likely meal from it.`,
+    lang ? `The user spoke a voice note in ${lang}: reply in ${lang}.` : '',
     statusNote,
   ].filter(Boolean).join('\n');
 }
@@ -106,7 +109,7 @@ export function createAssistantAgent(opts: AssistantOptions): Agent {
       [
         buildInstructions(opts.timezone, new Date(), { persona: opts.persona, domains: usageContext.getStore()?.domains }),
         '',
-        dynamicContext(opts.timezone, new Date(opts.now?.() ?? Date.now()), (await opts.extraInstructions?.()) ?? ''),
+        dynamicContext(opts.timezone, new Date(opts.now?.() ?? Date.now()), (await opts.extraInstructions?.()) ?? '', usageContext.getStore()?.language),
       ].join('\n'),
     model: opts.model as never,
     tools: (opts.tools ?? {}) as never,

@@ -139,7 +139,12 @@ const errOf = (v: unknown) => {
   return e === true ? { code: 'BAD_ARGS', message: String((v as Rec).message ?? 'invalid arguments').split('\n')[0], retryable: false } : e;
 };
 
-export function createLogMeal(toolbox: MealToolbox, log: (m: string) => void = () => {}) {
+export interface LogMealOptions {
+  /** The meal decided in code for this request (spoken word / hour); overrides the model's. */
+  mealHint?: (date: string | undefined) => Item['meal'] | undefined;
+}
+
+export function createLogMeal(toolbox: MealToolbox, log: (m: string) => void = () => {}, opts: LogMealOptions = {}) {
   async function logOne(item: Item, date: string | undefined, out: LogMealResult): Promise<Rec | undefined> {
     const meal = item.meal;
     // 2. draft (draft quantity 1: we convert the user's quantity into servings ourselves)
@@ -182,7 +187,10 @@ export function createLogMeal(toolbox: MealToolbox, log: (m: string) => void = (
       'logs the confident items and returns per-item kcal and meal totals. Items it is unsure about come back in "ambiguous" with options: ask the user, ' +
       'then call log_meal again with a more specific query. Items in "needs_confirmation" (> 800 kcal) must be logged with fitness_log_food using log_with (the user approves).',
     inputSchema: LogMealInput,
-    execute: async ({ items, date }) => {
+    execute: async ({ items: given, date }) => {
+      const hint = opts.mealHint?.(date);
+      const items = hint ? given.map((i) => ({ ...i, meal: hint })) : given;
+      if (hint && given.some((i) => i.meal !== hint)) log(`[log_meal] meal ${[...new Set(given.map((i) => i.meal))].join('/')} → ${hint} (from the user's words / local time)`);
       const out: LogMealResult = { logged: [], ambiguous: [], needs_confirmation: [], failed: [], meal_totals: [], note: '' };
       let last: Rec | undefined;
       for (const item of items) {

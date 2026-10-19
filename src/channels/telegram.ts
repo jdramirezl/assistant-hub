@@ -6,7 +6,8 @@ import type { KvStore } from '../kv.js';
 import { describeModelError, rateLimitContext } from '../llm/rate-limit.js';
 import type { Voice } from '../persona.js';
 import { classifyIntent, domainsFor, mediaOf } from '../telemetry/intent.js';
-import { newRequestId, withUsageScope } from '../telemetry/context.js';
+import { newRequestId, usageContext, withUsageScope } from '../telemetry/context.js';
+import type { Transcribe } from '../voice/transcribe.js';
 
 /** Media sent to Gemini as file parts: receipts/meal photos and voice notes. */
 export const INLINE_MEDIA = ['image/*', 'audio/*', 'application/pdf'];
@@ -33,6 +34,35 @@ export interface TelegramDeps {
   onPlanAction?: (actionId: string, userId: string | undefined, notify: (text: string) => Promise<void>) => Promise<void>;
   /** Slash commands answered by the hub without the model (e.g. /usage); return the reply text. */
   commands?: Record<string, () => Promise<string>>;
+  /** Voice-note transcription before the agent (omit: the audio goes to the agent as a file). */
+  transcribe?: Transcribe;
+}
+
+/** Prefix of a transcribed voice note in the agent's (and memory's) user message. */
+export const VOICE_PREFIX = '[voice note] ';
+
+/**
+ * Replace a voice note's audio with its transcript, in place (the channel then sends plain
+ * text to the agent). Returns the transcript, or undefined (audio kept) on any failure.
+ */
+export async function transcribeInPlace(message: Message, transcribe: Transcribe, log: (m: string) => void) {
+  const audio = (message.attachments ?? []).find((a) => (a.mimeType ?? '').startsWith('audio/'));
+  if (!audio?.fetchData) return undefined;
+  let bytes: Uint8Array;
+  try {
+    const buf = await audio.fetchData();
+    bytes = buf instanceof ArrayBuffer ? new Uint8Array(buf) : new Uint8Array(buf as Uint8Array);
+  } catch (err) {
+    log(`[voice] could not download the voice note: ${(err as Error).message}`);
+    return undefined;
+  }
+  const t = await transcribe(bytes, audio.mimeType!);
+  if (!t) return undefined;
+  const caption = (message.text ?? '').trim();
+  message.text = `${VOICE_PREFIX}${t.transcript}${caption ? `\n${caption}` : ''}`;
+  message.formatted = undefined as never;
+  message.attachments = (message.attachments ?? []).filter((a) => a !== audio);
+  return t;
 }
 
 /**
@@ -68,6 +98,7 @@ function guarded(
   log: (m: string) => void,
   gate?: () => Promise<string | undefined>,
   voice?: Voice,
+  transcribe?: Transcribe,
 ): ChannelHandler {
   return async (thread: Thread, message: Message, defaultHandler) => {
     if (!thread.isDM) return log(`[telegram] ignoring non-DM message in ${thread.id}`);
@@ -83,10 +114,18 @@ function guarded(
     // Lets the model layer post "⏳ rate limit, retrying in Ns" into this chat while it waits.
     const notify = async (text: string) => void (await thread.post(text));
     const media = mediaOf(message.attachments ?? []);
-    const intent = classifyIntent(message.text ?? '', media);
-    const domains = domainsFor(message.text ?? '', media);
-    await withUsageScope({ requestId: newRequestId(), intent, media, kind: 'chat', domains }, () =>
-      rateLimitContext.run({ notify, format: voice?.rateLimit }, () => defaultHandler(thread, message)),
+    await withUsageScope({ requestId: newRequestId(), intent: 'chat', media, kind: 'chat' }, () =>
+      rateLimitContext.run({ notify, format: voice?.rateLimit }, async () => {
+        const scope = usageContext.getStore()!;
+        // a transcribed voice note is routed like the text it says
+        const t = media === 'voice' && transcribe ? await transcribeInPlace(message, transcribe, log) : undefined;
+        const routed = t ? 'text' : media;
+        scope.text = message.text ?? '';
+        scope.intent = classifyIntent(scope.text, routed);
+        scope.domains = domainsFor(scope.text, routed);
+        if (t?.language) scope.language = t.language;
+        return defaultHandler(thread, message);
+      }),
     );
   };
 }
@@ -104,7 +143,7 @@ export function createTelegramChannel(config: HubConfig, deps: TelegramDeps = {}
   // The adapter reads its allowlist from this env var; make it match config exactly.
   process.env.TELEGRAM_ALLOWED_USER_IDS = config.telegram.allowedUserIds.join(',');
 
-  const handler = guarded(config.telegram.allowedUserIds, deps.kv, log, deps.gate, deps.voice);
+  const handler = guarded(config.telegram.allowedUserIds, deps.kv, log, deps.gate, deps.voice, deps.transcribe);
   const handlers: ChannelHandlers = {
     onDirectMessage: handler,
     onSubscribedMessage: handler,

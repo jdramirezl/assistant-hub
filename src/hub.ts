@@ -14,7 +14,9 @@ import { createLogMeal } from './mcp/log-meal.js';
 import { FINANCE_WRITES, FinanceDirectory } from './mcp/finance-cache.js';
 import { ToolCallFilter } from '@mastra/core/processors';
 import { Budget, BudgetGuard, BUDGET_MESSAGE } from './budget.js';
-import { createGeminiModels, modelChain } from './models.js';
+import { createGeminiModels, modelChain, PROVIDER_OPTIONS } from './models.js';
+import { createTranscriber } from './voice/transcribe.js';
+import { mealHint } from './meal.js';
 import { withMalformedFallback } from './llm/escalate.js';
 import { createNotifier, type Notify } from './notify.js';
 import { Digest, type DigestResult, type DigestSection } from './digest.js';
@@ -41,7 +43,7 @@ export interface HubDeps {
   model?: AssistantOptions['model'];
   /** Test seam: stronger model used when a response is malformed (defaults to `model`). */
   escalationModel?: unknown;
-  telegram?: Omit<TelegramDeps, 'kv' | 'gate' | 'voice' | 'onPlanAction' | 'commands'>;
+  telegram?: Omit<TelegramDeps, 'kv' | 'gate' | 'voice' | 'onPlanAction' | 'commands' | 'transcribe'>;
   /** Inline registry (tests); default: load config.mcpRegistryPath. */
   registry?: unknown;
   env?: Record<string, string | undefined>;
@@ -51,6 +53,10 @@ export interface HubDeps {
   digestSections?: DigestSection[];
   /** healthchecks.io fetch (tests). */
   fetch?: typeof fetch;
+  /** Test seam: model that transcribes voice notes (default: Gemini flash-lite; none with `model`). */
+  transcribeModel?: unknown;
+  /** Clock for the local time in the prompt and the meal-by-hour fallback (replay pins it). */
+  localNow?: () => number;
   /** Gemini HTTP fetch (replay/tests): wrapped by the rate limiter and usage observer. */
   geminiFetch?: typeof fetch;
 }
@@ -140,7 +146,10 @@ export function createHub(config: HubConfig, deps: HubDeps = {}): Hub {
   });
 
   const financeDir = new FinanceDirectory(toolbox, { now: deps.now, timezone: config.timezone, available: async () => (await toolbox.getTools(), toolbox.status().finance?.state === 'up') });
-  const logMeal = createLogMeal(toolbox, log);
+  const localNow = deps.localNow ?? deps.now ?? Date.now;
+  const logMeal = createLogMeal(toolbox, log, {
+    mealHint: (date) => mealHint(usageContext.getStore()?.text, { date, timezone: config.timezone, now: localNow() }),
+  });
   const planStore = new PlanStore(kv, deps.now);
   const presenter = config.telegram.enabled
     ? new TelegramPlanPresenter(
@@ -168,6 +177,8 @@ export function createHub(config: HubConfig, deps: HubDeps = {}): Hub {
   const usage = new UsageLog(client, deps.now);
   const observe = createUsageObserver(usage, { now: deps.now, primaryModel: 'gemini-3.5-flash-lite', onError: (e) => log(`[usage] ${e.message}`) });
   const gemini = deps.model ? undefined : createGeminiModels(config.googleApiKey, log, observe, deps.geminiFetch);
+  const transcribeModel = deps.transcribeModel ?? gemini?.default;
+  const transcribe = transcribeModel ? createTranscriber(transcribeModel, { providerOptions: PROVIDER_OPTIONS.default, log, record: (id, u) => budget.record(id, u) }) : undefined;
   const notSaved = () => notSavedText(config.persona.language, config.persona.persona === 'alfred' ? addressOf(config.persona) : config.persona.ownerName);
   if (gemini) gemini.default = withFalseSaveGuard(withMalformedFallback(gemini.default, gemini.report, log), notSaved, log);
   const assistant = createAssistantAgent({
@@ -175,7 +186,7 @@ export function createHub(config: HubConfig, deps: HubDeps = {}): Hub {
     model: deps.model ? withFalseSaveGuard(withMalformedFallback(deps.model, deps.escalationModel, log), notSaved, log) : modelChain('default', gemini!),
     memory,
     persona: config.persona,
-    now: deps.now,
+    now: localNow,
     tools: async () => {
       const app = toolsForDomains(await toolbox.getTools(), usageContext.getStore()?.domains);
       return { ...app, ...('fitness_log_food' in app ? { log_meal: logMeal } : {}), propose_plan: proposePlan };
@@ -223,6 +234,7 @@ export function createHub(config: HubConfig, deps: HubDeps = {}): Hub {
     gate: async () => ((await budget.check()).ok ? undefined : BUDGET_MESSAGE),
     onPlanAction: (actionId, userId) => plans.handleAction(actionId, userId),
     commands: { usage: () => usageReport() },
+    transcribe,
   });
 
   const mastra = new Mastra({
