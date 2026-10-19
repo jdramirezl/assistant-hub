@@ -1,16 +1,16 @@
 {
   "servers": {
     "echo": {
-      "description": "Dev stub (npm run stub:echo). Set enabled=true locally to test tools/approvals.",
-      "url": "http://127.0.0.1:8585/mcp",
-      "enabled": false
+      "description": "Dev stub (npm run stub:echo). Enabled where ECHO_MCP_URL is set in .env.",
+      "url": "${ECHO_MCP_URL}",
+      "enabled": true
     },
     "mfp": {
-      "description": "Mason MyFitnessPal MCP on the server Mac (loopback, no auth). Tools are fitness_*.",
-      "url": "http://127.0.0.1:8484/mcp",
+      "description": "Mason MyFitnessPal MCP (loopback, no auth). Tools are fitness_*. Enabled where MFP_MCP_URL is set in .env (server Mac: http://127.0.0.1:8484/mcp).",
+      "url": "${MFP_MCP_URL}",
       "toolPrefix": "fitness",
       "errorStyle": "mason",
-      "enabled": false
+      "enabled": true
     },
     "finance": {
       "description": "finance-app /mcp (Vercel, stateless Streamable HTTP). Enabled per machine by FINANCE_MCP_URL + FINANCE_MCP_TOKEN in .env; unset = skipped. FINANCE_MCP_BYPASS only for preview deployments.",
