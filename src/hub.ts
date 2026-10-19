@@ -119,14 +119,16 @@ export function createHub(config: HubConfig, deps: HubDeps = {}): Hub {
     now: deps.now,
     hooks: {
       approval: (tool) => (tool === 'fitness_log_food' ? (input) => nutrition.needsConfirmation(input) : undefined),
-      afterResult: (tool, input, result) => {
+      afterResult: (tool, input, result, { raw }) => {
         let out = result;
         if (tool.startsWith('fitness_')) {
-          nutrition.recordResult(tool, input, result); // guards see the FULL result
+          // guards see the FULL result, also for hub-internal calls (log_meal's drafts must be
+          // priced, or its needs_confirmation → fitness_log_food path would skip the 800 kcal card)
+          nutrition.recordResult(tool, input, result);
           if (tool === 'fitness_log_food') out = nutrition.annotateLog(input, result);
         }
         if (FINANCE_WRITES.has(tool)) financeDir.invalidate();
-        return trimForModel(tool, out);
+        return raw ? out : trimForModel(tool, out);
       },
     },
     onRecovered: (name, downForMs) => {

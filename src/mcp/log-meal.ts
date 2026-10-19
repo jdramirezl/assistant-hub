@@ -52,11 +52,15 @@ const norm = (s: string) => s.toLowerCase().normalize('NFD').replace(/\p{Diacrit
  * How many of this serving the user's quantity+unit is, or undefined if the serving doesn't
  * match the unit. 150 g with a "100 g" serving → 1.5; 2 units with "1 large egg" → 2.
  */
-export function servingsFor(item: Pick<Item, 'quantity' | 'unit'>, label: string): number | undefined {
+const GENERIC_UNITS = new Set(['serving', 'portion', 'porcion', 'racion', 'plate', 'plato', 'helping']);
+
+export function servingsFor(item: Pick<Item, 'quantity' | 'unit'>, label: string, opts: { suggested?: boolean } = {}): number | undefined {
   const unit = norm(item.unit).replace(/s$/, '');
-  const l = norm(label);
+  const full = norm(label);
+  if (GENERIC_UNITS.has(unit)) return opts.suggested ? item.quantity : undefined; // "a serving" = MFP's suggested serving
+  const l = full.replace(/\([^)]*\)/g, ' ').replace(/\s+/g, ' ').trim(); // "1 breast (172 g)" → "1 breast"
   if (unit === 'g' || unit === 'gr' || unit === 'gram' || unit === 'ml') {
-    const m = l.match(MASS);
+    const m = full.match(MASS); // "1 cup (240 ml)" counts as 240 ml
     if (!m) return undefined;
     const size = Number(m[1]!.replace(',', '.'));
     const sameKind = (m[2]!.toLowerCase() === 'ml') === (unit === 'ml');
@@ -85,7 +89,7 @@ export function candidates(item: Item, options: Option[], draftQuantity: number)
   const out: Candidate[] = [];
   for (const o of options) {
     for (const s of o.servings) {
-      const n = servingsFor(item, s.label);
+      const n = servingsFor(item, s.label, { suggested: s.serving === (o.suggested_serving ?? 0) });
       if (n === undefined || typeof s.calories !== 'number') continue;
       const perServing = s.calories / (draftQuantity || 1);
       out.push({ option: o.option, name: o.name, serving: s.serving, label: s.label, servings: Math.round(n * 1000) / 1000, kcal: Math.round(perServing * n), pinned: !!o.pinned });

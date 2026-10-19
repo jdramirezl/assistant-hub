@@ -24,7 +24,7 @@ export interface ToolHooks {
   /** Extra, input-dependent approval for a tool (on top of the static policy). */
   approval?(tool: string): ((input: Record<string, unknown>) => boolean | Promise<boolean>) | undefined;
   /** Inspect/transform a tool's normalized result. */
-  afterResult?(tool: string, input: Record<string, unknown>, result: unknown): unknown;
+  afterResult?(tool: string, input: Record<string, unknown>, result: unknown, opts: { raw: boolean }): unknown;
 }
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any -- MCP tools are schema-less at compile time
@@ -317,7 +317,9 @@ export class McpToolbox {
           const out = normalizeResult(await (t.execute as (i: unknown, c: unknown) => Promise<unknown>)(input, ctx), style);
           const hook = this.opts.hooks?.afterResult;
           const raw = (ctx as { hubRaw?: boolean } | undefined)?.hubRaw === true; // hub-internal call: full, untrimmed result
-          return hook && !raw ? hook(name, (input ?? {}) as Record<string, unknown>, out) : out;
+          if (!hook) return out;
+          const hooked = hook(name, (input ?? {}) as Record<string, unknown>, out, { raw }); // side effects (guards) always run
+          return raw ? out : hooked;
         } catch (err) {
           const reason = firstLine((err as Error).message);
           const slot = this.slots[server];

@@ -19,8 +19,18 @@ describe('serving matching', () => {
     [{ quantity: 1, unit: 'slice' }, '1 slice', 1],
     [{ quantity: 1, unit: 'slices' }, '1 slice', 1],
     [{ quantity: 1, unit: 'cup' }, '100 g', undefined],
+    [{ quantity: 1, unit: 'unit' }, '1 breast (172 g)', 1],
+    [{ quantity: 2, unit: 'unit' }, '1 arepa (100 g)', 2],
+    [{ quantity: 1, unit: 'unit' }, '1 cup', undefined],
   ])('%j with "%s" → %s servings', (it_, label, n) => {
     expect(servingsFor(it_, label)).toBe(n);
+  });
+});
+
+describe('generic units use the suggested serving', () => {
+  it('"a serving of rice" → the option\'s suggested serving only', () => {
+    expect(servingsFor({ quantity: 1, unit: 'serving' }, '1 cup', { suggested: true })).toBe(1);
+    expect(servingsFor({ quantity: 1, unit: 'porción' }, '100 g', { suggested: false })).toBeUndefined();
   });
 });
 
@@ -86,6 +96,29 @@ describe('log_meal through the agent (fake Mason)', () => {
     const { seen } = await run({ items: [{ query: 'lasagna', quantity: 1, unit: 'tray', kcal_estimate: 1600, meal: 'breakfast' }] });
     expect(mason.diary).toHaveLength(0);
     expect(seen.needs_confirmation[0]).toMatchObject({ kcal: 1700, log_with: { option: 1, serving: 0, quantity: 1 } });
+  });
+
+  it('a > 800 kcal item logged via log_with still gets the approval card (guard sees log_meal\'s draft)', async () => {
+    mason = await startFakeMason();
+    const sm = scriptedModel([
+      { tool: 'log_meal', args: { items: [{ query: 'lasagna', quantity: 1, unit: 'tray', kcal_estimate: 1600, meal: 'dinner' }] } },
+      (p) => {
+        const o = JSON.parse(lastToolResult(p));
+        return { tool: 'fitness_log_food', args: (o.value ?? o).needs_confirmation[0].log_with };
+      },
+    ]);
+    const hub = createHub(testConfig(), { model: sm.model as never, registry: MFP_REGISTRY(mason.url) });
+    hubs.push(hub);
+    const res = await withUsageScope({ requestId: 'r', intent: 'meal', media: 'text', kind: 'chat', domains: ['fitness'] }, () =>
+      hub.mastra.getAgentById('assistant').generate('lasaña entera', { memory: { thread: 't8', resource: 'dev:local' } }),
+    );
+    expect(res.finishReason).toBe('suspended');
+    expect(mason.diary).toHaveLength(0);
+  });
+
+  it('countable foods with a weight in the label ("1 breast (172 g)") are matched', async () => {
+    const { seen } = await run({ items: [{ query: 'arepa', quantity: 2, unit: 'unit', kcal_estimate: 400, meal: 'breakfast' }] });
+    expect(seen.logged?.[0]).toMatchObject({ name: 'Arepa, corn', servings: 2, kcal: 440 });
   });
 
   it('unknown food → failed with the MFP error code, others unaffected', async () => {
