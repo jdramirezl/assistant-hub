@@ -1,5 +1,6 @@
 import { AsyncLocalStorage } from 'node:async_hooks';
 import type { Voice } from '../persona.js';
+import { estimateTokens, type Pacer } from './pacer.js';
 
 /**
  * Per-request context so a model call deep inside an agent run can tell the chat it is
@@ -33,6 +34,8 @@ export interface RateLimitedFetchOptions {
   maxRetries?: number;
   maxWaitMs?: number;
   log?: (m: string) => void;
+  /** Client-side pacing (wait for a slot instead of hitting 429). */
+  pacer?: Pacer;
   /** Called once per HTTP attempt (usage logging). Must not throw. */
   observe?: (info: { url: string; init?: RequestInit; res: Response; attempt: number }) => void;
 }
@@ -54,7 +57,19 @@ export function createRateLimitedFetch(opts: RateLimitedFetchOptions = {}): type
 
   return (async (input: Parameters<typeof fetch>[0], init?: Parameters<typeof fetch>[1]) => {
     let notified = false;
+    const url = String(input instanceof Request ? input.url : input);
+    const model = url.match(/models\/([^:/?]+)/)?.[1] ?? 'unknown';
     for (let attempt = 0; ; attempt++) {
+      if (opts.pacer) {
+        await opts.pacer.acquire(model, estimateTokens(init?.body), (ms) => {
+          if (ms < 8_000 || notified) return;
+          const ctx = rateLimitContext.getStore();
+          if (!ctx) return;
+          notified = true;
+          const s = Math.ceil(ms / 1000);
+          void ctx.notify(ctx.format?.(s) ?? `⏳ rate limit, retrying in ${s}s`).catch(() => {});
+        });
+      }
       const res = await base(input, init);
       try {
         opts.observe?.({ url: String(input instanceof Request ? input.url : input), init, res, attempt });

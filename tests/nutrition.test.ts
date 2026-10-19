@@ -56,7 +56,7 @@ describe('fitness prompt rules', () => {
   const t = buildInstructions('America/Bogota');
   it('one log_meal call per meal (English names, unit, estimate), ask on ambiguous, readback', () => {
     expect(t).toMatch(/log_meal ONCE/);
-    expect(t).toMatch(/English food names/);
+    expect(t).toMatch(/English food name/);
     expect(t).toMatch(/kcal estimate/);
     expect(t).toMatch(/ambiguous/);
     expect(t).toMatch(/meal_totals/);

@@ -1,5 +1,6 @@
 import { createGoogleGenerativeAI } from '@ai-sdk/google';
 import { createRateLimitedFetch } from './llm/rate-limit.js';
+import { Pacer } from './llm/pacer.js';
 
 /**
  * Model roles. Gemini only, one GOOGLE_API_KEY.
@@ -34,8 +35,9 @@ export function createGeminiModels(
   log?: (m: string) => void,
   observe?: NonNullable<Parameters<typeof createRateLimitedFetch>[0]>['observe'],
   baseFetch?: typeof fetch,
+  pacer: Pacer | undefined = new Pacer(),
 ): GeminiModels {
-  const google = createGoogleGenerativeAI({ apiKey: apiKey ?? '', fetch: createRateLimitedFetch({ log, observe, fetch: baseFetch }) });
+  const google = createGoogleGenerativeAI({ apiKey: apiKey ?? '', fetch: createRateLimitedFetch({ log, observe, fetch: baseFetch, pacer }) });
   const make = (role: ModelRole) => google(MODEL_IDS[role].replace(/^google\//, ''));
   return { default: make('default'), vision: make('vision'), report: make('report') };
 }

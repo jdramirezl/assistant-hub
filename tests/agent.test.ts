@@ -5,9 +5,8 @@ import { buildInstructions, createAssistantAgent, dynamicContext } from '../src/
 describe('assistant agent', () => {
   it('instructions are bilingual and concise; the time lives in a separate, hour-precision tail', () => {
     const text = buildInstructions('America/Bogota', new Date('2026-10-18T22:00:00Z'));
-    expect(text).toMatch(/Spanish/);
-    expect(text).toMatch(/English/);
-    expect(text).toMatch(/concise|short/i);
+    expect(text).toMatch(/language of the user's latest message/);
+    expect(text).toMatch(/Short: a few lines/);
     expect(text).not.toMatch(/2026-10-18/);
     const tail = dynamicContext('America/Bogota', new Date('2026-10-18T22:07:00Z'), 'mfp is down');
     expect(tail).toContain('Sunday 2026-10-18 17h (America/Bogota)'); // UTC-5, no minutes
@@ -26,10 +25,12 @@ describe('assistant agent', () => {
 });
 
 describe('honesty rules', () => {
-  it('forbids claiming writes without a successful tool call, and records in working memory', () => {
+  it('forbids claiming writes without a successful tool call; records stay out of working memory', async () => {
     const text = buildInstructions('America/Bogota');
-    expect(text).toMatch(/NEVER say you recorded/);
-    expect(text).toMatch(/not connected yet/);
-    expect(text).toMatch(/Never store transactions/);
+    expect(text).toMatch(/NEVER say something was recorded, saved, logged, updated or deleted unless a tool call in this turn returned success/);
+    expect(text).toMatch(/not connected/);
+    expect(text).toMatch(/Never invent data/);
+    const { workingMemoryInstruction } = await import('../src/memory.js');
+    expect(workingMemoryInstruction(null)).toMatch(/Never store transactions, meals or other records/);
   });
 });
