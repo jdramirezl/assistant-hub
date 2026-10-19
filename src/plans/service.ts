@@ -1,5 +1,6 @@
 import type { Language, Voice } from '../persona.js';
 import { sharedError } from '../mcp/errors.js';
+import { usageContext } from '../telemetry/context.js';
 import type { PlanPresenter } from './presenter.js';
 import type { PlanStore } from './store.js';
 import type { ActionResult, PlanInput, StoredPlan } from './types.js';
@@ -13,7 +14,36 @@ type ToolLike = { execute?: unknown; inputSchema?: { safeParse?: (v: unknown) =>
 
 export interface PlanToolbox {
   getTools(): Promise<Record<string, unknown>>;
-  execute(name: string, args: Record<string, unknown>): Promise<unknown>;
+  execute(name: string, args: Record<string, unknown>, opts?: { raw?: boolean }): Promise<unknown>;
+}
+
+const MEAL_ALIASES: Record<string, string> = { desayuno: 'breakfast', almuerzo: 'lunch', comida: 'lunch', cena: 'dinner', onces: 'snacks', merienda: 'snacks', snack: 'snacks' };
+const mealKey = (m: unknown) => {
+  const k = String(m ?? '').toLowerCase().normalize('NFD').replace(/\p{Diacritic}/gu, '').trim();
+  return MEAL_ALIASES[k] ?? k;
+};
+
+/**
+ * For a "delete everything" request: diary entries of the plan's meals (or the whole day when
+ * the deletes carry no meal) that no action covers. Uses the full fitness_get_day result.
+ */
+export async function missingFromDeletePlan(input: PlanInput, toolbox: PlanToolbox): Promise<string[] | undefined> {
+  const actions = input.groups.flatMap((g) => g.actions);
+  if (!actions.length || !actions.every((a) => a.tool === 'fitness_delete_food')) return undefined;
+  const date = actions.find((a) => typeof a.args.date === 'string')?.args.date as string | undefined;
+  const day = (await toolbox.execute('fitness_get_day', date ? { date } : {}, { raw: true })) as { diary?: { meal?: string; name?: string }[] } | undefined;
+  if (!day || !Array.isArray(day.diary)) return undefined;
+  const meals = new Set(actions.map((a) => mealKey(a.args.meal)).filter(Boolean));
+  const scope = day.diary.filter((e) => !meals.size || meals.has(mealKey(e.meal)));
+  const remaining = [...actions];
+  const missing: string[] = [];
+  for (const e of scope) {
+    const name = String(e.name ?? '').toLowerCase();
+    const i = remaining.findIndex((a) => name.includes(String(a.args.query ?? '').toLowerCase()) && (!a.args.meal || mealKey(a.args.meal) === mealKey(e.meal)));
+    if (i >= 0) remaining.splice(i, 1);
+    else missing.push(`${e.name} (${e.meal})`);
+  }
+  return missing;
 }
 
 export interface PlanServiceDeps {
@@ -23,8 +53,8 @@ export interface PlanServiceDeps {
   voice: Voice;
   language: Language;
   allowedUserIds: readonly string[];
-  /** Ask the agent for ONE summary of the results (returns undefined to use the fallback). */
-  summarize(plan: StoredPlan, results: ActionResult[]): Promise<string | undefined>;
+  /** Unused: the result message is deterministic (kept for compatibility). */
+  summarize?(plan: StoredPlan, results: ActionResult[]): Promise<string | undefined>;
   log?: (m: string) => void;
 }
 
@@ -72,12 +102,18 @@ export function planResultsPrompt(plan: StoredPlan, results: ActionResult[]): st
   ].join('\n');
 }
 
-export function fallbackSummary(plan: StoredPlan, results: ActionResult[]): string {
+/** The result message, built ONLY from the hub's execution results (never from model text). */
+export function fallbackSummary(plan: StoredPlan, results: ActionResult[], lang: Language = 'es'): string {
   const ok = results.filter((r) => r.status === 'ok').length;
-  const bad = results.filter((r) => r.status !== 'ok');
+  const failed = results.filter((r) => r.status === 'failed').length;
+  const skipped = results.filter((r) => r.status === 'skipped').length;
+  const es = lang === 'es';
+  const head = [`✅ ${ok}/${results.length} ${es ? 'ejecutadas' : 'done'}`, failed ? `❌ ${failed} ${es ? 'fallaron' : 'failed'}` : '', skipped ? `⏭️ ${skipped} ${es ? 'omitidas' : 'skipped'}` : '']
+    .filter(Boolean)
+    .join(' · ');
   return [
-    `📋 ${plan.title}: ${ok}/${results.length} ✓`,
-    ...bad.map((r) => `${r.status === 'skipped' ? '⏭️' : '❌'} ${r.n}. ${r.summary}${r.error ? ` (${r.error.code}: ${r.error.message})` : ''}`),
+    `📋 ${plan.title}: ${head}`,
+    ...results.filter((r) => r.status !== 'ok').map((r) => `${r.status === 'skipped' ? '⏭️' : '❌'} ${r.n}. ${r.summary}${r.error ? ` (${r.error.code}: ${r.error.message})` : ''}`),
   ].join('\n');
 }
 
@@ -103,6 +139,17 @@ export class PlanService {
   async propose(input: PlanInput, meta: { owner: string; threadId?: string }): Promise<unknown> {
     const problems = await this.validate(input);
     if (problems.length) return sharedError('PLAN_INVALID', problems.slice(0, 10).join('; '), false);
+    if (usageContext.getStore()?.intent === 'plan') {
+      const missing = await missingFromDeletePlan(input, this.d.toolbox).catch(() => undefined);
+      if (missing?.length) {
+        this.log(`[plan] incomplete delete-all plan: missing ${missing.length}`);
+        return sharedError(
+          'PLAN_INCOMPLETE',
+          `The user asked to delete everything, but the diary also has: ${missing.join(', ')}. Call propose_plan again with ALL entries (one fitness_delete_food per entry).`,
+          false,
+        );
+      }
+    }
 
     for (const old of await this.d.store.open(meta.owner)) {
       old.status = 'superseded';
@@ -195,13 +242,7 @@ export class PlanService {
     await this.d.presenter.update(plan, this.t.done(ok, total, failed, total - ok - failed));
     this.log(`[plan] ${plan.id} done: ${ok}/${total}`);
 
-    let summary: string | undefined;
-    try {
-      summary = (await this.d.summarize(plan, results))?.trim();
-    } catch (err) {
-      this.log(`[plan] summary failed: ${(err as Error).message}`);
-    }
-    await this.d.presenter.say(summary || fallbackSummary(plan, results));
+    await this.d.presenter.say(fallbackSummary(plan, results, this.d.language));
   }
 
   private async validate(input: PlanInput): Promise<string[]> {

@@ -27,6 +27,8 @@ import { PlanService, planResultsPrompt } from './plans/service.js';
 import { LogPlanPresenter, TelegramPlanPresenter } from './plans/presenter.js';
 import { createProposePlanTool } from './plans/tool.js';
 import { PlanGuard } from './plans/guard.js';
+import { notSavedText, withFalseSaveGuard } from './guards/false-save.js';
+import { addressOf } from './persona.js';
 import { TelegramApi } from './telegram-api.js';
 import { UsageLog, formatUsageReport, summarize as summarizeUsage } from './telemetry/usage-log.js';
 import { createUsageObserver } from './telemetry/observe.js';
@@ -166,10 +168,11 @@ export function createHub(config: HubConfig, deps: HubDeps = {}): Hub {
   const usage = new UsageLog(client, deps.now);
   const observe = createUsageObserver(usage, { now: deps.now, primaryModel: 'gemini-3.5-flash-lite', onError: (e) => log(`[usage] ${e.message}`) });
   const gemini = deps.model ? undefined : createGeminiModels(config.googleApiKey, log, observe, deps.geminiFetch);
-  if (gemini) gemini.default = withMalformedFallback(gemini.default, gemini.report, log);
+  const notSaved = () => notSavedText(config.persona.language, config.persona.persona === 'alfred' ? addressOf(config.persona) : config.persona.ownerName);
+  if (gemini) gemini.default = withFalseSaveGuard(withMalformedFallback(gemini.default, gemini.report, log), notSaved, log);
   const assistant = createAssistantAgent({
     timezone: config.timezone,
-    model: deps.model ? withMalformedFallback(deps.model, deps.escalationModel, log) : modelChain('default', gemini!),
+    model: deps.model ? withFalseSaveGuard(withMalformedFallback(deps.model, deps.escalationModel, log), notSaved, log) : modelChain('default', gemini!),
     memory,
     persona: config.persona,
     now: deps.now,

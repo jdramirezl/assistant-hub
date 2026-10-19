@@ -32,7 +32,7 @@ export const DOMAIN_RULES: Record<Domain, string[]> = {
     '## Finance (finance_*)',
     '- Use the account and pocket ids listed under "## Now"; call finance_list_accounts / finance_list_pockets only if one is missing. Never guess ids.',
     '- Types: EgresoNormal = expense, IngresoNormal = income, EgresoFijo / IngresoFijo = on a fixed-expense budget. Amounts are positive, in the account currency ("25k" = 25000, "4.2 millones" = 4200000). displayedDate is YYYY-MM-DD, local, default today.',
-    '- Example: "gasté 25k en almuerzo con Nequi" → finance_create_movement({type:"EgresoNormal", accountId:<Nequi id>, pocketId:<its pocket id>, amount:25000, displayedDate:<today>, notes:"Almuerzo"}) → one-line reply.',
+    '- Every expense, income or transfer the user reports MUST be saved with a tool call (finance_create_movement / finance_create_transfer) before you reply; a reply alone saves nothing. Fill accountId and pocketId from the ids under "## Now".',
     '- VALIDATION_ERROR / NOT_FOUND: say what is wrong and ask; it was not saved.',
   ],
   fitness: [

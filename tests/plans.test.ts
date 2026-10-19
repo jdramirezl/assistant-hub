@@ -98,7 +98,7 @@ describe('propose_plan through Telegram', () => {
     expect(sent(tg, '📋 Delete Sunday')).toHaveLength(1);
     expect(deletes(mason)).toHaveLength(0);
     press(tg, 'a');
-    await tg.waitFor(() => sent(tg, 'Hecho: 17').length === 1);
+    await tg.waitFor(() => sent(tg, '17/17').length === 1);
     expect(deletes(mason)).toHaveLength(17);
     expect(mason.diary).toHaveLength(0);
     expect(findButton(tg, 'tool_approve:')).toBeUndefined();
@@ -206,9 +206,10 @@ describe('propose_plan through Telegram', () => {
     tg.push(textUpdate(ME, 'borra'));
     await tg.waitFor(() => !!findButton(tg, 'plan:a:'));
     press(tg, 'a');
-    await tg.waitFor(() => sent(tg, 'Eliminé 2').length === 1);
+    await tg.waitFor(() => sent(tg, '2/3').length === 1);
     expect(deletes(mason)).toHaveLength(3);
-    expect(summaryPrompt).toContain('MFP_BAD_REQUEST');
+    void summaryPrompt;
+    expect(tg.outgoingText(ME)).toMatch(/❌ 1 fallaron[\s\S]*MFP_BAD_REQUEST/);
     expect(tg.outgoingText(ME)).toMatch(/2\/3/);
   });
 
@@ -223,10 +224,10 @@ describe('propose_plan through Telegram', () => {
     tg.push(textUpdate(ME, 'borra'));
     await tg.waitFor(() => !!findButton(tg, 'plan:a:'));
     press(tg, 'a');
-    await tg.waitFor(() => sent(tg, 'Sesión expirada').length === 1);
+    await tg.waitFor(() => sent(tg, 'omitidas').length === 1);
     expect(mason.calls.filter((c) => c.tool === 'fitness_delete_food')).toHaveLength(3); // 2 ok + 1 failing, then stop
-    expect(summaryPrompt).toContain('MFP_SESSION_EXPIRED');
-    expect(summaryPrompt).toMatch(/skipped/);
+    void summaryPrompt;
+    expect(tg.outgoingText(ME)).toMatch(/✅ 2\/6 ejecutadas · ❌ 1 fallaron · ⏭️ 3 omitidas[\s\S]*MFP_SESSION_EXPIRED/);
   });
 
   it('a pending plan survives a restart', async () => {
@@ -264,8 +265,48 @@ describe('propose_plan through Telegram', () => {
     tg.push(textUpdate(ME, 'borra los duplicados'));
     await tg.waitFor(() => !!findButton(tg, 'plan:a:'));
     press(tg, 'a');
-    await tg.waitFor(() => sent(tg, 'Borrados 3').length === 1);
+    await tg.waitFor(() => sent(tg, '3/3').length === 1);
     expect(fin.calls.filter((c) => c.tool === 'finance_delete_movement').map((c) => c.input.id)).toEqual(['mov-1', 'mov-2', 'mov-3']);
+  });
+});
+
+describe('delete-all completeness check', () => {
+  it('"borra todo el desayuno" with 4 of 5 entries is bounced back; the re-proposed full plan is shown', async () => {
+    const breakfast = DAY.filter((e) => e.meal === 'Breakfast');
+    let feedback = '';
+    const { tg, mason } = await setup([
+      { tool: 'propose_plan', args: deleteDayPlan(breakfast.slice(0, 4), 'Delete breakfast') },
+      (p) => ((feedback = JSON.stringify(p)), { tool: 'propose_plan', args: deleteDayPlan(breakfast, 'Delete breakfast (all 5)') }),
+      { text: 'Plan listo.' },
+    ]);
+    tg.push(textUpdate(ME, 'borra todo el desayuno de hoy'));
+    await tg.waitFor(() => !!findButton(tg, 'plan:a:'));
+    expect(feedback).toContain('PLAN_INCOMPLETE');
+    expect(feedback).toContain('Orange juice');
+    expect(sent(tg, '📋 Delete breakfast (all 5)')).toHaveLength(1);
+    expect(sent(tg, /📋 Delete breakfast\n/)).toHaveLength(0);
+    expect(deletes(mason)).toHaveLength(0);
+  });
+  it('a selective delete ("borra el café y el huevo") is not checked', async () => {
+    const { tg } = await setup([{ tool: 'propose_plan', args: deleteDayPlan(DAY.slice(0, 2), 'Delete two') }, { text: 'ok' }]);
+    tg.push(textUpdate(ME, 'borra el café y el huevo del desayuno'));
+    await tg.waitFor(() => !!findButton(tg, 'plan:a:'));
+    expect(sent(tg, '📋 Delete two')).toHaveLength(1);
+  });
+});
+
+describe('result message comes from execution, not the model', () => {
+  it('3-item plan where only 2 deletes succeed reports 2/3 even if the model would say 3', async () => {
+    const plan = deleteDayPlan([DAY[0]!, { meal: 'Breakfast', name: 'Ghost toast', calories: 70 }, DAY[1]!]);
+    const { tg, mason } = await setup([{ tool: 'propose_plan', args: plan }, { text: 'ok' }, { text: 'Las 3 acciones eliminadas con éxito.' }]);
+    tg.push(textUpdate(ME, 'borra esos tres'));
+    await tg.waitFor(() => !!findButton(tg, 'plan:a:'));
+    press(tg, 'a');
+    await tg.waitFor(() => sent(tg, '2/3').length === 1);
+    await new Promise((r) => setTimeout(r, 300));
+    expect(mason.diary.length).toBe(DAY.length - 2);
+    expect(tg.outgoingText(ME)).not.toContain('Las 3 acciones eliminadas');
+    expect(tg.outgoingText(ME)).toMatch(/✅ 2\/3 ejecutadas · ❌ 1 fallaron/);
   });
 });
 
