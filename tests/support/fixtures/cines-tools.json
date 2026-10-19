@@ -1,0 +1,299 @@
+[
+ {
+  "name": "cines_list_cinemas",
+  "title": "List my cinemas",
+  "description": "List the user's Cinépolis cinemas (regular and VIP) with distance from home and seating rules.",
+  "inputSchema": {
+   "type": "object",
+   "properties": {},
+   "$schema": "http://json-schema.org/draft-07/schema#"
+  },
+  "annotations": {
+   "readOnlyHint": true,
+   "destructiveHint": false,
+   "idempotentHint": true,
+   "openWorldHint": true
+  },
+  "execution": {
+   "taskSupport": "forbidden"
+  }
+ },
+ {
+  "name": "cines_listings",
+  "title": "Listings for a cinema and date",
+  "description": "Movies and showtimes at one or more of the user's cinemas for a date. `cinema` accepts names like 'toreo', 'toreo vip', 'miyana'. `date` accepts YYYY-MM-DD, 'hoy', 'mañana' or a weekday. Languages: SUB=subtitulada, ESP=doblada.",
+  "inputSchema": {
+   "type": "object",
+   "properties": {
+    "cinema": {
+     "description": "Cinema name or id; default: home cinema (Parque Toreo)",
+     "type": "string"
+    },
+    "date": {
+     "description": "YYYY-MM-DD, hoy, mañana, or weekday; default today",
+     "type": "string"
+    }
+   },
+   "$schema": "http://json-schema.org/draft-07/schema#"
+  },
+  "annotations": {
+   "readOnlyHint": true,
+   "destructiveHint": false,
+   "idempotentHint": true,
+   "openWorldHint": true
+  },
+  "execution": {
+   "taskSupport": "forbidden"
+  }
+ },
+ {
+  "name": "cines_find_movie",
+  "title": "Which of my cinemas show a movie",
+  "description": "Find a movie by (partial) title and list which of the user's cinemas show it and on which dates.",
+  "inputSchema": {
+   "type": "object",
+   "properties": {
+    "movie": {
+     "type": "string",
+     "description": "Movie title, partial title, or id"
+    }
+   },
+   "required": [
+    "movie"
+   ],
+   "$schema": "http://json-schema.org/draft-07/schema#"
+  },
+  "annotations": {
+   "readOnlyHint": true,
+   "destructiveHint": false,
+   "idempotentHint": true,
+   "openWorldHint": true
+  },
+  "execution": {
+   "taskSupport": "forbidden"
+  }
+ },
+ {
+  "name": "cines_showtimes",
+  "title": "Showtimes for a movie",
+  "description": "All upcoming showtimes for a movie at the user's cinemas (or the given ones), optionally for one date, language or format. Use cines_best_showtime to recommend one.",
+  "inputSchema": {
+   "type": "object",
+   "properties": {
+    "movie": {
+     "type": "string"
+    },
+    "cinema": {
+     "description": "Name(s) or id(s), comma separated; default all of the user's cinemas",
+     "type": "string"
+    },
+    "date": {
+     "type": "string"
+    },
+    "language": {
+     "type": "string",
+     "enum": [
+      "SUB",
+      "ESP",
+      "ORIGINAL"
+     ]
+    },
+    "format": {
+     "description": "2D, 3D, 4DX, IMAX, XE, SCREENX, VIP or REGULAR",
+     "type": "string"
+    }
+   },
+   "required": [
+    "movie"
+   ],
+   "$schema": "http://json-schema.org/draft-07/schema#"
+  },
+  "annotations": {
+   "readOnlyHint": true,
+   "destructiveHint": false,
+   "idempotentHint": true,
+   "openWorldHint": true
+  },
+  "execution": {
+   "taskSupport": "forbidden"
+  }
+ },
+ {
+  "name": "cines_best_showtime",
+  "title": "Recommend the best showtime",
+  "description": "Recommend the best showtime for a movie plus 2 alternatives, using the user's rules: closest cinema, subtitled over dubbed (dubbed only if no subtitled option), inside the time window, regular/VIP before premium formats. Includes warnings (4DX, VIP price, B15/C, special screenings) and ticket prices (default 'Admision General'; cheaper promos are only mentioned).",
+  "inputSchema": {
+   "type": "object",
+   "properties": {
+    "movie": {
+     "type": "string"
+    },
+    "date": {
+     "description": "YYYY-MM-DD, hoy, mañana or weekday; default today",
+     "type": "string"
+    },
+    "window": {
+     "description": "'night' = 19:00-24:00 ('en la noche')",
+     "type": "string",
+     "enum": [
+      "morning",
+      "afternoon",
+      "evening",
+      "night",
+      "any"
+     ]
+    },
+    "after": {
+     "description": "Earliest start HH:MM (overrides window)",
+     "type": "string",
+     "pattern": "^\\d{2}:\\d{2}$"
+    },
+    "before": {
+     "description": "Latest start HH:MM (overrides window)",
+     "type": "string",
+     "pattern": "^\\d{2}:\\d{2}$"
+    },
+    "tickets": {
+     "description": "Number of adult tickets; default 1",
+     "type": "integer",
+     "minimum": 1,
+     "maximum": 10
+    },
+    "vip": {
+     "type": "string",
+     "enum": [
+      "only",
+      "exclude",
+      "any"
+     ]
+    },
+    "format": {
+     "description": "Require a format: IMAX, 4DX, XE, SCREENX, 3D or REGULAR",
+     "type": "string"
+    },
+    "cinema": {
+     "description": "Restrict to these cinemas (names or ids)",
+     "type": "string"
+    }
+   },
+   "required": [
+    "movie"
+   ],
+   "$schema": "http://json-schema.org/draft-07/schema#"
+  },
+  "annotations": {
+   "readOnlyHint": true,
+   "destructiveHint": false,
+   "idempotentHint": true,
+   "openWorldHint": true
+  },
+  "execution": {
+   "taskSupport": "forbidden"
+  }
+ },
+ {
+  "name": "cines_upcoming",
+  "title": "Upcoming releases and presales",
+  "description": "Movies coming soon to the user's cinemas, with release dates, rating and whether presale (preventa) is open.",
+  "inputSchema": {
+   "type": "object",
+   "properties": {
+    "days": {
+     "description": "Only releases within this many days; default 45",
+     "type": "integer",
+     "minimum": 1,
+     "maximum": 120
+    },
+    "presaleOnly": {
+     "type": "boolean"
+    }
+   },
+   "$schema": "http://json-schema.org/draft-07/schema#"
+  },
+  "annotations": {
+   "readOnlyHint": true,
+   "destructiveHint": false,
+   "idempotentHint": true,
+   "openWorldHint": true
+  },
+  "execution": {
+   "taskSupport": "forbidden"
+  }
+ },
+ {
+  "name": "cines_seat_map",
+  "title": "Seat map with proposed seats",
+  "description": "Live seat map for a showtime with the best seats proposed for the party (regular rooms: center, middle-to-lower rows; VIP/IMAX/premium: center, upper rows; groups together; never leaves single empty seats). Returns `imageUrl` (PNG to send to the user), the proposal like ['F7','F8'] and availability counts. Does NOT hold seats. The user may reply with other seats; check them with cines_validate_seats.",
+  "inputSchema": {
+   "type": "object",
+   "properties": {
+    "showtimeId": {
+     "type": "string",
+     "description": "From cines_showtimes / cines_best_showtime, e.g. 570-102599"
+    },
+    "tickets": {
+     "description": "Party size; default 1",
+     "type": "integer",
+     "minimum": 1,
+     "maximum": 10
+    },
+    "wheelchair": {
+     "description": "Allow wheelchair spaces (only if the user needs them)",
+     "type": "boolean"
+    }
+   },
+   "required": [
+    "showtimeId"
+   ],
+   "$schema": "http://json-schema.org/draft-07/schema#"
+  },
+  "annotations": {
+   "readOnlyHint": true,
+   "destructiveHint": false,
+   "idempotentHint": false,
+   "openWorldHint": true
+  },
+  "execution": {
+   "taskSupport": "forbidden"
+  }
+ },
+ {
+  "name": "cines_validate_seats",
+  "title": "Validate the user's seat choice",
+  "description": "Check seats the user typed (e.g. 'F7,F8') against the live map: they exist, are free, match the ticket count, sit together, and do not strand a single empty seat (Cinépolis rule). Returns errors/warnings and a preview `imageUrl` with the choice highlighted. Does NOT hold seats.",
+  "inputSchema": {
+   "type": "object",
+   "properties": {
+    "showtimeId": {
+     "type": "string"
+    },
+    "seats": {
+     "type": "string",
+     "description": "Seat labels, e.g. 'F7,F8'"
+    },
+    "tickets": {
+     "type": "integer",
+     "minimum": 1,
+     "maximum": 10
+    },
+    "wheelchair": {
+     "type": "boolean"
+    }
+   },
+   "required": [
+    "showtimeId",
+    "seats"
+   ],
+   "$schema": "http://json-schema.org/draft-07/schema#"
+  },
+  "annotations": {
+   "readOnlyHint": true,
+   "destructiveHint": false,
+   "idempotentHint": false,
+   "openWorldHint": true
+  },
+  "execution": {
+   "taskSupport": "forbidden"
+  }
+ }
+]

@@ -1,11 +1,11 @@
 import type { Message, Thread } from 'chat';
 import { TelegramProvider } from '@mastra/telegram';
-import type { ChannelHandler, ChannelHandlers, ToolDisplayFn } from '@mastra/core/channels';
+import type { ChannelHandler, ChannelHandlers, ToolDisplayEvent, ToolDisplayFn, ToolDisplayResult } from '@mastra/core/channels';
 import type { HubConfig } from '../config.js';
 import type { KvStore } from '../kv.js';
 import { describeModelError, rateLimitContext } from '../llm/rate-limit.js';
 import type { Voice } from '../persona.js';
-import { classifyIntent, domainsFor, mediaOf } from '../telemetry/intent.js';
+import { classifyIntent, domainsFor, mediaOf, type Domain } from '../telemetry/intent.js';
 import { newRequestId, usageContext, withUsageScope } from '../telemetry/context.js';
 import type { Transcribe } from '../voice/transcribe.js';
 
@@ -36,7 +36,23 @@ export interface TelegramDeps {
   commands?: Record<string, () => Promise<string>>;
   /** Voice-note transcription before the agent (omit: the audio goes to the agent as a file). */
   transcribe?: Transcribe;
+  /** Custom approval card for some tools (e.g. a cines purchase summary); undefined = built-in. */
+  approvalCard?: (event: ToolDisplayEvent) => ToolDisplayResult | undefined;
+  /** Secure input: the user's next message goes to a tool, never to the model. */
+  secureInput?: SecureInputPort;
 }
+
+export interface SecureInputPort {
+  pending(chatId: string): Promise<{ requestId: string; kind: string; expiresAt: number } | undefined>;
+  cancel(chatId: string): Promise<void>;
+  /** Deliver the value; returns the text the agent gets instead (never the value), and/or a text for the user. */
+  deliver(chatId: string, value: string, p: { requestId: string; kind: string; expiresAt: number }): Promise<{ agentText?: string; userText?: string }>;
+}
+
+const CANCEL = /^\s*(cancel|cancelar|cancela|stop|para|no)\s*[.!]?\s*$/i;
+
+/** How long a conversation topic (e.g. cines) carries over to unclear follow-ups. */
+export const STICKY_MS = 20 * 60_000;
 
 /** Prefix of a transcribed voice note in the agent's (and memory's) user message. */
 export const VOICE_PREFIX = '[voice note] ';
@@ -99,12 +115,39 @@ function guarded(
   gate?: () => Promise<string | undefined>,
   voice?: Voice,
   transcribe?: Transcribe,
+  secure?: SecureInputPort,
 ): ChannelHandler {
+  /** Last request's domains per user, so a short follow-up ("la de las 20:30", "sí") keeps them. */
+  const recent = new Map<string, { domains: Domain[]; at: number }>();
   return async (thread: Thread, message: Message, defaultHandler) => {
     if (!thread.isDM) return log(`[telegram] ignoring non-DM message in ${thread.id}`);
     if (!isAllowed(allowed, message)) return log(`[telegram] ignoring message from non-allowlisted user ${message.author?.userId}`);
     if (kv && !(await kv.setIfNotExists(`telegram:handled:${message.id}`, Date.now(), DEDUP_TTL_MS))) {
       return log(`[telegram] skipping duplicate message ${message.id}`);
+    }
+    const chatId = String(message.author?.userId ?? '');
+    // Secure input: this message is a secret for a tool. It never reaches the model, memory,
+    // logs or llm_calls; it is deleted from the chat and replaced by the (redacted) tool result.
+    let resumed: string | undefined;
+    const pendingSecret = secure ? await secure.pending(chatId).catch(() => undefined) : undefined;
+    if (pendingSecret) {
+      const value = message.text ?? '';
+      message.text = '';
+      message.formatted = undefined as never;
+      await thread.adapter.deleteMessage(thread.id, message.id).catch((e: Error) => log(`[secure] could not delete the message: ${e.message.split('\n')[0]}`));
+      if (CANCEL.test(value)) {
+        await secure!.cancel(chatId);
+        log('[secure] cancelled by the user');
+        resumed = '[hub] The user cancelled the private code request. Nothing was sent. Ask what they want to do (e.g. release the hold).';
+      } else {
+        log(`[secure] reply for ${pendingSecret.kind} taken (not shown to the model)`);
+        const r = await secure!.deliver(chatId, value, pendingSecret).catch((e: Error) => ({ agentText: `[hub] Delivering the private code failed: ${e.message.split('\n')[0]}`, userText: undefined }));
+        if (r.userText) await thread.post(r.userText);
+        if (!r.agentText) return;
+        resumed = r.agentText;
+      }
+      message.text = resumed;
+      message.attachments = [];
     }
     const blocked = await gate?.();
     if (blocked) {
@@ -117,12 +160,23 @@ function guarded(
     await withUsageScope({ requestId: newRequestId(), intent: 'chat', media, kind: 'chat' }, () =>
       rateLimitContext.run({ notify, format: voice?.rateLimit }, async () => {
         const scope = usageContext.getStore()!;
+        scope.chatId = chatId;
+        if (resumed) {
+          scope.text = resumed;
+          scope.intent = 'cines';
+          scope.domains = ['cines'];
+          recent.set(chatId, { domains: scope.domains, at: Date.now() });
+          return defaultHandler(thread, message);
+        }
         // a transcribed voice note is routed like the text it says
         const t = media === 'voice' && transcribe ? await transcribeInPlace(message, transcribe, log) : undefined;
         const routed = t ? 'text' : media;
         scope.text = message.text ?? '';
         scope.intent = classifyIntent(scope.text, routed);
-        scope.domains = domainsFor(scope.text, routed);
+        const user = String(message.author?.userId ?? '');
+        const last = recent.get(user);
+        scope.domains = domainsFor(scope.text, routed, last && Date.now() - last.at < STICKY_MS ? last.domains : undefined);
+        recent.set(user, { domains: scope.domains, at: Date.now() });
         if (t?.language) scope.language = t.language;
         return defaultHandler(thread, message);
       }),
@@ -143,7 +197,8 @@ export function createTelegramChannel(config: HubConfig, deps: TelegramDeps = {}
   // The adapter reads its allowlist from this env var; make it match config exactly.
   process.env.TELEGRAM_ALLOWED_USER_IDS = config.telegram.allowedUserIds.join(',');
 
-  const handler = guarded(config.telegram.allowedUserIds, deps.kv, log, deps.gate, deps.voice, deps.transcribe);
+  const handler = guarded(config.telegram.allowedUserIds, deps.kv, log, deps.gate, deps.voice, deps.transcribe, deps.secureInput);
+  const display: ToolDisplayFn = (event, ctx) => deps.approvalCard?.(event) ?? toolDisplay(event, ctx);
   const handlers: ChannelHandlers = {
     onDirectMessage: handler,
     onSubscribedMessage: handler,
@@ -160,7 +215,8 @@ export function createTelegramChannel(config: HubConfig, deps: TelegramDeps = {}
     },
     onAction: async (event, defaultHandler) => {
       if (!event.actionId.startsWith('plan:')) {
-        return withUsageScope({ requestId: newRequestId(), intent: 'resume', media: 'text', kind: 'resume' }, () => defaultHandler());
+        const chatId = event.user?.userId ? String(event.user.userId) : undefined;
+        return withUsageScope({ requestId: newRequestId(), intent: 'resume', media: 'text', kind: 'resume', chatId }, () => defaultHandler());
       }
       const userId = event.user?.userId;
       if (!userId || !config.telegram.allowedUserIds.includes(String(userId))) {
@@ -192,7 +248,7 @@ export function createTelegramChannel(config: HubConfig, deps: TelegramDeps = {}
     tools: false, // no reaction tools; keep the tool list for app MCPs
     // A display function enables Approve/Deny inline-keyboard buttons for approval-gated tools
     // (with the default 'text' they would stay suspended with no way to answer).
-    toolDisplay,
+    toolDisplay: display,
     formatError: (err: Error) => describeModelError(err, deps.voice),
   });
 }

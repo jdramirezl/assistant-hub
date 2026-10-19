@@ -17,6 +17,9 @@ import { Budget, BudgetGuard, BUDGET_MESSAGE } from './budget.js';
 import { createGeminiModels, modelChain, PROVIDER_OPTIONS } from './models.js';
 import { createTranscriber } from './voice/transcribe.js';
 import { mealHint } from './meal.js';
+import { CinesHub } from './cines/service.js';
+import { cinesApprovalCard } from './cines/card.js';
+import { HUB_ONLY_TOOLS, MONEY_TOOLS, PURCHASE_TOOL } from './cines/contract.js';
 import { withMalformedFallback } from './llm/escalate.js';
 import { createNotifier, type Notify } from './notify.js';
 import { Digest, type DigestResult, type DigestSection } from './digest.js';
@@ -43,7 +46,7 @@ export interface HubDeps {
   model?: AssistantOptions['model'];
   /** Test seam: stronger model used when a response is malformed (defaults to `model`). */
   escalationModel?: unknown;
-  telegram?: Omit<TelegramDeps, 'kv' | 'gate' | 'voice' | 'onPlanAction' | 'commands' | 'transcribe'>;
+  telegram?: Omit<TelegramDeps, 'kv' | 'gate' | 'voice' | 'onPlanAction' | 'commands' | 'transcribe' | 'approvalCard' | 'secureInput'>;
   /** Inline registry (tests); default: load config.mcpRegistryPath. */
   registry?: unknown;
   env?: Record<string, string | undefined>;
@@ -57,6 +60,8 @@ export interface HubDeps {
   transcribeModel?: unknown;
   /** Clock for the local time in the prompt and the meal-by-hour fallback (replay pins it). */
   localNow?: () => number;
+  /** fetch for cines images (tests). */
+  cinesFetch?: typeof fetch;
   /** Gemini HTTP fetch (replay/tests): wrapped by the rate limiter and usage observer. */
   geminiFetch?: typeof fetch;
 }
@@ -70,6 +75,7 @@ export interface Hub {
   notify: Notify;
   telegram?: TelegramProvider;
   plans: PlanService;
+  cines: CinesHub;
   usage: UsageLog;
   /** The /usage report text. */
   usageReport(): Promise<string>;
@@ -94,7 +100,7 @@ export function toolsForDomains<T>(tools: Record<string, T>, domains: readonly D
   if (!domains) return tools;
   return Object.fromEntries(
     Object.entries(tools).filter(([name]) => {
-      const d = name.startsWith('fitness_') ? 'fitness' : name.startsWith('finance_') ? 'finance' : undefined;
+      const d = name.startsWith('fitness_') ? 'fitness' : name.startsWith('finance_') ? 'finance' : name.startsWith('cines_') ? 'cines' : undefined;
       return !d || domains.includes(d);
     }),
   );
@@ -122,11 +128,17 @@ export function createHub(config: HubConfig, deps: HubDeps = {}): Hub {
   const registry = deps.registry !== undefined ? parseRegistry(deps.registry) : loadRegistry(config.mcpRegistryPath);
   const notify = createNotifier(config, { apiBaseUrl: deps.telegram?.apiBaseUrl, log });
   const nutrition = new NutritionTracker();
+  const tgApi = config.telegram.enabled ? new TelegramApi(config.telegram.botToken, deps.telegram?.apiBaseUrl) : undefined;
+  // assigned right after the toolbox exists (they reference each other)
+  // eslint-disable-next-line prefer-const
+  let cines: CinesHub | undefined;
   const toolbox = new McpToolbox(registry, deps.env ?? process.env, {
     log,
     now: deps.now,
     hooks: {
       approval: (tool) => (tool === 'fitness_log_food' ? (input) => nutrition.needsConfirmation(input) : undefined),
+      approvalOverride: (tool) => (tool === PURCHASE_TOOL ? (input) => cines!.purchaseNeedsApproval(input) : undefined),
+      beforeCall: (tool, input) => (MONEY_TOOLS.has(tool) ? cines!.beforeCall(tool, input) : undefined),
       afterResult: (tool, input, result, { raw }) => {
         let out = result;
         if (tool.startsWith('fitness_')) {
@@ -136,6 +148,7 @@ export function createHub(config: HubConfig, deps: HubDeps = {}): Hub {
           if (tool === 'fitness_log_food') out = nutrition.annotateLog(input, result);
         }
         if (FINANCE_WRITES.has(tool)) financeDir.invalidate();
+        if (tool.startsWith('cines_') && !raw) return cines!.afterResult(tool, input, out, { chatId: usageContext.getStore()?.chatId });
         return raw ? out : trimForModel(tool, out);
       },
     },
@@ -145,6 +158,21 @@ export function createHub(config: HubConfig, deps: HubDeps = {}): Hub {
     },
   });
 
+  cines = new CinesHub({
+    kv,
+    toolbox,
+    log,
+    now: deps.now,
+    fetch: deps.cinesFetch,
+    securePrompt: (kind) => voice.securePrompt(kind),
+    ...(tgApi
+      ? {
+          sendPhoto: async (chatId: string, bytes: Uint8Array) => void (await tgApi.sendPhoto(chatId, bytes)),
+          sendText: async (chatId: string, text: string) => void (await tgApi.send(chatId, text)),
+        }
+      : {}),
+  });
+  const cinesHub = cines;
   const financeDir = new FinanceDirectory(toolbox, { now: deps.now, timezone: config.timezone, available: async () => (await toolbox.getTools(), toolbox.status().finance?.state === 'up') });
   const localNow = deps.localNow ?? deps.now ?? Date.now;
   const logMeal = createLogMeal(toolbox, log, {
@@ -188,7 +216,8 @@ export function createHub(config: HubConfig, deps: HubDeps = {}): Hub {
     persona: config.persona,
     now: localNow,
     tools: async () => {
-      const app = toolsForDomains(await toolbox.getTools(), usageContext.getStore()?.domains);
+      const all = Object.fromEntries(Object.entries(await toolbox.getTools()).filter(([n]) => !HUB_ONLY_TOOLS.has(n)));
+      const app = toolsForDomains(all, usageContext.getStore()?.domains);
       return { ...app, ...('fitness_log_food' in app ? { log_meal: logMeal } : {}), propose_plan: proposePlan };
     },
     extraInstructions: async () => {
@@ -199,7 +228,7 @@ export function createHub(config: HubConfig, deps: HubDeps = {}): Hub {
     guards: [guard],
     // Older turns keep their text but drop tool calls/results; the current run keeps all of them.
     inputGuards: [new WorkingMemoryPrompt(memory), new ToolCallFilter()],
-    outputGuards: [new PlanGuard((t) => toolbox.isGated(t), log)],
+    outputGuards: [new PlanGuard((t) => toolbox.isGated(t) && !MONEY_TOOLS.has(t), log)],
   });
   summarizePlan = async (prompt, memory) => {
     const res = await assistant.generate(prompt, { ...(memory ? { memory } : {}), maxSteps: 1, toolChoice: 'none' } as never);
@@ -235,6 +264,12 @@ export function createHub(config: HubConfig, deps: HubDeps = {}): Hub {
     onPlanAction: (actionId, userId) => plans.handleAction(actionId, userId),
     commands: { usage: () => usageReport() },
     transcribe,
+    approvalCard: (event) => cinesApprovalCard(event, cinesHub, config.persona.language),
+    secureInput: {
+      pending: (chatId) => cinesHub.pending(chatId),
+      cancel: (chatId) => cinesHub.cancelSecure(chatId),
+      deliver: (chatId, value, p) => cinesHub.deliver(chatId, value, p),
+    },
   });
 
   const mastra = new Mastra({
@@ -277,6 +312,7 @@ export function createHub(config: HubConfig, deps: HubDeps = {}): Hub {
     notify,
     telegram,
     plans,
+    cines: cinesHub,
     usage,
     usageReport,
     runDigest,

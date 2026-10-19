@@ -36,4 +36,16 @@ export class TelegramApi {
   async editFinal(chatId: string, messageId: number, text: string): Promise<void> {
     await this.call('editMessageText', { chat_id: chatId, message_id: messageId, text, reply_markup: { inline_keyboard: [] } });
   }
+
+  /** Upload a photo (multipart; Telegram fetches nothing from our side). */
+  async sendPhoto(chatId: string, bytes: Uint8Array, opts: { caption?: string; filename?: string } = {}): Promise<number> {
+    const form = new FormData();
+    form.set('chat_id', chatId);
+    if (opts.caption) form.set('caption', opts.caption);
+    form.set('photo', new Blob([bytes], { type: 'image/png' }), opts.filename ?? 'image.png');
+    const res = await this.doFetch(`${this.baseUrl}/bot${this.token}/sendPhoto`, { method: 'POST', body: form, signal: AbortSignal.timeout(30_000) });
+    const data = (await res.json().catch(() => ({}))) as { ok?: boolean; result?: { message_id: number }; description?: string };
+    if (!res.ok || !data.ok) throw new Error(`Telegram sendPhoto failed: ${data.description ?? `HTTP ${res.status}`}`);
+    return data.result!.message_id;
+  }
 }

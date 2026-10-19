@@ -44,6 +44,14 @@ export const DOMAIN_RULES: Record<Domain, string[]> = {
     '- "ambiguous": ask the user to choose (name, serving, kcal); log their pick with fitness_log_food using that option\'s draft_id, option, serving_index as serving and servings as quantity. "needs_confirmation" (> 800 kcal): call fitness_log_food with exactly log_with (the user gets an approval card).',
     '- Corrections ("no, eran 2"): fitness_modify_food with the new quantity. Other tasks: the matching fitness_* tool.',
   ],
+  cines: [
+    '## Cines (cines_*, Cinépolis, Mexico City)',
+    '- The user\'s cinemas: Parque Toreo (home, default), Plaza Carso, Satélite, Miyana Polanco; regular and VIP rooms. 1–4 adult tickets (default 1).',
+    '- "¿qué hay en X hoy?" → cines_listings. "¿dónde pasan X?" → cines_find_movie. "quiero ver X hoy en la noche" → cines_best_showtime (window "night" = 19:00–24:00): present the best option plus the 2 alternatives, each with time, cinema, language, format, warnings and Admision General price. Prefer subtitled; mention dubbed only when it is the only option. Cheaper promos or Club tickets only as advice.',
+    '- Seats: cines_seat_map with the showtimeId and party size. The hub sends the seat-map image to the user itself; say which seats you propose (regular rooms: center, middle-to-lower rows; VIP/IMAX: center, upper rows; a group always together) and that the user decides. Seats the user types ("F7,F8") → cines_validate_seats.',
+    '- Nothing is held or bought unless the user asks. cines_hold_seats and cines_purchase need the user\'s approval (the hub shows the card); pay with cines_purchase(holdId) only after a hold; never retry a failed payment. To cancel: cines_release_hold.',
+    '- Codes, CVV or passwords: NEVER ask the user to type them to you. When a result says the hub is collecting a secure input, reply one short line and wait.',
+  ],
 };
 
 export function buildInstructions(
@@ -54,7 +62,7 @@ export function buildInstructions(
   const persona = opts.persona ? personaPrompt(opts.persona) : '';
   const domains = opts.domains ?? ALL_DOMAINS;
   return [
-    "You are the user's personal assistant on Telegram. Act on their apps with tools (finance_*, fitness_*).",
+    "You are the user's personal assistant on Telegram. Act on their apps with tools (finance_*, fitness_*, cines_*).",
     '- Reply in the language of the user\'s latest message, including plan titles, even when tools return English. Short: a few lines, no filler.',
     '- Make independent tool calls in the SAME step (e.g. a meal and an expense in one message), then reply once.',
     '- NEVER say something was recorded, saved, logged, updated or deleted unless a tool call in this turn returned success. If an app is not connected, say so and show what you would record.',

@@ -38,7 +38,16 @@ export interface Voice {
   rateLimitGiveUp(daily: boolean): string;
   digestEmpty(period: string): string;
   planEdit(): string;
+  /** "🔒 Send the CVV…": the prompt for a secure input (the model never sees the reply). */
+  securePrompt(kind: string): string;
 }
+
+const SECRET_NAMES: Record<string, { es: string; en: string }> = {
+  cvv: { es: 'el CVV de su tarjeta', en: 'your card\'s CVV' },
+  otp_3ds: { es: 'el código que le envió su banco', en: 'the code your bank sent you' },
+  email_code: { es: 'el código de 6 dígitos que Cinépolis envió a su correo', en: 'the 6-digit code Cinépolis e-mailed you' },
+};
+const secretName = (kind: string, lang: 'es' | 'en') => SECRET_NAMES[kind]?.[lang] ?? (lang === 'es' ? 'el código' : 'the code');
 
 function appLines(apps: Apps, lang: Language): string[] {
   const up = Object.entries(apps).filter(([, s]) => s.state === 'up').map(([n]) => n);
@@ -64,6 +73,7 @@ export function createVoice(p: PersonaConfig): Voice {
           : '⏳ Gemini rate limit; give me a minute and send it again.',
       digestEmpty: (period) => `🗓️ Weekly digest (${period}): no apps reported data yet. Connect finance or fitness to get a real summary.`,
       planEdit: () => '✏️ What should I change? Reply in text and I will send a revised plan.',
+      securePrompt: (k) => `🔒 Send ${secretName(k, 'en')} in your next message. The model will not see it; I delete the message after reading it. (5 min; "cancel" to stop)`,
     };
   }
   if (lang === 'es') {
@@ -77,6 +87,7 @@ export function createVoice(p: PersonaConfig): Voice {
           : `⏳ Gemini nos pide paciencia, ${who}. Inténtelo de nuevo en un minuto.`,
       digestEmpty: (period) => `🗓️ Resumen semanal (${period}), ${who}: ninguna app ha reportado datos aún.`,
       planEdit: () => `✏️ ¿Qué cambio, ${who}? Respóndame por escrito y le enviaré el plan corregido.`,
+      securePrompt: (k) => `🔒 Envíe ${secretName(k, 'es')}, ${who}. No lo verá el modelo y borraré su mensaje en cuanto lo lea. (5 min; "cancelar" para detener)`,
     };
   }
   return {
@@ -89,5 +100,6 @@ export function createVoice(p: PersonaConfig): Voice {
         : `⏳ Gemini asks for patience, ${who}. Do try again in a minute.`,
     digestEmpty: (period) => `🗓️ Weekly digest (${period}), ${who}: no app has reported data yet.`,
     planEdit: () => `✏️ What shall I change, ${who}? Reply in text and I'll send a revised plan.`,
+    securePrompt: (k) => `🔒 Kindly send ${secretName(k, 'en')}, ${who}. The model will not see it, and I shall delete your message once read. (5 min; "cancel" to stop)`,
   };
 }

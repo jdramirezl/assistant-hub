@@ -89,7 +89,10 @@ export class MockTelegram {
   async waitFor(pred: () => boolean, timeoutMs = 10_000): Promise<void> {
     const start = Date.now();
     while (!pred()) {
-      if (Date.now() - start > timeoutMs) throw new Error('MockTelegram.waitFor timed out');
+      if (Date.now() - start > timeoutMs) {
+        const last = this.calls.filter((c) => !['getUpdates', 'sendChatAction'].includes(c.method)).slice(-4);
+        throw new Error(`MockTelegram.waitFor timed out; last calls: ${last.map((c) => `${c.method} ${JSON.stringify(c.body).slice(0, 300)}`).join(' | ')}`);
+      }
       await new Promise((r) => setTimeout(r, 25));
     }
   }
@@ -109,12 +112,21 @@ export class MockTelegram {
     const method = m[1]!;
     const chunks: Buffer[] = [];
     for await (const c of req) chunks.push(c as Buffer);
-    const raw = Buffer.concat(chunks).toString('utf8');
+    const buf = Buffer.concat(chunks);
+    const raw = buf.toString('utf8');
     let body: Record<string, unknown>;
-    try {
-      body = raw ? JSON.parse(raw) : {};
-    } catch {
-      body = { raw };
+    const ct = String(req.headers['content-type'] ?? '');
+    if (ct.startsWith('multipart/form-data')) {
+      // sendPhoto uploads: keep the fields, and the file as bytes
+      const form = await new Response(buf, { headers: { 'content-type': ct } }).formData();
+      body = {};
+      for (const [k, v] of form.entries()) body[k] = typeof v === 'string' ? v : { filename: (v as File).name, type: v.type, bytes: Buffer.from(await v.arrayBuffer()) };
+    } else {
+      try {
+        body = raw ? JSON.parse(raw) : {};
+      } catch {
+        body = { raw };
+      }
     }
     const call: MockCall = { method, body };
     if (method !== 'getUpdates') this.calls.push(call);

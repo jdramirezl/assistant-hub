@@ -17,6 +17,8 @@ export interface UsageScope {
   text?: string;
   /** Language of a voice note (ISO 639-1), from its transcription. */
   language?: string;
+  /** Telegram chat of the request (private chat id = user id), for hub-sent photos/prompts. */
+  chatId?: string;
 }
 
 export const usageContext = new AsyncLocalStorage<UsageScope>();

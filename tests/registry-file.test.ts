@@ -7,15 +7,21 @@ describe('repo mcp-servers.json', () => {
   const reg = loadRegistry(join(process.cwd(), 'mcp-servers.json'));
 
   it('is machine-independent: every app is enabled and gated by its own env URL', () => {
-    expect(Object.keys(reg.servers).sort()).toEqual(['echo', 'finance', 'mfp']);
+    expect(Object.keys(reg.servers).sort()).toEqual(['cines', 'echo', 'finance', 'mfp']);
     expect(Object.values(reg.servers).every((s) => s.enabled)).toBe(true);
     expect(reg.servers.echo!.url).toBe('${ECHO_MCP_URL}');
     expect(reg.servers.mfp!.url).toBe('${MFP_MCP_URL}');
     expect(reg.servers.finance!.url).toBe('${FINANCE_MCP_URL}');
+    expect(reg.servers.cines!.url).toBe('${CINES_MCP_URL}');
   });
 
   it('mfp: no auth, fitness_* tools, Mason error mapping', () => {
     expect(reg.servers.mfp).toMatchObject({ headers: {}, toolPrefix: 'fitness', errorStyle: 'mason' });
+  });
+
+  it('cines: loopback, no auth, default error style, tools already cines_*', () => {
+    expect(reg.servers.cines).toMatchObject({ headers: {}, errorStyle: 'default', enabled: true });
+    expect(reg.servers.cines!.toolPrefix).toBeUndefined();
   });
 
   it('finance: bearer token from env, optional preview bypass header', () => {
@@ -26,7 +32,7 @@ describe('repo mcp-servers.json', () => {
   it('a machine without the env vars skips every app without connecting', async () => {
     const tb = new McpToolbox(reg, {}, { log: () => {} });
     expect(await tb.getTools()).toEqual({});
-    expect(Object.values(tb.status()).map((s) => s.state)).toEqual(['skipped', 'skipped', 'skipped']);
+    expect(Object.values(tb.status()).map((s) => s.state)).toEqual(['skipped', 'skipped', 'skipped', 'skipped']);
     await tb.close();
   });
 

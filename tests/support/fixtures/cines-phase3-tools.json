@@ -1,0 +1,159 @@
+[
+ {
+  "name": "cines_hold_seats",
+  "title": "Hold seats (approval required)",
+  "description": "Reserve (apartar) the chosen seats for a showtime under the user's Cinépolis account for ~9 minutes, without paying. Requires the user's approval. Validates the seats first. Default ticket type 'Admision General'. Returns holdId, seats, ticket type and the exact total with fees, plus `purchaseApprovalRequired`. May return status 'needs_input' (kind 'email_code') if Cinépolis asks for a login code: the hub must collect it via secure input and call cines_secure_input.",
+  "inputSchema": {
+   "type": "object",
+   "properties": {
+    "showtimeId": {
+     "type": "string"
+    },
+    "seats": {
+     "type": "string",
+     "description": "e.g. 'F7,F8' (validated with the same rules as cines_validate_seats)"
+    },
+    "ticketType": {
+     "description": "Only if the user asked for a specific type (e.g. 'Que Oferton 2026')",
+     "type": "string"
+    },
+    "wheelchair": {
+     "type": "boolean"
+    }
+   },
+   "required": [
+    "showtimeId",
+    "seats"
+   ],
+   "$schema": "http://json-schema.org/draft-07/schema#"
+  },
+  "annotations": {
+   "readOnlyHint": false,
+   "destructiveHint": true,
+   "idempotentHint": false,
+   "openWorldHint": true
+  },
+  "execution": {
+   "taskSupport": "forbidden"
+  }
+ },
+ {
+  "name": "cines_release_hold",
+  "title": "Release held seats",
+  "description": "Release (liberar) the currently held seats, or a specific holdId. Safe; no approval needed.",
+  "inputSchema": {
+   "type": "object",
+   "properties": {
+    "holdId": {
+     "type": "string"
+    }
+   },
+   "$schema": "http://json-schema.org/draft-07/schema#"
+  },
+  "annotations": {
+   "readOnlyHint": false,
+   "destructiveHint": false,
+   "idempotentHint": true,
+   "openWorldHint": true
+  },
+  "execution": {
+   "taskSupport": "forbidden"
+  }
+ },
+ {
+  "name": "cines_hold_status",
+  "title": "Current hold, purchase and session status",
+  "description": "The active seat hold (if any) with time left, pending secure-input requests, recent purchases and the Cinépolis session state.",
+  "inputSchema": {
+   "type": "object",
+   "properties": {},
+   "$schema": "http://json-schema.org/draft-07/schema#"
+  },
+  "annotations": {
+   "readOnlyHint": true,
+   "destructiveHint": false,
+   "idempotentHint": true,
+   "openWorldHint": false
+  },
+  "execution": {
+   "taskSupport": "forbidden"
+  }
+ },
+ {
+  "name": "cines_purchase",
+  "title": "Pay for held seats (approval required)",
+  "description": "Pay for a hold. Hard cap $1,000 MXN. `expectedTotalMxn` must equal the hold's totalMxn shown to the user. While fewer than 3 purchases have succeeded, `userApproved: true` is required (only after the user tapped ✅). Never retried. May return status 'needs_input' (kind 'cvv' or 'otp_3ds') — the hub collects it via secure input and calls cines_secure_input. `dryRun: true` simulates without paying.",
+  "inputSchema": {
+   "type": "object",
+   "properties": {
+    "holdId": {
+     "type": "string"
+    },
+    "expectedTotalMxn": {
+     "type": "number",
+     "exclusiveMinimum": 0
+    },
+    "method": {
+     "description": "Default paypal; card = card saved in the Cinépolis/DEUNA wallet",
+     "type": "string",
+     "enum": [
+      "paypal",
+      "card"
+     ]
+    },
+    "userApproved": {
+     "type": "boolean"
+    },
+    "dryRun": {
+     "type": "boolean"
+    }
+   },
+   "required": [
+    "holdId",
+    "expectedTotalMxn"
+   ],
+   "$schema": "http://json-schema.org/draft-07/schema#"
+  },
+  "annotations": {
+   "readOnlyHint": false,
+   "destructiveHint": true,
+   "idempotentHint": false,
+   "openWorldHint": true
+  },
+  "execution": {
+   "taskSupport": "forbidden"
+  }
+ },
+ {
+  "name": "cines_secure_input",
+  "title": "Deliver a secret the user typed (hub only)",
+  "description": "HUB ONLY — must not be exposed to the language model. Delivers the user's reply to a pending secure-input request (requestId from a 'needs_input' result) and continues the paused operation, returning its next result (final, or another needs_input). The value is never logged or returned.",
+  "inputSchema": {
+   "type": "object",
+   "properties": {
+    "requestId": {
+     "type": "string"
+    },
+    "value": {
+     "type": "string",
+     "minLength": 1,
+     "maxLength": 32
+    }
+   },
+   "required": [
+    "requestId",
+    "value"
+   ],
+   "$schema": "http://json-schema.org/draft-07/schema#"
+  },
+  "annotations": {
+   "readOnlyHint": false,
+   "destructiveHint": false,
+   "idempotentHint": false,
+   "openWorldHint": true
+  },
+  "execution": {
+   "taskSupport": "forbidden"
+  }
+ }
+]

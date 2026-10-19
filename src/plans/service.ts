@@ -1,3 +1,4 @@
+import { HUB_ONLY_TOOLS, MONEY_TOOLS } from '../cines/contract.js';
 import type { Language, Voice } from '../persona.js';
 import { sharedError } from '../mcp/errors.js';
 import { usageContext } from '../telemetry/context.js';
@@ -253,6 +254,7 @@ export class PlanService {
     const tools = (await this.d.toolbox.getTools()) as Record<string, ToolLike>;
     actions.forEach((a, i) => {
       if (a.tool === PROPOSE_PLAN) return void problems.push(`action ${i + 1}: a plan cannot contain propose_plan`);
+      if (MONEY_TOOLS.has(a.tool) || HUB_ONLY_TOOLS.has(a.tool)) return void problems.push(`action ${i + 1}: ${a.tool} cannot be part of a plan (it has its own approval); call it directly`);
       const tool = tools[a.tool];
       if (!tool) return void problems.push(`action ${i + 1}: unknown tool ${a.tool}`);
       const check = tool.inputSchema?.safeParse?.(a.args);

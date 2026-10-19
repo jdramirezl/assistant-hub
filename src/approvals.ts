@@ -12,7 +12,14 @@ export const APPROVAL_REQUIRED_TOOLS: ReadonlySet<string> = new Set([
   'fitness_delete_exercise',
   'fitness_modify_food',
   'fitness_clear_food_pin',
+  // cines-mx-mcp: holding seats and paying (cines_purchase's card is waived by the hub's
+  // purchase policy after 3 successful purchases; see src/cines/service.ts)
+  'cines_hold_seats',
+  'cines_purchase',
 ]);
+
+/** Never gated, whatever their name or hints say (undoing a hold must always be possible). */
+export const NEVER_GATED_TOOLS: ReadonlySet<string> = new Set(['cines_release_hold']);
 
 /**
  * "Smart writes" policy: reads and additive writes run straight away; the user approves
@@ -26,6 +33,7 @@ export const APPROVAL_REQUIRED_TOOLS: ReadonlySet<string> = new Set([
  *   would prompt. Our own app servers annotate their tools.
  */
 export function requiresApproval(toolName: string, annotations: ToolAnnotations | undefined): boolean {
+  if (NEVER_GATED_TOOLS.has(toolName)) return false;
   if (APPROVAL_REQUIRED_TOOLS.has(toolName)) return true;
   if (DESTRUCTIVE_VERBS.test(toolName)) return true;
   return annotations?.destructiveHint === true;

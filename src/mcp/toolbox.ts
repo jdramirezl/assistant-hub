@@ -23,7 +23,11 @@ export interface ToolboxOptions {
 export interface ToolHooks {
   /** Extra, input-dependent approval for a tool (on top of the static policy). */
   approval?(tool: string): ((input: Record<string, unknown>) => boolean | Promise<boolean>) | undefined;
-  /** Inspect/transform a tool's normalized result. */
+  /** Approval decision that REPLACES the static policy for this tool (e.g. cines_purchase). */
+  approvalOverride?(tool: string): ((input: Record<string, unknown>) => boolean | Promise<boolean>) | undefined;
+  /** Last checks before the server is called: new args, or a shared-shape error (not called). */
+  beforeCall?(tool: string, input: Record<string, unknown>): Promise<{ args: Record<string, unknown> } | { error: unknown }> | undefined;
+  /** Inspect/transform a tool's normalized result (may be async). */
   afterResult?(tool: string, input: Record<string, unknown>, result: unknown, opts: { raw: boolean }): unknown;
 }
 
@@ -280,6 +284,8 @@ export class McpToolbox {
   }
 
   private approvalFor(name: string, annotations: ToolAnnotations | undefined) {
+    const override = this.opts.hooks?.approvalOverride?.(name);
+    if (override) return (input: unknown) => override((input ?? {}) as Record<string, unknown>);
     if (requiresApproval(name, annotations)) return true;
     const dynamic = this.opts.hooks?.approval?.(name);
     return dynamic ? (input: unknown) => dynamic((input ?? {}) as Record<string, unknown>) : false;
@@ -312,13 +318,17 @@ export class McpToolbox {
       inputSchema: t.inputSchema as never,
       mcp: t.mcp as never,
       requireApproval: this.approvalFor(name, t.mcp?.annotations),
-      execute: async (input: unknown, ctx: unknown) => {
+      execute: async (given: unknown, ctx: unknown) => {
         try {
+          let input = given;
+          const before = await this.opts.hooks?.beforeCall?.(name, (given ?? {}) as Record<string, unknown>);
+          if (before && 'error' in before) return before.error;
+          if (before) input = before.args;
           const out = normalizeResult(await (t.execute as (i: unknown, c: unknown) => Promise<unknown>)(input, ctx), style);
           const hook = this.opts.hooks?.afterResult;
           const raw = (ctx as { hubRaw?: boolean } | undefined)?.hubRaw === true; // hub-internal call: full, untrimmed result
           if (!hook) return out;
-          const hooked = hook(name, (input ?? {}) as Record<string, unknown>, out, { raw }); // side effects (guards) always run
+          const hooked = await hook(name, (input ?? {}) as Record<string, unknown>, out, { raw }); // side effects (guards) always run
           return raw ? out : hooked;
         } catch (err) {
           const reason = firstLine((err as Error).message);
