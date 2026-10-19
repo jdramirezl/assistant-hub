@@ -52,13 +52,13 @@ brew_prefix() {
   brew --prefix
 }
 
-node24_path() { printf '%s/opt/node@24/bin/node\n' "$(brew_prefix)"; }
+# shellcheck source=scripts/node.sh
+source "$REPO/scripts/node.sh"
 
-# Make node@24 (keg-only) the node/npm used by this script.
-use_node24() {
+# Use the same Node launchd will run (see scripts/node.sh) for npm/build in this script.
+use_node() {
   local node
-  node="$(node24_path)"
-  [[ -x "$node" ]] || { [[ "$DRY_RUN" == 1 ]] && return 0; die "node@24 not installed (run scripts/setup-mac.sh)"; }
+  node="$(find_node)" || { [[ "$DRY_RUN" == 1 ]] && return 0; die "no usable Node (run scripts/setup-mac.sh)"; }
   PATH="$(dirname "$node"):$PATH"
   export PATH
   export NODE_BIN="$node"

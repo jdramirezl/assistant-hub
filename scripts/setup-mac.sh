@@ -23,18 +23,26 @@ done
 
 require_macos
 ARCH="$(uname -m)"
-PREFIX="$(brew_prefix)"
-say "macOS $(macos_version) on $ARCH (Homebrew at $PREFIX)"
-[[ "$ARCH" == "arm64" && "$PREFIX" != "/opt/homebrew" ]] && warn "Apple Silicon with Homebrew outside /opt/homebrew (Rosetta install?)"
+PREFIX="$(command -v brew >/dev/null 2>&1 && brew --prefix || echo 'not installed')"
+say "macOS $(macos_version) on $ARCH (Homebrew: $PREFIX)"
+if [[ "$ARCH" == "arm64" && "$PREFIX" != "/opt/homebrew" && "$PREFIX" != "not installed" ]]; then
+  warn "Apple Silicon with Homebrew outside /opt/homebrew (Rosetta install?)"
+fi
 
-# --- 1. Node 24 (Homebrew keg: stable path for launchd) -----------------------
-if [[ -x "$(node24_path)" ]]; then
-  say "node@24 present: $("$(node24_path)" --version)"
+# --- 1. Node (any Node >= 22.13 on a stable path; Homebrew only as a fallback) ----
+if node_bin="$(find_node 2>/tmp/assistant-hub-node.err)"; then
+  say "using Node $("$node_bin" --version) at $node_bin"
 else
-  confirm "Install node@24 with Homebrew?" || die "node@24 is required"
+  cat /tmp/assistant-hub-node.err >&2
+  if [[ "$ARCH" == "x86_64" ]]; then
+    warn "On Intel Macs Homebrew builds node@24 from source (can take an hour)."
+    warn "Faster: install the LTS .pkg from https://nodejs.org (puts node in /usr/local/bin) and re-run."
+  fi
+  brew_prefix >/dev/null
+  confirm "Install node@24 with Homebrew?" || die "a Node >= 22.13 is required"
   run brew install node@24
 fi
-use_node24
+use_node
 
 # --- 2. Directories and secrets ----------------------------------------------
 say "data: $DATA_DIR  logs: $LOG_DIR"

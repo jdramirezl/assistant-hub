@@ -8,22 +8,11 @@ set -euo pipefail
 
 REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)"
 
+# shellcheck source=scripts/node.sh
+source "$REPO/scripts/node.sh"
+
 resolve_node() {
-  if [[ -n "${NODE_BIN:-}" ]]; then
-    printf '%s\n' "$NODE_BIN"
-    return
-  fi
-  # Homebrew's opt/ symlink is stable across node@24 upgrades (a mise/nvm "latest" path is not).
-  if command -v brew >/dev/null 2>&1; then
-    local candidate
-    candidate="$(brew --prefix)/opt/node@24/bin/node"
-    if [[ -x "$candidate" ]]; then
-      printf '%s\n' "$candidate"
-      return
-    fi
-  fi
-  echo "render-plist: node@24 not found. Run scripts/setup-mac.sh or set NODE_BIN." >&2
-  exit 1
+  find_node || { echo "render-plist: no usable node (see above)." >&2; exit 1; }
 }
 
 # Escape a value for use as a sed replacement (we use | as the delimiter).

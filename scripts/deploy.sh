@@ -21,7 +21,7 @@ while [[ $# -gt 0 ]]; do
 done
 
 require_macos
-use_node24
+use_node
 cd "$REPO"
 
 if [[ -n "$(git status --porcelain --untracked-files=no)" ]]; then

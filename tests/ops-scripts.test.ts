@@ -70,7 +70,7 @@ describe('launchd plists', () => {
     expect(p.Label).toBe('com.jdrami.assistant-hub');
     expect(p.KeepAlive).toBe(true);
     expect(p.RunAtLoad).toBe(true);
-    expect(p.ProgramArguments[0]).toMatch(/\/opt\/node@24\/bin\/node$/);
+    expect(p.ProgramArguments[0]).toMatch(/^\/.*\/bin\/node$/);
     expect(p.ProgramArguments).toContain(`--env-file-if-exists=${REPO}/.env`);
     expect(p.ProgramArguments.at(-1)).toBe(`${REPO}/.mastra/output/index.mjs`);
     expect(p.WorkingDirectory).toBe(REPO);
@@ -84,13 +84,13 @@ describe('launchd plists', () => {
     expect(JSON.stringify(p)).not.toMatch(/GOOGLE_API_KEY|TELEGRAM_BOT_TOKEN|TOKEN/);
   });
 
-  it('render fails loudly when node@24 is missing', () => {
+  it('render fails loudly when no usable Node exists', () => {
     const res = spawnSync(join(REPO, 'scripts/render-plist.sh'), [TEMPLATES[0]!, '--stdout'], {
-      env: { ...process.env, NODE_BIN: '', PATH: '/usr/bin:/bin' },
+      env: { ...process.env, NODE_BIN: '', NODE_CANDIDATES: '', NODE_ENV_FILE: '/nonexistent', PATH: '/usr/bin:/bin' },
       encoding: 'utf8',
     });
     expect(res.status).not.toBe(0);
-    expect(res.stderr).toMatch(/node@24 not found/);
+    expect(res.stderr).toMatch(/no Node >= 22\.13 on a stable path/);
   });
 
   it('render rejects relative override paths', () => {
