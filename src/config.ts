@@ -132,7 +132,7 @@ export function loadConfig(env: Record<string, string | undefined> = process.env
     healthcheckUrl: e.HEALTHCHECK_URL,
     budget: {
       dailyTokenCap: e.DAILY_TOKEN_CAP ?? 2_000_000,
-      dailyCostCapUsd: e.DAILY_COST_CAP_USD ?? 0.5,
+      dailyCostCapUsd: e.DAILY_COST_CAP_USD ?? 1,
     },
     mcpRegistryPath: e.MCP_REGISTRY_PATH ?? findUp('mcp-servers.json') ?? join(process.cwd(), 'mcp-servers.json'),
   };

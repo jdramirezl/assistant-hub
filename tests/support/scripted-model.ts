@@ -1,7 +1,7 @@
 import { MastraLanguageModelV2Mock, simulateReadableStream } from '@mastra/core/test-utils/llm-mock';
 
 /** One model turn: either call a tool or answer with text. */
-export type Step = { tool: string; args: Record<string, unknown> } | { text: string };
+export type Step = { tool: string; args: Record<string, unknown> } | { text: string } | { malformed: true };
 export type Turn = Step | ((prompt: unknown[]) => Step);
 
 const usage = { inputTokens: 10, outputTokens: 5, totalTokens: 15 };
@@ -24,6 +24,7 @@ export function scriptedModel(script: Turn[]) {
   const model = new MastraLanguageModelV2Mock({
     doGenerate: async (options) => {
       const { step, n } = next(options.prompt as unknown[], options.tools as { name: string }[] | undefined);
+      if ('malformed' in step) return { content: [], finishReason: 'error', usage, warnings: [] } as never;
       return {
         content:
           'tool' in step
@@ -37,7 +38,12 @@ export function scriptedModel(script: Turn[]) {
     doStream: async (options) => {
       const { step, n } = next(options.prompt as unknown[], options.tools as { name: string }[] | undefined);
       const chunks =
-        'tool' in step
+        'malformed' in step
+          ? [
+              { type: 'stream-start', warnings: [] },
+              { type: 'finish', finishReason: 'error', usage },
+            ]
+          : 'tool' in step
           ? [
               { type: 'stream-start', warnings: [] },
               { type: 'tool-call', toolCallId: `call-${n}`, toolName: step.tool, input: JSON.stringify(step.args) },

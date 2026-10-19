@@ -15,6 +15,7 @@ describe('loadConfig', () => {
     expect(cfg.timezone).toBe('America/Bogota');
     expect(cfg.telegram.enabled).toBe(false);
     expect(cfg.healthcheckUrl).toBeUndefined();
+    expect(cfg.budget).toEqual({ dailyTokenCap: 2_000_000, dailyCostCapUsd: 1 });
   });
 
   it('requires GOOGLE_API_KEY outside tests', () => {

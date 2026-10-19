@@ -1,7 +1,10 @@
+import { createGoogleGenerativeAI } from '@ai-sdk/google';
+import { createRateLimitedFetch } from './llm/rate-limit.js';
+
 /**
  * Model roles. Gemini only, one GOOGLE_API_KEY.
  *  - default / vision: cheap multimodal model for chat, tool calls, receipt photos and voice notes
- *  - report: stronger model for weekly reports and for escalation when the cheap model fails
+ *  - report: stronger model for weekly reports and for escalation on a bad (malformed) response
  */
 export const MODEL_IDS = {
   default: 'google/gemini-3.5-flash-lite',
@@ -11,14 +14,31 @@ export const MODEL_IDS = {
 
 export type ModelRole = keyof typeof MODEL_IDS;
 
+/** Thinking is the main cost driver; chat/tool calls do fine with little of it. */
+export const PROVIDER_OPTIONS: Record<ModelRole, Record<string, Record<string, unknown>> | undefined> = {
+  default: { google: { thinkingConfig: { thinkingLevel: 'low' } } },
+  vision: { google: { thinkingConfig: { thinkingLevel: 'low' } } },
+  report: undefined,
+};
+
+export type ModelLike = unknown;
+export type GeminiModels = Record<ModelRole, ModelLike>;
+
 /**
- * Mastra model fallback chain for a role. Covers *thrown* provider errors (5xx, 429, timeouts):
- * Mastra moves to the next entry automatically. Content-level failures (malformed function
- * calls, tool errors) are handled by {@link withEscalation}.
+ * Gemini models with the rate-limit-aware fetch: on 429 they wait and retry the SAME model.
+ * There is deliberately no fallback to the stronger model on provider errors (its free-tier
+ * quota is far smaller); escalation happens only on a bad response (see EscalationGuard).
  */
-export function modelChain(role: ModelRole): { model: string; maxRetries: number }[] {
-  const primary = { model: MODEL_IDS[role], maxRetries: 1 };
-  return role === 'report' ? [primary] : [primary, { model: MODEL_IDS.report, maxRetries: 1 }];
+export function createGeminiModels(apiKey: string | undefined, log?: (m: string) => void): GeminiModels {
+  const google = createGoogleGenerativeAI({ apiKey: apiKey ?? '', fetch: createRateLimitedFetch({ log }) });
+  const make = (role: ModelRole) => google(MODEL_IDS[role].replace(/^google\//, ''));
+  return { default: make('default'), vision: make('vision'), report: make('report') };
+}
+
+/** Agent model config for a role: a single entry, retries handled by the fetch layer. */
+export function modelChain(role: ModelRole, models: GeminiModels): { model: ModelLike; maxRetries: number; providerOptions?: Record<string, Record<string, unknown>> }[] {
+  const providerOptions = PROVIDER_OPTIONS[role];
+  return [{ model: models[role], maxRetries: 0, ...(providerOptions ? { providerOptions } : {}) }];
 }
 
 interface ToolResultLike {

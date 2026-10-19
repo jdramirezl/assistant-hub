@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { MODEL_IDS, modelChain, needsEscalation, withEscalation } from '../src/models.js';
+import { MODEL_IDS, PROVIDER_OPTIONS, createGeminiModels, modelChain, needsEscalation, withEscalation } from '../src/models.js';
 
 describe('model roles', () => {
   it('maps roles to the approved Gemini models', () => {
@@ -10,9 +10,20 @@ describe('model roles', () => {
     });
   });
 
-  it('builds a provider-error fallback chain: cheap model first, stronger model second', () => {
-    expect(modelChain('default').map((m) => m.model)).toEqual([MODEL_IDS.default, MODEL_IDS.report]);
-    expect(modelChain('report').map((m) => m.model)).toEqual([MODEL_IDS.report]);
+  it('never falls back to the stronger model on provider errors (single entry, retries in fetch)', () => {
+    const models = createGeminiModels('k');
+    const chain = modelChain('default', models);
+    expect(chain).toHaveLength(1);
+    expect(chain[0]).toMatchObject({ model: models.default, maxRetries: 0 });
+    expect((models.default as { modelId: string }).modelId).toBe('gemini-3.5-flash-lite');
+    expect((models.report as { modelId: string }).modelId).toBe('gemini-3.8-flash');
+  });
+
+  it('uses low thinking for the default role only', () => {
+    const models = createGeminiModels('k');
+    expect(modelChain('default', models)[0]!.providerOptions).toEqual({ google: { thinkingConfig: { thinkingLevel: 'low' } } });
+    expect(modelChain('report', models)[0]!.providerOptions).toBeUndefined();
+    expect(PROVIDER_OPTIONS.vision).toEqual(PROVIDER_OPTIONS.default);
   });
 });
 

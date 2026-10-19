@@ -197,3 +197,58 @@ describe('toolDisplay', () => {
     expect(toolDisplay({ ...base, kind: 'error', toolName: 'echo_say', error: 'x', errorText: 'boom\nstack', durationMs: 1 }, ctx)).toEqual({ kind: 'post', message: '⚠️ echo_say failed: boom' });
   });
 });
+
+describe('rate limits in Telegram', () => {
+  it('the model layer can post "⏳ rate limit…" into the chat mid-turn, then the reply arrives', async () => {
+    const { MastraLanguageModelV2Mock, simulateReadableStream } = await import('@mastra/core/test-utils/llm-mock');
+    const { rateLimitContext } = await import('../src/llm/rate-limit.js');
+    tg = await new MockTelegram().start();
+    const model = new MastraLanguageModelV2Mock({
+      doStream: async () => {
+        await rateLimitContext.getStore()?.notify('⏳ rate limit, retrying in 9s');
+        return {
+          stream: simulateReadableStream({
+            chunks: [
+              { type: 'stream-start', warnings: [] },
+              { type: 'text-start', id: 't' },
+              { type: 'text-delta', id: 't', delta: 'después del límite' },
+              { type: 'text-end', id: 't' },
+              { type: 'finish', finishReason: 'stop', usage: { inputTokens: 1, outputTokens: 1, totalTokens: 2 } },
+            ] as never[],
+          }) as never,
+        };
+      },
+    });
+    const hub = createHub(testConfig({ TELEGRAM_BOT_TOKEN: '1:abc', TELEGRAM_ALLOWED_USER_IDS: String(ME) }), {
+      model: model as never,
+      registry: { servers: {} },
+      telegram: { apiBaseUrl: tg.url, longPolling: FAST, log: () => {} },
+    });
+    hubs.push(hub);
+    await hub.start();
+    tg.push(textUpdate(ME, 'hola'));
+    await tg.waitFor(() => tg.outgoingText(ME).includes('después del límite'));
+    expect(tg.outgoingText(ME)).toContain('⏳ rate limit, retrying in 9s');
+  });
+
+  it('a 429 that outlasts the retries shows "⏳ … rate limit", not a failure', async () => {
+    const { MastraLanguageModelV2Mock } = await import('@mastra/core/test-utils/llm-mock');
+    tg = await new MockTelegram().start();
+    const model = new MastraLanguageModelV2Mock({
+      doStream: async () => {
+        throw Object.assign(new Error('You exceeded your current quota'), { statusCode: 429, isRetryable: false });
+      },
+    });
+    const hub = createHub(testConfig({ TELEGRAM_BOT_TOKEN: '1:abc', TELEGRAM_ALLOWED_USER_IDS: String(ME) }), {
+      model: model as never,
+      registry: { servers: {} },
+      telegram: { apiBaseUrl: tg.url, longPolling: FAST, log: () => {} },
+    });
+    hubs.push(hub);
+    await hub.start();
+    tg.push(textUpdate(ME, 'hola'));
+    await tg.waitFor(() => /⏳|❌|⚠️/.test(tg.outgoingText(ME)));
+    expect(tg.outgoingText(ME)).toMatch(/⏳ Gemini rate limit/);
+    expect(tg.outgoingText(ME)).not.toMatch(/❌|⚠️/);
+  });
+});

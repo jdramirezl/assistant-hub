@@ -3,6 +3,7 @@ import { TelegramProvider } from '@mastra/telegram';
 import type { ChannelHandler, ChannelHandlers, ToolDisplayFn } from '@mastra/core/channels';
 import type { HubConfig } from '../config.js';
 import type { KvStore } from '../kv.js';
+import { describeModelError, rateLimitContext } from '../llm/rate-limit.js';
 
 /** Media sent to Gemini as file parts: receipts/meal photos and voice notes. */
 export const INLINE_MEDIA = ['image/*', 'audio/*', 'application/pdf'];
@@ -69,7 +70,9 @@ function guarded(
       await thread.post(blocked);
       return;
     }
-    await defaultHandler(thread, message);
+    // Lets the model layer post "⏳ rate limit, retrying in Ns" into this chat while it waits.
+    const notify = async (text: string) => void (await thread.post(text));
+    await rateLimitContext.run({ notify }, () => defaultHandler(thread, message));
   };
 }
 
@@ -110,6 +113,7 @@ export function createTelegramChannel(config: HubConfig, deps: TelegramDeps = {}
     // A display function enables Approve/Deny inline-keyboard buttons for approval-gated tools
     // (with the default 'text' they would stay suspended with no way to answer).
     toolDisplay,
+    formatError: (err: Error) => describeModelError(err),
   });
 }
 

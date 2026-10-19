@@ -2,7 +2,6 @@ import { Agent } from '@mastra/core/agent';
 import type { ToolsInput } from '@mastra/core/agent';
 import type { MastraMemory } from '@mastra/core/memory';
 import type { InputProcessor, OutputProcessor } from '@mastra/core/processors';
-import { modelChain } from '../models.js';
 
 export const ASSISTANT_ID = 'assistant';
 
@@ -43,8 +42,8 @@ export interface AssistantOptions {
   timezone: string;
   tools?: ToolsInput | (() => ToolsInput | Promise<ToolsInput>);
   memory?: MastraMemory;
-  /** Test seam: replaces the Gemini fallback chain. */
-  model?: Agent['model'];
+  /** Model config (hub passes the Gemini chain; tests pass a mock). */
+  model: unknown;
   /** Extra, per-request lines appended to the instructions (e.g. which apps are down). */
   extraInstructions?: () => string;
   /** Processors that run in both the input and output phases (e.g. the budget guard). */
@@ -57,7 +56,7 @@ export function createAssistantAgent(opts: AssistantOptions): Agent {
     name: 'Assistant',
     description: 'Personal assistant for finance, fitness and future apps',
     instructions: () => [buildInstructions(opts.timezone), opts.extraInstructions?.()].filter(Boolean).join('\n'),
-    model: (opts.model ?? modelChain('default')) as never,
+    model: opts.model as never,
     tools: (opts.tools ?? {}) as never,
     ...(opts.memory ? { memory: opts.memory } : {}),
     ...(opts.guards?.length ? { inputProcessors: opts.guards, outputProcessors: opts.guards } : {}),

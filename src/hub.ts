@@ -9,7 +9,8 @@ import type { KvStore } from './kv.js';
 import { loadRegistry, parseRegistry } from './mcp/registry.js';
 import { McpToolbox } from './mcp/toolbox.js';
 import { Budget, BudgetGuard, BUDGET_MESSAGE } from './budget.js';
-import { modelChain } from './models.js';
+import { createGeminiModels, modelChain } from './models.js';
+import { withMalformedFallback } from './llm/escalate.js';
 import { createNotifier, type Notify } from './notify.js';
 import { Digest, type DigestResult, type DigestSection } from './digest.js';
 import { createDigestWorkflow } from './workflows/weekly-digest.js';
@@ -19,6 +20,8 @@ import { hostname } from 'node:os';
 export interface HubDeps {
   /** Test seam: model used by the assistant and reporter instead of Gemini. */
   model?: AssistantOptions['model'];
+  /** Test seam: stronger model used when a response is malformed (defaults to `model`). */
+  escalationModel?: unknown;
   telegram?: Omit<TelegramDeps, 'kv' | 'gate'>;
   /** Inline registry (tests); default: load config.mcpRegistryPath. */
   registry?: unknown;
@@ -68,19 +71,21 @@ export function createHub(config: HubConfig, deps: HubDeps = {}): Hub {
   const budget = new Budget(kv, config.budget, config.timezone, deps.now);
   const guard = new BudgetGuard(budget, (s) => log(`[budget] blocked: ${s.tokens} tokens, $${s.costUsd.toFixed(4)} on ${s.day}`));
   const registry = deps.registry !== undefined ? parseRegistry(deps.registry) : loadRegistry(config.mcpRegistryPath);
-  let notifyRef: Notify | undefined;
+  const notify = createNotifier(config, { apiBaseUrl: deps.telegram?.apiBaseUrl, log });
   const toolbox = new McpToolbox(registry, deps.env ?? process.env, {
     log,
     now: deps.now,
     onRecovered: (name, downForMs) => {
       log(`[mcp] ${name} is back after ${Math.round(downForMs / 60_000)} min`);
-      if (downForMs > RECOVERY_NOTICE_MS) void notifyRef?.(`✅ ${name} is back (it was unreachable for ${Math.round(downForMs / 60_000)} min).`);
+      if (downForMs > RECOVERY_NOTICE_MS) void notify(`✅ ${name} is back (it was unreachable for ${Math.round(downForMs / 60_000)} min).`);
     },
   });
 
+  const gemini = deps.model ? undefined : createGeminiModels(config.googleApiKey, log);
+  if (gemini) gemini.default = withMalformedFallback(gemini.default, gemini.report, log);
   const assistant = createAssistantAgent({
     timezone: config.timezone,
-    model: deps.model,
+    model: deps.model ? withMalformedFallback(deps.model, deps.escalationModel, log) : modelChain('default', gemini!),
     memory,
     tools: () => toolbox.getTools(),
     extraInstructions: () => toolbox.statusNote(),
@@ -91,13 +96,11 @@ export function createHub(config: HubConfig, deps: HubDeps = {}): Hub {
     name: 'Reporter',
     description: 'Writes the weekly digest on the stronger model',
     instructions: REPORTER_INSTRUCTIONS,
-    model: (deps.model ?? modelChain('report')) as never,
+    model: (deps.model ?? modelChain('report', gemini!)) as never,
     inputProcessors: [guard],
     outputProcessors: [guard],
   });
 
-  const notify = createNotifier(config, { apiBaseUrl: deps.telegram?.apiBaseUrl, log });
-  notifyRef = notify;
   const digest = new Digest({
     kv,
     sections: deps.digestSections ?? [],

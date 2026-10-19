@@ -2,6 +2,9 @@ import type { Agent } from '@mastra/core/agent';
 import type { MessageListInput } from '@mastra/core/agent/message-list';
 import { MODEL_IDS, withEscalation, type ModelRole } from '../models.js';
 
+/** Model to use when escalating; defaults to the report model id. */
+export type EscalationModel = unknown;
+
 type Options = Record<string, unknown>;
 type Generator = { generate(messages: MessageListInput, options: Options): ReturnType<Agent['generate']> };
 

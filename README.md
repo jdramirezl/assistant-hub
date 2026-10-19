@@ -62,7 +62,7 @@ the dev laptop: it writes to real finances. To test finance in dev, point it at 
   Approve/Deny buttons in Telegram, an approval prompt in Studio. Only the requester can answer,
   and pending approvals survive restarts (stored in LibSQL).
 - **Daily cap:** tokens and estimated cost are counted per day (America/Bogota midnight reset).
-  Defaults: `DAILY_TOKEN_CAP=2000000`, `DAILY_COST_CAP_USD=0.5`. When either is hit the bot replies
+  Defaults: `DAILY_TOKEN_CAP=2000000`, `DAILY_COST_CAP_USD=1`. When either is hit the bot replies
   "⏸️ Paused, budget hit" without calling the model. The prepaid Gemini balance remains the hard stop.
 
 ## Weekly digest
