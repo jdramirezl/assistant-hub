@@ -87,3 +87,13 @@ describe('false save guard', () => {
     for (const t of ['¿Cuál prefiere?', 'Este mes gastó 120.000 COP']) expect(SAVE_CLAIM.test(t)).toBe(false);
   });
 });
+
+describe('false save guard: other MyFitnessPal writes', () => {
+  it('"tomé 500 ml de agua" answered with "Agua registrada" and no tool → not saved notice', async () => {
+    const sm = await boot([{ text: 'Muy bien, amo Julián. Agua registrada: 500 ml.' }, { text: 'Agua registrada.' }]);
+    tg.push(textUpdate(ME, 'tomé 500 ml de agua'));
+    await tg.waitFor(() => tg.outgoingText(ME).includes('no lo guardé'));
+    expect(tg.outgoingText(ME)).not.toContain('Agua registrada');
+    expect(sm.calls).toHaveLength(2);
+  });
+});

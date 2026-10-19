@@ -2,7 +2,7 @@ import { usageContext } from '../telemetry/context.js';
 import type { Language } from '../persona.js';
 
 /** Intents where the user asked for a write (the reply must not claim one that didn't happen). */
-export const WRITE_INTENTS = new Set(['expense', 'meal', 'plan']);
+export const WRITE_INTENTS = new Set(['expense', 'meal', 'plan', 'mfp-other', 'mixed']);
 const READ_TOOL = /^(updateWorkingMemory$|fitness_(get|search|draft|list|bulk)_|finance_(list|spending|convert)_)/;
 /** Words that claim a save/delete happened (es/en). */
 export const SAVE_CLAIM = /(?<!\p{L})(registr[éeoóa]\p{L}*|guard[éeoóa]\p{L}*|anot[éeoóa]\p{L}*|apunt[éeoóa]\p{L}*|elimin[éeoóa]\p{L}*|borr[éeoóa]\p{L}*|logged|saved|recorded|added|deleted|removed|done|listo|hecho)(?!\p{L})/iu;
