@@ -5,7 +5,7 @@ import type { HubConfig } from '../config.js';
 import type { KvStore } from '../kv.js';
 import { describeModelError, rateLimitContext } from '../llm/rate-limit.js';
 import type { Voice } from '../persona.js';
-import { classifyIntent, mediaOf } from '../telemetry/intent.js';
+import { classifyIntent, domainsFor, mediaOf } from '../telemetry/intent.js';
 import { newRequestId, withUsageScope } from '../telemetry/context.js';
 
 /** Media sent to Gemini as file parts: receipts/meal photos and voice notes. */
@@ -84,7 +84,8 @@ function guarded(
     const notify = async (text: string) => void (await thread.post(text));
     const media = mediaOf(message.attachments ?? []);
     const intent = classifyIntent(message.text ?? '', media);
-    await withUsageScope({ requestId: newRequestId(), intent, media, kind: 'chat' }, () =>
+    const domains = domainsFor(message.text ?? '', media);
+    await withUsageScope({ requestId: newRequestId(), intent, media, kind: 'chat', domains }, () =>
       rateLimitContext.run({ notify, format: voice?.rateLimit }, () => defaultHandler(thread, message)),
     );
   };

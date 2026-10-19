@@ -1,6 +1,6 @@
 import { AsyncLocalStorage } from 'node:async_hooks';
 import { randomBytes } from 'node:crypto';
-import type { Intent, Media } from './intent.js';
+import type { Domain, Intent, Media } from './intent.js';
 
 /** What a model HTTP call belongs to. Set around each chat turn, resume, plan run and digest. */
 export interface UsageScope {
@@ -11,6 +11,8 @@ export interface UsageScope {
   kind: 'chat' | 'resume' | 'plan' | 'digest' | 'other';
   /** Calls made so far in this request (step number of the next one). */
   seq: number;
+  /** App tool sets for this request (omit = all). */
+  domains?: Domain[];
 }
 
 export const usageContext = new AsyncLocalStorage<UsageScope>();

@@ -37,3 +37,23 @@ export function classifyIntent(text: string, media: Media = 'text'): Intent {
   if (media === 'voice' || media === 'photo' || media === 'pdf') return 'mixed';
   return 'chat';
 }
+
+export type Domain = 'fitness' | 'finance';
+export const ALL_DOMAINS: readonly Domain[] = ['fitness', 'finance'];
+
+/**
+ * Which app tools a message needs. Keyword rules only. Unclear messages (greetings, short
+ * replies like "sí" or "la segunda", media without a caption, voice notes) get every domain.
+ */
+export function domainsFor(text: string, media: Media = 'text'): Domain[] {
+  const t = norm(text ?? '');
+  if (media === 'voice' || (media !== 'text' && !t.trim())) return [...ALL_DOMAINS];
+  const out: Domain[] = [];
+  const money = MONEY.test(t);
+  const food = FOOD.test(t);
+  // a food word inside an expense ("gasté 25k en almuerzo") is still only finance
+  const eats = /(comi\b|desayune|almorce|cene\b|registra.*(desayuno|almuerzo|cena)|\bate\b|\blog\b|onces|merienda)/.test(t);
+  if (food && (!money || eats)) out.push('fitness');
+  if (money) out.push('finance');
+  return out.length ? out : [...ALL_DOMAINS];
+}

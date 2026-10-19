@@ -29,6 +29,7 @@ import { TelegramApi } from './telegram-api.js';
 import { UsageLog, formatUsageReport, summarize as summarizeUsage } from './telemetry/usage-log.js';
 import { createUsageObserver } from './telemetry/observe.js';
 import { newRequestId, usageContext, withUsageScope } from './telemetry/context.js';
+import type { Domain } from './telemetry/intent.js';
 import { bogotaDay } from './budget.js';
 
 export interface HubDeps {
@@ -76,6 +77,17 @@ export interface Hub {
 function tzOffsetMs(timezone: string, at: number): number {
   const p = Object.fromEntries(new Intl.DateTimeFormat('en-US', { timeZone: timezone, hourCycle: 'h23', year: 'numeric', month: 'numeric', day: 'numeric', hour: 'numeric', minute: 'numeric', second: 'numeric' }).formatToParts(at).map((x) => [x.type, x.value]));
   return Date.UTC(+p.year!, +p.month! - 1, +p.day!, +p.hour!, +p.minute!, +p.second!) - Math.floor(at / 1000) * 1000;
+}
+
+/** Keep only the app tools of the request's domains (fitness_*, finance_*); other tools stay. */
+export function toolsForDomains<T>(tools: Record<string, T>, domains: readonly Domain[] | undefined): Record<string, T> {
+  if (!domains) return tools;
+  return Object.fromEntries(
+    Object.entries(tools).filter(([name]) => {
+      const d = name.startsWith('fitness_') ? 'fitness' : name.startsWith('finance_') ? 'finance' : undefined;
+      return !d || domains.includes(d);
+    }),
+  );
 }
 
 /** Tell the user when an app comes back only after a real outage, not a blip. */
@@ -154,7 +166,7 @@ export function createHub(config: HubConfig, deps: HubDeps = {}): Hub {
     memory,
     persona: config.persona,
     now: deps.now,
-    tools: async () => ({ ...(await toolbox.getTools()), propose_plan: proposePlan }),
+    tools: async () => ({ ...toolsForDomains(await toolbox.getTools(), usageContext.getStore()?.domains), propose_plan: proposePlan }),
     extraInstructions: () => toolbox.statusNote(),
     guards: [guard],
     // Older turns keep their text but drop tool calls/results; the current run keeps all of them.
