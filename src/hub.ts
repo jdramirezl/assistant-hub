@@ -24,13 +24,17 @@ import { LogPlanPresenter, TelegramPlanPresenter } from './plans/presenter.js';
 import { createProposePlanTool } from './plans/tool.js';
 import { PlanGuard } from './plans/guard.js';
 import { TelegramApi } from './telegram-api.js';
+import { UsageLog, formatUsageReport, summarize as summarizeUsage } from './telemetry/usage-log.js';
+import { createUsageObserver } from './telemetry/observe.js';
+import { newRequestId, usageContext, withUsageScope } from './telemetry/context.js';
+import { bogotaDay } from './budget.js';
 
 export interface HubDeps {
   /** Test seam: model used by the assistant and reporter instead of Gemini. */
   model?: AssistantOptions['model'];
   /** Test seam: stronger model used when a response is malformed (defaults to `model`). */
   escalationModel?: unknown;
-  telegram?: Omit<TelegramDeps, 'kv' | 'gate' | 'voice' | 'onPlanAction'>;
+  telegram?: Omit<TelegramDeps, 'kv' | 'gate' | 'voice' | 'onPlanAction' | 'commands'>;
   /** Inline registry (tests); default: load config.mcpRegistryPath. */
   registry?: unknown;
   env?: Record<string, string | undefined>;
@@ -40,6 +44,8 @@ export interface HubDeps {
   digestSections?: DigestSection[];
   /** healthchecks.io fetch (tests). */
   fetch?: typeof fetch;
+  /** Gemini HTTP fetch (replay/tests): wrapped by the rate limiter and usage observer. */
+  geminiFetch?: typeof fetch;
 }
 
 export interface Hub {
@@ -51,6 +57,9 @@ export interface Hub {
   notify: Notify;
   telegram?: TelegramProvider;
   plans: PlanService;
+  usage: UsageLog;
+  /** The /usage report text. */
+  usageReport(): Promise<string>;
   /**
    * Connect channels (network), catch up a missed digest, and (with `ops`) send the
    * "I'm up" ping and start the healthchecks.io heartbeat. Safe without Telegram.
@@ -59,6 +68,12 @@ export interface Hub {
   /** Run the weekly-digest workflow now. */
   runDigest(input?: { trigger?: string; force?: boolean }): Promise<DigestResult | undefined>;
   stop(): Promise<void>;
+}
+
+/** Offset of `timezone` from UTC at `at`, in ms (Bogota: -5 h → -18_000_000). */
+function tzOffsetMs(timezone: string, at: number): number {
+  const p = Object.fromEntries(new Intl.DateTimeFormat('en-US', { timeZone: timezone, hourCycle: 'h23', year: 'numeric', month: 'numeric', day: 'numeric', hour: 'numeric', minute: 'numeric', second: 'numeric' }).formatToParts(at).map((x) => [x.type, x.value]));
+  return Date.UTC(+p.year!, +p.month! - 1, +p.day!, +p.hour!, +p.minute!, +p.second!) - Math.floor(at / 1000) * 1000;
 }
 
 /** Tell the user when an app comes back only after a real outage, not a blip. */
@@ -124,7 +139,9 @@ export function createHub(config: HubConfig, deps: HubDeps = {}): Hub {
   });
   const proposePlan = createProposePlanTool(plans);
 
-  const gemini = deps.model ? undefined : createGeminiModels(config.googleApiKey, log);
+  const usage = new UsageLog(client, deps.now);
+  const observe = createUsageObserver(usage, { now: deps.now, primaryModel: 'gemini-3.5-flash-lite', onError: (e) => log(`[usage] ${e.message}`) });
+  const gemini = deps.model ? undefined : createGeminiModels(config.googleApiKey, log, observe, deps.geminiFetch);
   if (gemini) gemini.default = withMalformedFallback(gemini.default, gemini.report, log);
   const assistant = createAssistantAgent({
     timezone: config.timezone,
@@ -168,6 +185,7 @@ export function createHub(config: HubConfig, deps: HubDeps = {}): Hub {
     voice,
     gate: async () => ((await budget.check()).ok ? undefined : BUDGET_MESSAGE),
     onPlanAction: (actionId, userId) => plans.handleAction(actionId, userId),
+    commands: { usage: () => usageReport() },
   });
 
   const mastra = new Mastra({
@@ -178,7 +196,18 @@ export function createHub(config: HubConfig, deps: HubDeps = {}): Hub {
     server: { host: config.server.host, port: config.server.port },
   });
 
-  async function runDigest(input: { trigger?: string; force?: boolean } = {}) {
+  async function usageReport(): Promise<string> {
+    const now = (deps.now ?? Date.now)();
+    const day = bogotaDay(now, config.timezone);
+    const dayStart = Date.parse(`${day}T00:00:00Z`) - tzOffsetMs(config.timezone, now);
+    const [today, week] = await Promise.all([usage.rows(dayStart), usage.rows(dayStart - 6 * 86_400_000)]);
+    return formatUsageReport(summarizeUsage(today), summarizeUsage(week), config.persona.language);
+  }
+
+  async function runDigest(input: { trigger?: string; force?: boolean } = {}): Promise<DigestResult | undefined> {
+    if (!usageContext.getStore()) {
+      return withUsageScope({ requestId: newRequestId(), intent: 'digest', media: 'text', kind: 'digest' }, () => runDigest(input));
+    }
     const run = await mastra.getWorkflow('weeklyDigest').createRun();
     const res = await run.start({ inputData: { trigger: input.trigger ?? 'manual', force: input.force ?? false } });
     if (res.status !== 'success') {
@@ -199,6 +228,8 @@ export function createHub(config: HubConfig, deps: HubDeps = {}): Hub {
     notify,
     telegram,
     plans,
+    usage,
+    usageReport,
     runDigest,
     async start(opts = {}) {
       await toolbox.getTools(); // discover apps at boot so status is logged early

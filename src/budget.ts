@@ -5,20 +5,27 @@ export const BUDGET_MESSAGE =
   '⏸️ Paused, budget hit: the daily model budget is used up. I will be back after midnight (Bogotá time).';
 
 /**
- * Estimated USD per 1M tokens. The prepaid Gemini balance is the hard stop; this is the
- * soft daily cap so a loop can't burn the whole balance in one day. Keep these slightly
- * pessimistic. `from` = effective date (ms since epoch, UTC).
+ * Paid-tier USD per 1M tokens (ai.google.dev/gemini-api/docs/pricing, checked 2026-10-19).
+ * Thinking tokens are billed as output; implicitly cached input at the cache price. The prepaid
+ * Gemini balance is the hard stop; this is the soft daily cap, so keep it pessimistic.
+ * `from` = effective date (ms since epoch, UTC).
  */
-const PRICES: { match: RegExp; from: number; input: number; output: number }[] = [
-  { match: /gemini-3\.5-flash-lite/, from: 0, input: 0.1, output: 0.4 },
-  { match: /gemini-3\.5-transcribe/, from: 0, input: 0.5, output: 1.0 },
-  { match: /gemini-3\.8-flash/, from: 0, input: 0.3, output: 2.5 },
-  { match: /gemini-3\.8-flash/, from: Date.parse('2027-01-01T00:00:00Z'), input: 0.6, output: 5.0 },
+const PRICES: { match: RegExp; from: number; input: number; cached: number; output: number }[] = [
+  { match: /gemini-3\.5-flash-lite/, from: 0, input: 0.3, cached: 0.03, output: 2.5 },
+  { match: /gemini-3\.5-transcribe/, from: 0, input: 2.0, cached: 2.0, output: 12.0 },
+  { match: /gemini-3\.8-flash/, from: 0, input: 0.75, cached: 0.075, output: 3.75 },
+  { match: /gemini-3\.8-flash/, from: Date.parse('2027-01-01T00:00:00Z'), input: 1.5, cached: 0.15, output: 7.5 },
 ];
 
 export interface UsageLike {
+  /** All prompt tokens, cached ones included. */
   inputTokens?: number;
+  /** Of inputTokens, how many were served from Gemini's implicit cache. */
+  cachedInputTokens?: number;
+  /** Output tokens including thinking (Gemini bills thoughts as output). */
   outputTokens?: number;
+  /** Thinking tokens, if a caller reports them separately from outputTokens. */
+  reasoningTokens?: number;
   totalTokens?: number;
 }
 
@@ -32,7 +39,9 @@ function priceFor(modelId: string, at: number) {
 
 export function estimateCostUsd(modelId: string, usage: UsageLike, at: number): number {
   const p = priceFor(modelId, at);
-  return ((usage.inputTokens ?? 0) * p.input + (usage.outputTokens ?? 0) * p.output) / 1_000_000;
+  const input = usage.inputTokens ?? 0;
+  const cached = Math.min(usage.cachedInputTokens ?? 0, input);
+  return ((input - cached) * p.input + cached * p.cached + (usage.outputTokens ?? 0) * p.output) / 1_000_000;
 }
 
 /** Calendar day (YYYY-MM-DD) in the hub's timezone. */

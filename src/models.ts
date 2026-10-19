@@ -29,8 +29,13 @@ export type GeminiModels = Record<ModelRole, ModelLike>;
  * There is deliberately no fallback to the stronger model on provider errors (its free-tier
  * quota is far smaller); escalation happens only on a bad response (see EscalationGuard).
  */
-export function createGeminiModels(apiKey: string | undefined, log?: (m: string) => void): GeminiModels {
-  const google = createGoogleGenerativeAI({ apiKey: apiKey ?? '', fetch: createRateLimitedFetch({ log }) });
+export function createGeminiModels(
+  apiKey: string | undefined,
+  log?: (m: string) => void,
+  observe?: NonNullable<Parameters<typeof createRateLimitedFetch>[0]>['observe'],
+  baseFetch?: typeof fetch,
+): GeminiModels {
+  const google = createGoogleGenerativeAI({ apiKey: apiKey ?? '', fetch: createRateLimitedFetch({ log, observe, fetch: baseFetch }) });
   const make = (role: ModelRole) => google(MODEL_IDS[role].replace(/^google\//, ''));
   return { default: make('default'), vision: make('vision'), report: make('report') };
 }

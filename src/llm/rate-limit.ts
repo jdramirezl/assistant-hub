@@ -33,6 +33,8 @@ export interface RateLimitedFetchOptions {
   maxRetries?: number;
   maxWaitMs?: number;
   log?: (m: string) => void;
+  /** Called once per HTTP attempt (usage logging). Must not throw. */
+  observe?: (info: { url: string; init?: RequestInit; res: Response; attempt: number }) => void;
 }
 
 const DEFAULT_SLEEP = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
@@ -54,6 +56,11 @@ export function createRateLimitedFetch(opts: RateLimitedFetchOptions = {}): type
     let notified = false;
     for (let attempt = 0; ; attempt++) {
       const res = await base(input, init);
+      try {
+        opts.observe?.({ url: String(input instanceof Request ? input.url : input), init, res, attempt });
+      } catch {
+        /* telemetry must never break a call */
+      }
       if (res.status !== 429 && res.status !== 503 && res.status !== 500) return res;
       if (attempt >= maxRetries) return res;
 

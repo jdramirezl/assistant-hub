@@ -5,6 +5,8 @@ import type { HubConfig } from '../config.js';
 import type { KvStore } from '../kv.js';
 import { describeModelError, rateLimitContext } from '../llm/rate-limit.js';
 import type { Voice } from '../persona.js';
+import { classifyIntent, mediaOf } from '../telemetry/intent.js';
+import { newRequestId, withUsageScope } from '../telemetry/context.js';
 
 /** Media sent to Gemini as file parts: receipts/meal photos and voice notes. */
 export const INLINE_MEDIA = ['image/*', 'audio/*', 'application/pdf'];
@@ -29,6 +31,8 @@ export interface TelegramDeps {
   voice?: Voice;
   /** Batch-plan buttons (plan:<a|e|c>:<id>); everything else goes to the built-in approvals. */
   onPlanAction?: (actionId: string, userId: string | undefined, notify: (text: string) => Promise<void>) => Promise<void>;
+  /** Slash commands answered by the hub without the model (e.g. /usage); return the reply text. */
+  commands?: Record<string, () => Promise<string>>;
 }
 
 /**
@@ -78,7 +82,11 @@ function guarded(
     }
     // Lets the model layer post "⏳ rate limit, retrying in Ns" into this chat while it waits.
     const notify = async (text: string) => void (await thread.post(text));
-    await rateLimitContext.run({ notify, format: voice?.rateLimit }, () => defaultHandler(thread, message));
+    const media = mediaOf(message.attachments ?? []);
+    const intent = classifyIntent(message.text ?? '', media);
+    await withUsageScope({ requestId: newRequestId(), intent, media, kind: 'chat' }, () =>
+      rateLimitContext.run({ notify, format: voice?.rateLimit }, () => defaultHandler(thread, message)),
+    );
   };
 }
 
@@ -100,15 +108,29 @@ export function createTelegramChannel(config: HubConfig, deps: TelegramDeps = {}
     onDirectMessage: handler,
     onSubscribedMessage: handler,
     onMention: handler,
+    onSlashCommand: async (event, defaultHandler) => {
+      const userId = event.user?.userId;
+      if (!userId || !config.telegram.allowedUserIds.includes(String(userId))) {
+        return log(`[telegram] ignoring /command from non-allowlisted user ${userId}`);
+      }
+      const name = event.command.replace(/^\//, '').split('@')[0]!.toLowerCase();
+      const own = deps.commands?.[name];
+      if (own) return void (await event.channel.post(await own()));
+      await withUsageScope({ requestId: newRequestId(), intent: 'chat', media: 'text', kind: 'chat' }, () => defaultHandler());
+    },
     onAction: async (event, defaultHandler) => {
-      if (!event.actionId.startsWith('plan:')) return defaultHandler();
+      if (!event.actionId.startsWith('plan:')) {
+        return withUsageScope({ requestId: newRequestId(), intent: 'resume', media: 'text', kind: 'resume' }, () => defaultHandler());
+      }
       const userId = event.user?.userId;
       if (!userId || !config.telegram.allowedUserIds.includes(String(userId))) {
         return log(`[telegram] ignoring plan button from non-allowlisted user ${userId}`);
       }
       const notify = async (text: string) => void (await event.thread?.post(text));
-      await rateLimitContext.run({ notify, format: deps.voice?.rateLimit }, () =>
-        deps.onPlanAction ? deps.onPlanAction(event.actionId, String(userId), notify) : Promise.resolve(),
+      await withUsageScope({ requestId: newRequestId(), intent: 'plan', media: 'text', kind: 'plan' }, () =>
+        rateLimitContext.run({ notify, format: deps.voice?.rateLimit }, () =>
+          deps.onPlanAction ? deps.onPlanAction(event.actionId, String(userId), notify) : Promise.resolve(),
+        ),
       );
     },
   };
@@ -124,6 +146,7 @@ export function createTelegramChannel(config: HubConfig, deps: TelegramDeps = {}
     commands: [
       { command: 'start', description: 'Say hi' },
       { command: 'help', description: 'What I can do' },
+      { command: 'usage', description: 'Gemini usage today and last 7 days' },
     ],
     resolveResourceId: ({ defaultResourceId }) => defaultResourceId, // telegram:<userId>
     tools: false, // no reaction tools; keep the tool list for app MCPs

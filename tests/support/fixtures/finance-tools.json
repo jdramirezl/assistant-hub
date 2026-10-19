@@ -1,0 +1,546 @@
+[
+ {
+  "name": "finance_list_accounts",
+  "title": "List accounts",
+  "description": "List the user's accounts (bank, cash, investment, CD) with id, name, currency, type and current balance. Account ids are needed by most other finance_* tools.",
+  "inputSchema": {
+   "type": "object",
+   "$schema": "https://json-schema.org/draft/2020-12/schema",
+   "properties": {
+    "includeArchived": {
+     "default": false,
+     "type": "boolean"
+    },
+    "includeInvestmentPrices": {
+     "default": false,
+     "description": "Fetch live stock prices for investment accounts (slower, rate-limited).",
+     "type": "boolean"
+    }
+   },
+   "additionalProperties": false
+  },
+  "annotations": {
+   "title": "List accounts",
+   "readOnlyHint": true,
+   "destructiveHint": false,
+   "openWorldHint": false
+  }
+ },
+ {
+  "name": "finance_list_pockets",
+  "title": "List pockets",
+  "description": "List pockets (sub-containers inside an account) with id, accountId, name, type (normal | fixed), currency and balance. Every movement belongs to one account + one pocket of that account.",
+  "inputSchema": {
+   "type": "object",
+   "$schema": "https://json-schema.org/draft/2020-12/schema",
+   "properties": {
+    "accountId": {
+     "type": "string",
+     "format": "uuid",
+     "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12})$",
+     "description": "Only pockets of this account."
+    },
+    "includeArchived": {
+     "default": false,
+     "type": "boolean"
+    }
+   },
+   "additionalProperties": false
+  },
+  "annotations": {
+   "title": "List pockets",
+   "readOnlyHint": true,
+   "destructiveHint": false,
+   "openWorldHint": false
+  }
+ },
+ {
+  "name": "finance_list_movements",
+  "title": "List movements",
+  "description": "List movements (transactions), newest first, paginated. Filter by year+month, account, pocket, pending, category or tags. Amounts are positive in the account's currency. Movement types: IngresoNormal = income, EgresoNormal = expense, IngresoFijo / EgresoFijo = income/expense on a fixed-expense (sub-pocket) budget.",
+  "inputSchema": {
+   "type": "object",
+   "$schema": "https://json-schema.org/draft/2020-12/schema",
+   "properties": {
+    "year": {
+     "description": "Calendar year, e.g. 2026. Requires month.",
+     "type": "integer",
+     "minimum": 1900,
+     "maximum": 2100
+    },
+    "month": {
+     "description": "Month 1-12. Requires year.",
+     "type": "integer",
+     "minimum": 1,
+     "maximum": 12
+    },
+    "accountId": {
+     "type": "string",
+     "format": "uuid",
+     "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12})$",
+     "description": "Only movements in this account (from finance_list_accounts)."
+    },
+    "pocketId": {
+     "type": "string",
+     "format": "uuid",
+     "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12})$",
+     "description": "Only movements in this pocket (from finance_list_pockets)."
+    },
+    "pendingOnly": {
+     "description": "Only pending (planned, not yet applied) movements.",
+     "type": "boolean"
+    },
+    "category": {
+     "description": "Exact category match (ignored with year/month, account or pocket filters).",
+     "type": "string",
+     "minLength": 1,
+     "maxLength": 50
+    },
+    "tags": {
+     "description": "Any of these tags (same restriction as category).",
+     "maxItems": 10,
+     "type": "array",
+     "items": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 30
+     }
+    },
+    "page": {
+     "default": 1,
+     "type": "integer",
+     "minimum": 1,
+     "maximum": 9007199254740991
+    },
+    "limit": {
+     "default": 50,
+     "type": "integer",
+     "minimum": 1,
+     "maximum": 200
+    }
+   },
+   "additionalProperties": false
+  },
+  "annotations": {
+   "title": "List movements",
+   "readOnlyHint": true,
+   "destructiveHint": false,
+   "openWorldHint": false
+  }
+ },
+ {
+  "name": "finance_spending_summary",
+  "title": "Spending summary",
+  "description": "Totals of income and expenses for today, this week, last week, this month and last month.",
+  "inputSchema": {
+   "type": "object",
+   "$schema": "https://json-schema.org/draft/2020-12/schema",
+   "properties": {},
+   "additionalProperties": false
+  },
+  "annotations": {
+   "title": "Spending summary",
+   "readOnlyHint": true,
+   "destructiveHint": false,
+   "openWorldHint": false
+  }
+ },
+ {
+  "name": "finance_list_fixed_expenses",
+  "title": "List fixed expenses",
+  "description": "List fixed expenses (sub-pockets of fixed pockets) with total value, periodicity in months, accumulated balance and monthly contribution, plus the groups they are organized in.",
+  "inputSchema": {
+   "type": "object",
+   "$schema": "https://json-schema.org/draft/2020-12/schema",
+   "properties": {},
+   "additionalProperties": false
+  },
+  "annotations": {
+   "title": "List fixed expenses",
+   "readOnlyHint": true,
+   "destructiveHint": false,
+   "openWorldHint": false
+  }
+ },
+ {
+  "name": "finance_list_reminders",
+  "title": "List reminders",
+  "description": "List payment reminders with title, amount, due date, recurrence and paid status.",
+  "inputSchema": {
+   "type": "object",
+   "$schema": "https://json-schema.org/draft/2020-12/schema",
+   "properties": {
+    "unpaidOnly": {
+     "default": false,
+     "type": "boolean"
+    }
+   },
+   "additionalProperties": false
+  },
+  "annotations": {
+   "title": "List reminders",
+   "readOnlyHint": true,
+   "destructiveHint": false,
+   "openWorldHint": false
+  }
+ },
+ {
+  "name": "finance_convert_currency",
+  "title": "Convert currency",
+  "description": "Convert an amount between USD, MXN, COP, EUR, GBP using the app's current exchange rates.",
+  "inputSchema": {
+   "type": "object",
+   "$schema": "https://json-schema.org/draft/2020-12/schema",
+   "properties": {
+    "amount": {
+     "type": "number"
+    },
+    "fromCurrency": {
+     "type": "string",
+     "enum": [
+      "USD",
+      "MXN",
+      "COP",
+      "EUR",
+      "GBP"
+     ]
+    },
+    "toCurrency": {
+     "type": "string",
+     "enum": [
+      "USD",
+      "MXN",
+      "COP",
+      "EUR",
+      "GBP"
+     ]
+    }
+   },
+   "required": [
+    "amount",
+    "fromCurrency",
+    "toCurrency"
+   ],
+   "additionalProperties": false
+  },
+  "annotations": {
+   "title": "Convert currency",
+   "readOnlyHint": true,
+   "destructiveHint": false,
+   "openWorldHint": false
+  }
+ },
+ {
+  "name": "finance_create_movement",
+  "title": "Create movement",
+  "description": "Record one income or expense in an account + pocket. Amount is positive, in the account currency. displayedDate is the transaction date, YYYY-MM-DD. Set isPending=true for a planned movement that does not affect balances yet. subPocketId is only for fixed-expense pockets. Movement types: IngresoNormal = income, EgresoNormal = expense, IngresoFijo / EgresoFijo = income/expense on a fixed-expense (sub-pocket) budget.",
+  "inputSchema": {
+   "type": "object",
+   "$schema": "https://json-schema.org/draft/2020-12/schema",
+   "properties": {
+    "type": {
+     "type": "string",
+     "enum": [
+      "IngresoNormal",
+      "EgresoNormal",
+      "IngresoFijo",
+      "EgresoFijo"
+     ]
+    },
+    "accountId": {
+     "type": "string",
+     "format": "uuid",
+     "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12})$"
+    },
+    "pocketId": {
+     "type": "string",
+     "format": "uuid",
+     "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12})$"
+    },
+    "amount": {
+     "type": "number",
+     "exclusiveMinimum": 0
+    },
+    "displayedDate": {
+     "type": "string",
+     "minLength": 1
+    },
+    "notes": {
+     "type": "string"
+    },
+    "subPocketId": {
+     "type": "string",
+     "format": "uuid",
+     "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12})$"
+    },
+    "isPending": {
+     "type": "boolean"
+    },
+    "category": {
+     "type": "string",
+     "maxLength": 50
+    },
+    "tags": {
+     "maxItems": 10,
+     "type": "array",
+     "items": {
+      "type": "string",
+      "maxLength": 30
+     }
+    }
+   },
+   "required": [
+    "type",
+    "accountId",
+    "pocketId",
+    "amount",
+    "displayedDate"
+   ],
+   "additionalProperties": false
+  },
+  "annotations": {
+   "title": "Create movement",
+   "readOnlyHint": false,
+   "destructiveHint": false,
+   "openWorldHint": false
+  }
+ },
+ {
+  "name": "finance_create_transfer",
+  "title": "Create transfer",
+  "description": "Move money between two pockets (same or different accounts). Creates a linked expense in the source and income in the target. displayedDate is the transaction date, YYYY-MM-DD.",
+  "inputSchema": {
+   "type": "object",
+   "$schema": "https://json-schema.org/draft/2020-12/schema",
+   "properties": {
+    "sourceAccountId": {
+     "type": "string",
+     "format": "uuid",
+     "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12})$"
+    },
+    "sourcePocketId": {
+     "type": "string",
+     "format": "uuid",
+     "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12})$"
+    },
+    "targetAccountId": {
+     "type": "string",
+     "format": "uuid",
+     "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12})$"
+    },
+    "targetPocketId": {
+     "type": "string",
+     "format": "uuid",
+     "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12})$"
+    },
+    "amount": {
+     "type": "number",
+     "exclusiveMinimum": 0
+    },
+    "displayedDate": {
+     "type": "string",
+     "minLength": 1
+    },
+    "notes": {
+     "type": "string"
+    }
+   },
+   "required": [
+    "sourceAccountId",
+    "sourcePocketId",
+    "targetAccountId",
+    "targetPocketId",
+    "amount",
+    "displayedDate"
+   ],
+   "additionalProperties": false
+  },
+  "annotations": {
+   "title": "Create transfer",
+   "readOnlyHint": false,
+   "destructiveHint": false,
+   "openWorldHint": false
+  }
+ },
+ {
+  "name": "finance_update_movement",
+  "title": "Update movement",
+  "description": "Change fields of one existing movement; omitted fields are unchanged. Use null to clear subPocketId, category or tags. displayedDate is the transaction date, YYYY-MM-DD. To apply a pending movement use finance_apply_pending_movement.",
+  "inputSchema": {
+   "type": "object",
+   "$schema": "https://json-schema.org/draft/2020-12/schema",
+   "properties": {
+    "type": {
+     "type": "string",
+     "enum": [
+      "IngresoNormal",
+      "EgresoNormal",
+      "IngresoFijo",
+      "EgresoFijo"
+     ]
+    },
+    "amount": {
+     "type": "number",
+     "exclusiveMinimum": 0
+    },
+    "displayedDate": {
+     "type": "string",
+     "minLength": 1
+    },
+    "notes": {
+     "type": "string"
+    },
+    "subPocketId": {
+     "anyOf": [
+      {
+       "type": "string",
+       "format": "uuid",
+       "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12})$"
+      },
+      {
+       "type": "null"
+      }
+     ]
+    },
+    "accountId": {
+     "type": "string",
+     "format": "uuid",
+     "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12})$"
+    },
+    "pocketId": {
+     "type": "string",
+     "format": "uuid",
+     "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12})$"
+    },
+    "category": {
+     "anyOf": [
+      {
+       "type": "string",
+       "maxLength": 50
+      },
+      {
+       "type": "null"
+      }
+     ]
+    },
+    "tags": {
+     "anyOf": [
+      {
+       "maxItems": 10,
+       "type": "array",
+       "items": {
+        "type": "string",
+        "maxLength": 30
+       }
+      },
+      {
+       "type": "null"
+      }
+     ]
+    },
+    "id": {
+     "type": "string",
+     "format": "uuid",
+     "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12})$",
+     "description": "Movement id (from finance_list_movements)."
+    }
+   },
+   "required": [
+    "id"
+   ],
+   "additionalProperties": false
+  },
+  "annotations": {
+   "title": "Update movement",
+   "readOnlyHint": false,
+   "destructiveHint": false,
+   "openWorldHint": false
+  }
+ },
+ {
+  "name": "finance_delete_movement",
+  "title": "Delete movement",
+  "description": "Permanently delete ONE movement by id and recalculate balances. A reminder paid with it becomes unpaid. For transfers this deletes only the given side. Confirm with the user before calling.",
+  "inputSchema": {
+   "type": "object",
+   "$schema": "https://json-schema.org/draft/2020-12/schema",
+   "properties": {
+    "id": {
+     "type": "string",
+     "format": "uuid",
+     "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12})$",
+     "description": "Movement id (from finance_list_movements)."
+    }
+   },
+   "required": [
+    "id"
+   ],
+   "additionalProperties": false
+  },
+  "annotations": {
+   "title": "Delete movement",
+   "readOnlyHint": false,
+   "destructiveHint": true,
+   "openWorldHint": false
+  }
+ },
+ {
+  "name": "finance_apply_pending_movement",
+  "title": "Apply pending movement",
+  "description": "Turn a pending (planned) movement into a real one so it affects balances.",
+  "inputSchema": {
+   "type": "object",
+   "$schema": "https://json-schema.org/draft/2020-12/schema",
+   "properties": {
+    "id": {
+     "type": "string",
+     "format": "uuid",
+     "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12})$",
+     "description": "Movement id (from finance_list_movements)."
+    }
+   },
+   "required": [
+    "id"
+   ],
+   "additionalProperties": false
+  },
+  "annotations": {
+   "title": "Apply pending movement",
+   "readOnlyHint": false,
+   "destructiveHint": false,
+   "openWorldHint": false
+  }
+ },
+ {
+  "name": "finance_mark_reminder_paid",
+  "title": "Mark reminder paid",
+  "description": "Mark a reminder (from finance_list_reminders) as paid. Optionally link the movement that paid it (e.g. one just created with finance_create_movement).",
+  "inputSchema": {
+   "type": "object",
+   "$schema": "https://json-schema.org/draft/2020-12/schema",
+   "properties": {
+    "movementId": {
+     "type": "string",
+     "format": "uuid",
+     "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12})$"
+    },
+    "reminderId": {
+     "type": "string",
+     "format": "uuid",
+     "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12})$",
+     "description": "Reminder id."
+    }
+   },
+   "required": [
+    "reminderId"
+   ],
+   "additionalProperties": false
+  },
+  "annotations": {
+   "title": "Mark reminder paid",
+   "readOnlyHint": false,
+   "destructiveHint": false,
+   "openWorldHint": false
+  }
+ }
+]

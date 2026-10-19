@@ -1,0 +1,813 @@
+[
+ {
+  "name": "fitness_get_day",
+  "description": "Nutrition summary, diary entries, the MyFitnessPal daily note, and the\n    local feel note for a day.\n\n    date: YYYY-MM-DD (default: today).\n    ",
+  "inputSchema": {
+   "properties": {
+    "date": {
+     "anyOf": [
+      {
+       "type": "string"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "title": "Date"
+    }
+   },
+   "title": "fitness_get_dayArguments",
+   "type": "object"
+  }
+ },
+ {
+  "name": "fitness_search_food",
+  "description": "Search MyFitnessPal's food database and return candidate matches.\n\n    Each candidate has name, brand, calories, macros, serving, and the\n    food_id + weight_id to pass to fitness_log_food to log exactly that item.\n    ",
+  "inputSchema": {
+   "properties": {
+    "query": {
+     "title": "Query",
+     "type": "string"
+    },
+    "limit": {
+     "default": 5,
+     "title": "Limit",
+     "type": "integer"
+    },
+    "with_macros": {
+     "default": true,
+     "title": "With Macros",
+     "type": "boolean"
+    }
+   },
+   "required": [
+    "query"
+   ],
+   "title": "fitness_search_foodArguments",
+   "type": "object"
+  }
+ },
+ {
+  "name": "fitness_draft_food",
+  "description": "Draft a food entry: numbered options to choose from before logging.\n\n    Each option lists every serving size with its calories/protein/carbs/fat\n    for the whole entry (serving × quantity) and a suggested_serving. The\n    min_/max_ targets (grams; calories in kcal) also apply to the whole\n    entry: options that fit come first, near misses follow, flagged\n    fits_targets=false. A food you've confirmed before for this query is\n    pinned to the top. The order is fixed once drafted.\n\n    Log a choice with fitness_log_food(draft_id=..., option=N, serving=M);\n    call this again with different targets to refine. Drafts last 24 hours.\n    date: YYYY-MM-DD (default: today).\n    ",
+  "inputSchema": {
+   "properties": {
+    "query": {
+     "title": "Query",
+     "type": "string"
+    },
+    "quantity": {
+     "default": 1,
+     "title": "Quantity",
+     "type": "number"
+    },
+    "meal": {
+     "default": "breakfast",
+     "title": "Meal",
+     "type": "string"
+    },
+    "date": {
+     "anyOf": [
+      {
+       "type": "string"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "title": "Date"
+    },
+    "min_calories": {
+     "anyOf": [
+      {
+       "type": "number"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "title": "Min Calories"
+    },
+    "max_calories": {
+     "anyOf": [
+      {
+       "type": "number"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "title": "Max Calories"
+    },
+    "min_protein": {
+     "anyOf": [
+      {
+       "type": "number"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "title": "Min Protein"
+    },
+    "max_protein": {
+     "anyOf": [
+      {
+       "type": "number"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "title": "Max Protein"
+    },
+    "min_carbs": {
+     "anyOf": [
+      {
+       "type": "number"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "title": "Min Carbs"
+    },
+    "max_carbs": {
+     "anyOf": [
+      {
+       "type": "number"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "title": "Max Carbs"
+    },
+    "min_fat": {
+     "anyOf": [
+      {
+       "type": "number"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "title": "Min Fat"
+    },
+    "max_fat": {
+     "anyOf": [
+      {
+       "type": "number"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "title": "Max Fat"
+    },
+    "limit": {
+     "default": 10,
+     "title": "Limit",
+     "type": "integer"
+    }
+   },
+   "required": [
+    "query"
+   ],
+   "title": "fitness_draft_foodArguments",
+   "type": "object"
+  }
+ },
+ {
+  "name": "fitness_log_food",
+  "description": "Log a food to the real MyFitnessPal diary.\n\n    Preferred: pick from a fitness_draft_food draft with draft_id + option\n    (+ serving, default the option's suggested_serving). meal, quantity, and\n    date default to the draft's. pin=True remembers the choice so logging\n    the same query later reuses this food and serving.\n\n    With only `query`: logs a pinned food, or the single exact-name match;\n    otherwise nothing is logged and a draft is returned (needs_choice=true)\n    to pick from. With food_id + weight_id (from fitness_search_food): logs\n    exactly that item, `query` being its display name.\n\n    meal: breakfast|lunch|dinner|snacks (default breakfast) or any meal name\n    on the account. quantity: number of servings (default 1).\n    date: YYYY-MM-DD (default today).\n    ",
+  "inputSchema": {
+   "properties": {
+    "query": {
+     "anyOf": [
+      {
+       "type": "string"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "title": "Query"
+    },
+    "meal": {
+     "anyOf": [
+      {
+       "type": "string"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "title": "Meal"
+    },
+    "quantity": {
+     "anyOf": [
+      {
+       "type": "number"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "title": "Quantity"
+    },
+    "date": {
+     "anyOf": [
+      {
+       "type": "string"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "title": "Date"
+    },
+    "draft_id": {
+     "anyOf": [
+      {
+       "type": "string"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "title": "Draft Id"
+    },
+    "option": {
+     "anyOf": [
+      {
+       "type": "integer"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "title": "Option"
+    },
+    "serving": {
+     "anyOf": [
+      {
+       "type": "integer"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "title": "Serving"
+    },
+    "pin": {
+     "default": true,
+     "title": "Pin",
+     "type": "boolean"
+    },
+    "food_id": {
+     "anyOf": [
+      {
+       "type": "string"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "title": "Food Id"
+    },
+    "weight_id": {
+     "anyOf": [
+      {
+       "type": "string"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "title": "Weight Id"
+    }
+   },
+   "title": "fitness_log_foodArguments",
+   "type": "object"
+  }
+ },
+ {
+  "name": "fitness_list_food_pins",
+  "description": "List remembered food choices (query → food and serving) that\n    fitness_log_food reuses. Stored locally only.",
+  "inputSchema": {
+   "properties": {},
+   "title": "fitness_list_food_pinsArguments",
+   "type": "object"
+  }
+ },
+ {
+  "name": "fitness_clear_food_pin",
+  "description": "Forget a remembered food choice for `query`, or every choice with\n    clear_all=True, so the next log of that query drafts options again.",
+  "inputSchema": {
+   "properties": {
+    "query": {
+     "anyOf": [
+      {
+       "type": "string"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "title": "Query"
+    },
+    "clear_all": {
+     "default": false,
+     "title": "Clear All",
+     "type": "boolean"
+    }
+   },
+   "title": "fitness_clear_food_pinArguments",
+   "type": "object"
+  }
+ },
+ {
+  "name": "fitness_delete_food",
+  "description": "Remove a food from the MyFitnessPal diary by name match.\n\n    query: text matched against logged entry names (e.g. \"banana\"). If this\n    matches nothing, the error lists what's actually logged that day/meal — use\n    that to retry with a better query. If it matches more than one entry (and\n    none is an exact name match), the error lists the candidates; narrow `query`\n    to pick one.\n    meal: optional breakfast|lunch|dinner|snacks or any meal name on the\n    account, to disambiguate duplicates. date: YYYY-MM-DD (default: today).\n    ",
+  "inputSchema": {
+   "properties": {
+    "query": {
+     "title": "Query",
+     "type": "string"
+    },
+    "meal": {
+     "anyOf": [
+      {
+       "type": "string"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "title": "Meal"
+    },
+    "date": {
+     "anyOf": [
+      {
+       "type": "string"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "title": "Date"
+    }
+   },
+   "required": [
+    "query"
+   ],
+   "title": "fitness_delete_foodArguments",
+   "type": "object"
+  }
+ },
+ {
+  "name": "fitness_modify_food",
+  "description": "Replace a MyFitnessPal diary entry: deletes the match, then adds a food.\n\n    query: the existing entry to replace (name match) within `meal`. If this\n    matches nothing, the error lists what's actually logged that day/meal — use\n    that to retry with a better query. If it matches more than one entry (and\n    none is an exact name match), the error lists the candidates; narrow `query`\n    to pick one.\n    new_query: the food to add instead; omit to re-add `query` (e.g. to change\n    quantity). The replacement is chosen like fitness_log_food's: a pinned\n    food or a single exact-name match is used directly; otherwise nothing is\n    changed and a draft comes back (needs_choice=true) — call again with the\n    same query plus draft_id + option (and optionally serving).\n    meal: breakfast|lunch|dinner|snacks or any meal name on the account,\n    used for both the delete and the add. quantity: servings (default 1, or\n    the draft's). date: YYYY-MM-DD (default: today).\n    ",
+  "inputSchema": {
+   "properties": {
+    "query": {
+     "title": "Query",
+     "type": "string"
+    },
+    "new_query": {
+     "anyOf": [
+      {
+       "type": "string"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "title": "New Query"
+    },
+    "meal": {
+     "default": "breakfast",
+     "title": "Meal",
+     "type": "string"
+    },
+    "quantity": {
+     "anyOf": [
+      {
+       "type": "number"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "title": "Quantity"
+    },
+    "date": {
+     "anyOf": [
+      {
+       "type": "string"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "title": "Date"
+    },
+    "draft_id": {
+     "anyOf": [
+      {
+       "type": "string"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "title": "Draft Id"
+    },
+    "option": {
+     "anyOf": [
+      {
+       "type": "integer"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "title": "Option"
+    },
+    "serving": {
+     "anyOf": [
+      {
+       "type": "integer"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "title": "Serving"
+    }
+   },
+   "required": [
+    "query"
+   ],
+   "title": "fitness_modify_foodArguments",
+   "type": "object"
+  }
+ },
+ {
+  "name": "fitness_log_weight",
+  "description": "Log a weight measurement to MyFitnessPal.\n\n    weight: in your MyFitnessPal account's display unit (kg or lbs).\n    Logging twice for the same date updates that day's measurement.\n    date: YYYY-MM-DD (default: today).\n    ",
+  "inputSchema": {
+   "properties": {
+    "weight": {
+     "title": "Weight",
+     "type": "number"
+    },
+    "date": {
+     "anyOf": [
+      {
+       "type": "string"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "title": "Date"
+    }
+   },
+   "required": [
+    "weight"
+   ],
+   "title": "fitness_log_weightArguments",
+   "type": "object"
+  }
+ },
+ {
+  "name": "fitness_log_water",
+  "description": "Log water to the real MyFitnessPal water tracker.\n\n    amount: quantity to add to the day's total. unit: cup | fl_oz | ml | l\n    (common spellings like \"cups\", \"oz\", \"fl oz\", \"milliliters\", \"litres\" are\n    accepted). replace: set the day's total to `amount` instead of adding —\n    use it to correct a mislogged total (amount=0 clears the day).\n    Returns previous_ml; to undo a mistake, call again with\n    amount=previous_ml, unit=\"ml\", replace=True.\n    date: YYYY-MM-DD (default: today).\n    ",
+  "inputSchema": {
+   "properties": {
+    "amount": {
+     "title": "Amount",
+     "type": "number"
+    },
+    "unit": {
+     "default": "cup",
+     "title": "Unit",
+     "type": "string"
+    },
+    "replace": {
+     "default": false,
+     "title": "Replace",
+     "type": "boolean"
+    },
+    "date": {
+     "anyOf": [
+      {
+       "type": "string"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "title": "Date"
+    }
+   },
+   "required": [
+    "amount"
+   ],
+   "title": "fitness_log_waterArguments",
+   "type": "object"
+  }
+ },
+ {
+  "name": "fitness_get_exercise",
+  "description": "Read the MyFitnessPal exercise diary (cardio + strength) for a day.\n\n    date: YYYY-MM-DD (default: today).\n    ",
+  "inputSchema": {
+   "properties": {
+    "date": {
+     "anyOf": [
+      {
+       "type": "string"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "title": "Date"
+    }
+   },
+   "title": "fitness_get_exerciseArguments",
+   "type": "object"
+  }
+ },
+ {
+  "name": "fitness_get_exercise_entries",
+  "description": "List a day's cardio and strength exercise-diary entries.\n\n    Each entry has its section, name, and that section's columns (cardio:\n    minutes, calories_burned; strength: sets, reps_set, weight_set). entry_id\n    is informational only — fitness_delete_exercise deletes by name match.\n    date: YYYY-MM-DD (default: today).\n    ",
+  "inputSchema": {
+   "properties": {
+    "date": {
+     "anyOf": [
+      {
+       "type": "string"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "title": "Date"
+    }
+   },
+   "title": "fitness_get_exercise_entriesArguments",
+   "type": "object"
+  }
+ },
+ {
+  "name": "fitness_delete_exercise",
+  "description": "Remove exercise-diary entries by name match (case-insensitive).\n\n    query: text matched against logged exercise names. By default deletes\n    exactly one entry, like fitness_delete_food: an exact name match wins;\n    otherwise several matches raise an error listing the candidates, and no\n    match raises an error listing what's actually logged.\n    all_matches: delete every entry whose name contains `query` — for\n    cleaning up syncs that log one workout as several same-named rows\n    (e.g. Garmin's \"Aerobics, general\"). Check fitness_get_exercise_entries\n    first; a short query can match many entries.\n    date: YYYY-MM-DD (default: today).\n    ",
+  "inputSchema": {
+   "properties": {
+    "query": {
+     "title": "Query",
+     "type": "string"
+    },
+    "date": {
+     "anyOf": [
+      {
+       "type": "string"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "title": "Date"
+    },
+    "all_matches": {
+     "default": false,
+     "title": "All Matches",
+     "type": "boolean"
+    }
+   },
+   "required": [
+    "query"
+   ],
+   "title": "fitness_delete_exerciseArguments",
+   "type": "object"
+  }
+ },
+ {
+  "name": "fitness_get_note",
+  "description": "Read the MyFitnessPal daily diary note (the free-text 'Notes' box at the\n    bottom of the day) straight from your account.\n\n    date: YYYY-MM-DD (default: today).\n    ",
+  "inputSchema": {
+   "properties": {
+    "date": {
+     "anyOf": [
+      {
+       "type": "string"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "title": "Date"
+    }
+   },
+   "title": "fitness_get_noteArguments",
+   "type": "object"
+  }
+ },
+ {
+  "name": "fitness_log_note",
+  "description": "Write the MyFitnessPal daily diary note (the free-text 'Notes' box at the\n    bottom of the day). This is your real MFP note, synced to your account —\n    distinct from the local-only fitness_log_feel.\n\n    text: the note body. append: add to the existing note on a new line instead\n    of replacing it. date: YYYY-MM-DD (default: today).\n    ",
+  "inputSchema": {
+   "properties": {
+    "text": {
+     "title": "Text",
+     "type": "string"
+    },
+    "date": {
+     "anyOf": [
+      {
+       "type": "string"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "title": "Date"
+    },
+    "append": {
+     "default": false,
+     "title": "Append",
+     "type": "boolean"
+    }
+   },
+   "required": [
+    "text"
+   ],
+   "title": "fitness_log_noteArguments",
+   "type": "object"
+  }
+ },
+ {
+  "name": "fitness_log_feel",
+  "description": "Save a 'how I feel today' note. Stored locally only — never sent to\n    MyFitnessPal.\n\n    rating: optional 1-5. date: YYYY-MM-DD (default: today).\n    ",
+  "inputSchema": {
+   "properties": {
+    "note": {
+     "anyOf": [
+      {
+       "type": "string"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "title": "Note"
+    },
+    "rating": {
+     "anyOf": [
+      {
+       "type": "integer"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "title": "Rating"
+    },
+    "date": {
+     "anyOf": [
+      {
+       "type": "string"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "title": "Date"
+    }
+   },
+   "title": "fitness_log_feelArguments",
+   "type": "object"
+  }
+ },
+ {
+  "name": "fitness_get_trends",
+  "description": "A single metric over a date range, for charts/analysis.\n\n    metric: weight | calories_in | protein | carbs | fat.\n    start/end: YYYY-MM-DD (default: last 30 days).\n    Returns {metric, points: [{day, value}, ...]} with nulls omitted.\n    ",
+  "inputSchema": {
+   "properties": {
+    "metric": {
+     "title": "Metric",
+     "type": "string"
+    },
+    "start": {
+     "anyOf": [
+      {
+       "type": "string"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "title": "Start"
+    },
+    "end": {
+     "anyOf": [
+      {
+       "type": "string"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "title": "End"
+    }
+   },
+   "required": [
+    "metric"
+   ],
+   "title": "fitness_get_trendsArguments",
+   "type": "object"
+  }
+ },
+ {
+  "name": "fitness_bulk_export",
+  "description": "Export a whole date range at once for analysis: per-day nutrition\n    totals, food entries with macros, the MyFitnessPal daily note, and local\n    feel notes. Read-only.\n\n    start/end: YYYY-MM-DD (default: last 30 days ending today).\n    sync_first: gap-fill from MyFitnessPal before exporting. Off by default so\n    large historical exports stay fast on cached data.\n    ",
+  "inputSchema": {
+   "properties": {
+    "start": {
+     "anyOf": [
+      {
+       "type": "string"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "title": "Start"
+    },
+    "end": {
+     "anyOf": [
+      {
+       "type": "string"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "title": "End"
+    },
+    "sync_first": {
+     "default": false,
+     "title": "Sync First",
+     "type": "boolean"
+    }
+   },
+   "title": "fitness_bulk_exportArguments",
+   "type": "object"
+  }
+ }
+]

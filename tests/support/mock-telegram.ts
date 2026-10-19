@@ -185,6 +185,7 @@ export function textUpdate(fromId: number, text: string) {
       chat: { id: fromId, type: 'private', first_name: 'U' },
       from: { id: fromId, is_bot: false, first_name: 'U', language_code: 'es' },
       text,
+      ...(/^\/\w+/.test(text) ? { entities: [{ type: 'bot_command', offset: 0, length: text.match(/^\/\w+/)![0].length }] } : {}),
     },
   };
 }

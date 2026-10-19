@@ -16,7 +16,8 @@
     "digest": "tsx --env-file-if-exists=.env scripts/digest.ts",
     "setup:mac": "scripts/setup-mac.sh",
     "deploy": "scripts/deploy.sh",
-    "backup": "scripts/backup.sh"
+    "backup": "scripts/backup.sh",
+    "replay": "tsx --env-file-if-exists=.env tests/replay/run.ts"
   },
   "license": "UNLICENSED",
   "type": "module",
