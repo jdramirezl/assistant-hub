@@ -10,6 +10,8 @@ import { loadRegistry, parseRegistry } from './mcp/registry.js';
 import { McpToolbox } from './mcp/toolbox.js';
 import { NutritionTracker } from './mcp/nutrition.js';
 import { trimForModel } from './mcp/trim.js';
+import { createLogMeal } from './mcp/log-meal.js';
+import { FINANCE_WRITES, FinanceDirectory } from './mcp/finance-cache.js';
 import { ToolCallFilter } from '@mastra/core/processors';
 import { Budget, BudgetGuard, BUDGET_MESSAGE } from './budget.js';
 import { createGeminiModels, modelChain } from './models.js';
@@ -123,6 +125,7 @@ export function createHub(config: HubConfig, deps: HubDeps = {}): Hub {
           nutrition.recordResult(tool, input, result); // guards see the FULL result
           if (tool === 'fitness_log_food') out = nutrition.annotateLog(input, result);
         }
+        if (FINANCE_WRITES.has(tool)) financeDir.invalidate();
         return trimForModel(tool, out);
       },
     },
@@ -132,6 +135,8 @@ export function createHub(config: HubConfig, deps: HubDeps = {}): Hub {
     },
   });
 
+  const financeDir = new FinanceDirectory(toolbox, { now: deps.now, timezone: config.timezone, available: async () => (await toolbox.getTools(), toolbox.status().finance?.state === 'up') });
+  const logMeal = createLogMeal(toolbox, log);
   const planStore = new PlanStore(kv, deps.now);
   const presenter = config.telegram.enabled
     ? new TelegramPlanPresenter(
@@ -166,8 +171,15 @@ export function createHub(config: HubConfig, deps: HubDeps = {}): Hub {
     memory,
     persona: config.persona,
     now: deps.now,
-    tools: async () => ({ ...toolsForDomains(await toolbox.getTools(), usageContext.getStore()?.domains), propose_plan: proposePlan }),
-    extraInstructions: () => toolbox.statusNote(),
+    tools: async () => {
+      const app = toolsForDomains(await toolbox.getTools(), usageContext.getStore()?.domains);
+      return { ...app, ...('fitness_log_food' in app ? { log_meal: logMeal } : {}), propose_plan: proposePlan };
+    },
+    extraInstructions: async () => {
+      const domains = usageContext.getStore()?.domains;
+      const fin = !domains || domains.includes('finance') ? await financeDir.prompt().catch(() => '') : '';
+      return [toolbox.statusNote(), fin].filter(Boolean).join('\n');
+    },
     guards: [guard],
     // Older turns keep their text but drop tool calls/results; the current run keeps all of them.
     inputGuards: [new WorkingMemoryPrompt(memory), new ToolCallFilter()],

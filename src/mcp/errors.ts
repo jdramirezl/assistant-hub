@@ -25,7 +25,7 @@ export function masonError(text: string): SharedError {
   if (/session|re-?auth|log ?in|login|unauthori[sz]ed|\b401\b|mfp-mcp auth/i.test(t)) {
     return sharedError('MFP_SESSION_EXPIRED', t, false);
   }
-  if (/unknown|invalid|not found|no draft option|no .* match|must be|is required|missing/i.test(t)) {
+  if (/unknown|invalid|not found|no draft option|no .* match|no .*found|must be|is required|missing/i.test(t)) {
     return sharedError('MFP_BAD_REQUEST', t, false);
   }
   return sharedError('MFP_ERROR', t, false);

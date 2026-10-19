@@ -32,9 +32,8 @@ export const DOMAIN_RULES: Record<Domain, string[]> = {
     'Finance (finance_*): first call finance_list_accounts (and finance_list_pockets when a pocket matters) to resolve names like "Nequi" or "Nu México" to their ids; never guess ids. Movement types: EgresoNormal (one-off expense), IngresoNormal (one-off income), EgresoFijo / IngresoFijo (recurring fixed expense / income). Amounts are always positive numbers in the account\'s currency ("25k" = 25000); the type gives the direction. Dates are YYYY-MM-DD in local time; default to today. If a tool returns VALIDATION_ERROR or NOT_FOUND, tell the user what is wrong and ask; do not say it was saved.',
   ],
   fitness: [
-    'MyFitnessPal (fitness_*): search and draft in English: translate Spanish food names first ("huevo" → "egg", "pan integral" → "whole wheat bread"); keep dish names that have no English equivalent (arepa). Always draft with fitness_draft_food, never take the first result: pick the option and the serving whose unit matches what the user said (1 egg, 1 slice, 100 g, 1 cup) and set quantity to the number of those units.',
-'Before logging, estimate the expected kcal per item yourself and state it briefly. Compare it with the chosen draft serving\'s calories; if they differ by more than 2× (twice or half), pick another option/serving or ask the user, and do not log. If a log result has a "warning", tell the user right away and offer to fix it.',
-'After logging a meal, report it once from the last fitness_log_food result\'s meal_total (e.g. "Breakfast logged: 3 items, 420 kcal"); if it is missing, call fitness_get_day once.',
+    'MyFitnessPal: to log food ALWAYS call log_meal ONCE with every item of the message (English food names, the user\'s quantity and unit, your kcal estimate per item, meal). Do not draft/log item by item. If it returns "ambiguous", ask the user to choose (show name, serving, kcal) and log nothing else for those; when they answer, call log_meal again with a more specific query. Items in "needs_confirmation" (> 800 kcal): call fitness_log_food with exactly log_with (an approval card is shown). Then reply once with the logged items and meal_totals (e.g. "Desayuno: 3 items, 420 kcal").',
+    'For corrections ("no, eran 2"), use fitness_modify_food (quantity) on the entry; for other MyFitnessPal tasks use the matching fitness_* tool.',
   ],
 };
 
@@ -79,7 +78,7 @@ export interface AssistantOptions {
   /** Model config (hub passes the Gemini chain; tests pass a mock). */
   model: unknown;
   /** Extra, per-request lines appended to the instructions (e.g. which apps are down). */
-  extraInstructions?: () => string;
+  extraInstructions?: () => string | Promise<string>;
   /** Processors that run in both the input and output phases (e.g. the budget guard). */
   guards?: (InputProcessor & OutputProcessor)[];
   /** Output-only processors (e.g. the batch-approval guard). */
@@ -97,11 +96,11 @@ export function createAssistantAgent(opts: AssistantOptions): Agent {
     id: ASSISTANT_ID,
     name: 'Assistant',
     description: 'Personal assistant for finance, fitness and future apps',
-    instructions: () =>
+    instructions: async () =>
       [
         buildInstructions(opts.timezone, new Date(), { persona: opts.persona, domains: usageContext.getStore()?.domains }),
         '',
-        dynamicContext(opts.timezone, new Date(opts.now?.() ?? Date.now()), opts.extraInstructions?.() ?? ''),
+        dynamicContext(opts.timezone, new Date(opts.now?.() ?? Date.now()), (await opts.extraInstructions?.()) ?? ''),
       ].join('\n'),
     model: opts.model as never,
     tools: (opts.tools ?? {}) as never,

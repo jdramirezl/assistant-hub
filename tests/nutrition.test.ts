@@ -54,12 +54,12 @@ describe('NutritionTracker (estimate before logging)', () => {
 
 describe('fitness prompt rules', () => {
   const t = buildInstructions('America/Bogota');
-  it('search in English, serving unit, estimate first, 2× check, readback', () => {
-    expect(t).toMatch(/search.*in English/i);
-    expect(t).toMatch(/serving.*unit/i);
-    expect(t).toMatch(/estimat/i);
-    expect(t).toMatch(/2×|twice/);
-    expect(t).toMatch(/meal_total/);
+  it('one log_meal call per meal (English names, unit, estimate), ask on ambiguous, readback', () => {
+    expect(t).toMatch(/log_meal ONCE/);
+    expect(t).toMatch(/English food names/);
+    expect(t).toMatch(/kcal estimate/);
+    expect(t).toMatch(/ambiguous/);
+    expect(t).toMatch(/meal_totals/);
   });
 });
 

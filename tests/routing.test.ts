@@ -35,10 +35,10 @@ describe('per-domain prompt and tools', () => {
     const fin = buildInstructions('America/Bogota', new Date(), { domains: ['finance'] });
     const fit = buildInstructions('America/Bogota', new Date(), { domains: ['fitness'] });
     expect(fin).toContain('EgresoNormal');
-    expect(fin).not.toContain('fitness_draft_food');
-    expect(fit).toContain('fitness_draft_food');
+    expect(fin).not.toContain('log_meal');
+    expect(fit).toContain('log_meal');
     expect(fit).not.toContain('EgresoNormal');
-    expect(buildInstructions('America/Bogota')).toMatch(/fitness_draft_food[\s\S]*EgresoNormal/);
+    expect(buildInstructions('America/Bogota')).toMatch(/log_meal[\s\S]*EgresoNormal/);
     for (const t of [fin, fit]) expect(t).toContain('propose_plan'); // batch rule is shared
   });
   it('toolsForDomains keeps non-app tools', () => {
@@ -85,7 +85,8 @@ describe('through Telegram', () => {
     expect(a!.some((t) => t.startsWith('fitness_'))).toBe(false);
     expect(a).toEqual(expect.arrayContaining(['finance_create_movement', 'propose_plan']));
     expect(b!.some((t) => t.startsWith('finance_'))).toBe(false);
-    expect(b).toEqual(expect.arrayContaining(['fitness_log_food', 'propose_plan']));
+    expect(b).toEqual(expect.arrayContaining(['fitness_log_food', 'log_meal', 'propose_plan']));
+    expect(a).not.toContain('log_meal');
   });
   it('a voice note gets every tool', async () => {
     const sm = await boot([{ text: 'ok' }]);

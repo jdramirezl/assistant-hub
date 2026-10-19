@@ -25,6 +25,12 @@ const CATALOG: Record<string, { name: string; servings: { label: string; kcal: n
   coffee: [{ name: 'Coffee, black', servings: [{ label: '1 cup', kcal: 2 }] }],
   lasagna: [{ name: 'Lasagna, family tray', servings: [{ label: '1 tray', kcal: 1700 }, { label: '1 cup', kcal: 300 }] }],
   arepa: [{ name: 'Arepa, corn', servings: [{ label: '1 arepa', kcal: 220 }] }],
+  rice: [{ name: 'Rice, white, cooked', servings: [{ label: '1 cup', kcal: 205 }, { label: '100 g', kcal: 130 }] }],
+  sandwich: [
+    { name: 'Club sandwich', servings: [{ label: '1 sandwich', kcal: 590 }] },
+    { name: 'Ham and cheese sandwich', servings: [{ label: '1 sandwich', kcal: 350 }] },
+    { name: 'Chicken sandwich', servings: [{ label: '1 sandwich', kcal: 450 }] },
+  ],
 };
 
 export interface FakeMason {
@@ -123,6 +129,8 @@ export async function startFakeMason(initial: DiaryEntry[] = []): Promise<FakeMa
         serving: z.number().optional(),
         food_id: z.string().optional(),
         weight_id: z.string().optional(),
+        pin: z.boolean().optional(),
+        date: z.string().optional(),
       }),
       mcp: { annotations: { readOnlyHint: false, destructiveHint: false } },
       execute: async (i) => {

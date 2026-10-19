@@ -294,11 +294,11 @@ export class McpToolbox {
    * Run a tool directly with exact args, bypassing the agent and its approval gate (used to
    * execute a plan the user approved). Returns the normalized result or the shared error shape.
    */
-  async execute(name: string, args: Record<string, unknown>): Promise<unknown> {
+  async execute(name: string, args: Record<string, unknown>, opts: { raw?: boolean } = {}): Promise<unknown> {
     const tool = (await this.getTools())[name] as unknown as { execute?: (i: unknown, c: unknown) => Promise<unknown> } | undefined;
     if (!tool?.execute) return sharedError('TOOL_UNAVAILABLE', `${name} is not available right now`, true);
     try {
-      return await tool.execute(args, {});
+      return await tool.execute(args, opts.raw ? { hubRaw: true } : {});
     } catch (err) {
       return sharedError('TOOL_ERROR', firstLine((err as Error).message), false);
     }
@@ -316,7 +316,8 @@ export class McpToolbox {
         try {
           const out = normalizeResult(await (t.execute as (i: unknown, c: unknown) => Promise<unknown>)(input, ctx), style);
           const hook = this.opts.hooks?.afterResult;
-          return hook ? hook(name, (input ?? {}) as Record<string, unknown>, out) : out;
+          const raw = (ctx as { hubRaw?: boolean } | undefined)?.hubRaw === true; // hub-internal call: full, untrimmed result
+          return hook && !raw ? hook(name, (input ?? {}) as Record<string, unknown>, out) : out;
         } catch (err) {
           const reason = firstLine((err as Error).message);
           const slot = this.slots[server];
