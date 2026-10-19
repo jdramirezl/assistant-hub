@@ -8,6 +8,7 @@ import { createTelegramChannel, connectTelegram, type TelegramDeps } from './cha
 import type { KvStore } from './kv.js';
 import { loadRegistry, parseRegistry } from './mcp/registry.js';
 import { McpToolbox } from './mcp/toolbox.js';
+import { NutritionTracker } from './mcp/nutrition.js';
 import { Budget, BudgetGuard, BUDGET_MESSAGE } from './budget.js';
 import { createGeminiModels, modelChain } from './models.js';
 import { withMalformedFallback } from './llm/escalate.js';
@@ -74,9 +75,18 @@ export function createHub(config: HubConfig, deps: HubDeps = {}): Hub {
   const guard = new BudgetGuard(budget, (s) => log(`[budget] blocked: ${s.tokens} tokens, $${s.costUsd.toFixed(4)} on ${s.day}`));
   const registry = deps.registry !== undefined ? parseRegistry(deps.registry) : loadRegistry(config.mcpRegistryPath);
   const notify = createNotifier(config, { apiBaseUrl: deps.telegram?.apiBaseUrl, log });
+  const nutrition = new NutritionTracker();
   const toolbox = new McpToolbox(registry, deps.env ?? process.env, {
     log,
     now: deps.now,
+    hooks: {
+      approval: (tool) => (tool === 'fitness_log_food' ? (input) => nutrition.needsConfirmation(input) : undefined),
+      afterResult: (tool, input, result) => {
+        if (!tool.startsWith('fitness_')) return result;
+        nutrition.recordResult(tool, input, result);
+        return tool === 'fitness_log_food' ? nutrition.annotateLog(input, result) : result;
+      },
+    },
     onRecovered: (name, downForMs) => {
       log(`[mcp] ${name} is back after ${Math.round(downForMs / 60_000)} min`);
       if (downForMs > RECOVERY_NOTICE_MS) void notify(voice.back(name, Math.round(downForMs / 60_000)));

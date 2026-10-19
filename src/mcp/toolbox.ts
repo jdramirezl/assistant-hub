@@ -16,6 +16,15 @@ export interface ToolboxOptions {
   perServerTimeoutMs?: number;
   /** Called when a server that was down is reachable again. */
   onRecovered?: (name: string, downForMs: number) => void;
+  /** Per-tool hooks (e.g. MFP calorie guard). */
+  hooks?: ToolHooks;
+}
+
+export interface ToolHooks {
+  /** Extra, input-dependent approval for a tool (on top of the static policy). */
+  approval?(tool: string): ((input: Record<string, unknown>) => boolean | Promise<boolean>) | undefined;
+  /** Inspect/transform a tool's normalized result. */
+  afterResult?(tool: string, input: Record<string, unknown>, result: unknown): unknown;
 }
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any -- MCP tools are schema-less at compile time
@@ -270,6 +279,31 @@ export class McpToolbox {
     if (changed) this.log(`[mcp] ${name}: ${s.state}${'reason' in s ? ` (${s.reason})` : ` (${s.tools} tools)`}`);
   }
 
+  private approvalFor(name: string, annotations: ToolAnnotations | undefined) {
+    if (requiresApproval(name, annotations)) return true;
+    const dynamic = this.opts.hooks?.approval?.(name);
+    return dynamic ? (input: unknown) => dynamic((input ?? {}) as Record<string, unknown>) : false;
+  }
+
+  /** True when the static policy gates this tool (destructive / delete-like / named). */
+  isGated(name: string): boolean {
+    return requiresApproval(name, this.annotationsFor(name));
+  }
+
+  /**
+   * Run a tool directly with exact args, bypassing the agent and its approval gate (used to
+   * execute a plan the user approved). Returns the normalized result or the shared error shape.
+   */
+  async execute(name: string, args: Record<string, unknown>): Promise<unknown> {
+    const tool = (await this.getTools())[name] as unknown as { execute?: (i: unknown, c: unknown) => Promise<unknown> } | undefined;
+    if (!tool?.execute) return sharedError('TOOL_UNAVAILABLE', `${name} is not available right now`, true);
+    try {
+      return await tool.execute(args, {});
+    } catch (err) {
+      return sharedError('TOOL_ERROR', firstLine((err as Error).message), false);
+    }
+  }
+
   private wrap(name: string, server: string, tool: AnyTool, style: ErrorStyle): AnyTool {
     const t = tool as AnyTool & { mcp?: { annotations?: ToolAnnotations } };
     return createTool({
@@ -277,10 +311,12 @@ export class McpToolbox {
       description: t.description ?? name,
       inputSchema: t.inputSchema as never,
       mcp: t.mcp as never,
-      requireApproval: requiresApproval(name, t.mcp?.annotations),
+      requireApproval: this.approvalFor(name, t.mcp?.annotations),
       execute: async (input: unknown, ctx: unknown) => {
         try {
-          return normalizeResult(await (t.execute as (i: unknown, c: unknown) => Promise<unknown>)(input, ctx), style);
+          const out = normalizeResult(await (t.execute as (i: unknown, c: unknown) => Promise<unknown>)(input, ctx), style);
+          const hook = this.opts.hooks?.afterResult;
+          return hook ? hook(name, (input ?? {}) as Record<string, unknown>, out) : out;
         } catch (err) {
           const reason = firstLine((err as Error).message);
           const slot = this.slots[server];
