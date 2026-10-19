@@ -92,17 +92,18 @@ describe('McpToolbox', () => {
     expect(res).toMatchObject({ error: { code: 'MCP_UNAVAILABLE', retryable: true } });
   });
 
-  it('rediscovers a server that comes back after the refresh interval', async () => {
+  it('rediscovers a server that comes back, on the next call after the on-demand gap', async () => {
     let now = 0;
     const url = await deadUrl();
     const port = Number(new URL(url).port);
-    const tb = new McpToolbox(parseRegistry({ servers: { echo: { url } } }), {}, { log: () => {}, now: () => now, refreshMs: 60_000, perServerTimeoutMs: 3_000 });
+    const tb = new McpToolbox(parseRegistry({ servers: { echo: { url } } }), {}, { log: () => {}, now: () => now, perServerTimeoutMs: 3_000 });
     closers.push(() => tb.close());
     expect(await tb.getTools()).toEqual({});
     const s = await startEchoServer(port);
     closers.push(s.close);
-    expect(await tb.getTools()).toEqual({}); // cached
-    now = 61_000;
+    now = 5_000;
+    expect(await tb.getTools()).toEqual({}); // last attempt too recent: no hammering
+    now = 16_000;
     expect(Object.keys(await tb.getTools())).toContain('echo_say');
   });
 });

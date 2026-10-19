@@ -49,6 +49,9 @@ export interface Hub {
   stop(): Promise<void>;
 }
 
+/** Tell the user when an app comes back only after a real outage, not a blip. */
+const RECOVERY_NOTICE_MS = 10 * 60_000;
+
 const REPORTER_INSTRUCTIONS =
   "You write the user's periodic reports (finance, fitness, …) for Telegram. Be concise, concrete and friendly. Never invent numbers.";
 
@@ -65,7 +68,15 @@ export function createHub(config: HubConfig, deps: HubDeps = {}): Hub {
   const budget = new Budget(kv, config.budget, config.timezone, deps.now);
   const guard = new BudgetGuard(budget, (s) => log(`[budget] blocked: ${s.tokens} tokens, $${s.costUsd.toFixed(4)} on ${s.day}`));
   const registry = deps.registry !== undefined ? parseRegistry(deps.registry) : loadRegistry(config.mcpRegistryPath);
-  const toolbox = new McpToolbox(registry, deps.env ?? process.env, { log });
+  let notifyRef: Notify | undefined;
+  const toolbox = new McpToolbox(registry, deps.env ?? process.env, {
+    log,
+    now: deps.now,
+    onRecovered: (name, downForMs) => {
+      log(`[mcp] ${name} is back after ${Math.round(downForMs / 60_000)} min`);
+      if (downForMs > RECOVERY_NOTICE_MS) void notifyRef?.(`✅ ${name} is back (it was unreachable for ${Math.round(downForMs / 60_000)} min).`);
+    },
+  });
 
   const assistant = createAssistantAgent({
     timezone: config.timezone,
@@ -86,6 +97,7 @@ export function createHub(config: HubConfig, deps: HubDeps = {}): Hub {
   });
 
   const notify = createNotifier(config, { apiBaseUrl: deps.telegram?.apiBaseUrl, log });
+  notifyRef = notify;
   const digest = new Digest({
     kv,
     sections: deps.digestSections ?? [],
@@ -134,6 +146,7 @@ export function createHub(config: HubConfig, deps: HubDeps = {}): Hub {
     runDigest,
     async start(opts = {}) {
       await toolbox.getTools(); // discover apps at boot so status is logged early
+      if (opts.ops) toolbox.startBackgroundRetry();
       if (telegram && config.telegram.enabled) {
         await connectTelegram(telegram, ASSISTANT_ID, {
           botToken: config.telegram.botToken,

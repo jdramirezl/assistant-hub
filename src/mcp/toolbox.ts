@@ -1,7 +1,7 @@
 import { MCPClient } from '@mastra/mcp';
 import { createTool, type Tool } from '@mastra/core/tools';
 import { noopLogger } from '@mastra/core/logger';
-import { resolveHeaders, resolveUrl, type Registry } from './registry.js';
+import { assertTransportSecurity, resolveHeaders, resolveUrl, type Registry } from './registry.js';
 import { requiresApproval } from '../approvals.js';
 import { mapToolErrorText, sharedError, unavailableError, type ErrorStyle } from './errors.js';
 
@@ -13,9 +13,9 @@ export type ServerStatus =
 export interface ToolboxOptions {
   log?: (m: string) => void;
   now?: () => number;
-  /** How often to retry discovery (servers that were down come back). */
-  refreshMs?: number;
   perServerTimeoutMs?: number;
+  /** Called when a server that was down is reachable again. */
+  onRecovered?: (name: string, downForMs: number) => void;
 }
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any -- MCP tools are schema-less at compile time
@@ -57,20 +57,39 @@ export function publicToolName(server: string, toolName: string, prefix: string 
   return toolName.startsWith(`${prefix}_`) ? toolName : `${prefix}_${toolName}`;
 }
 
+/** Retry schedule for a server that is down: 60 s, then ×2 up to 10 min. */
+export const RETRY_BASE_MS = 60_000;
+export const RETRY_MAX_MS = 10 * 60_000;
+/** On an incoming message, retry a down server if the last attempt is at least this old. */
+export const ON_DEMAND_GAP_MS = 15_000;
+
+interface ServerSlot {
+  client?: MCPClient;
+  tools: Record<string, AnyTool>;
+  annotations: Record<string, ToolAnnotations | undefined>;
+  status: ServerStatus;
+  attempts: number;
+  lastAttemptAt: number;
+  nextAt: number;
+  downSince?: number;
+  inflight?: Promise<void>;
+}
+
+let clientSeq = 0;
+
 /**
- * Builds the agent's MCP tools from the registry. Never throws: unreachable servers are
- * reported in `status()` and retried after `refreshMs`, and the hub keeps running.
+ * Builds the agent's MCP tools from the registry, one MCP client per server. Never throws:
+ * an unreachable server is reported in `status()` and retried on its own (in the background
+ * with backoff via `tick()`, and on the next message), while healthy servers keep their
+ * connections. Recovered servers' tools appear without a restart.
  */
 export class McpToolbox {
-  private client?: MCPClient;
-  private tools: Record<string, AnyTool> = {};
-  private annotations: Record<string, ToolAnnotations | undefined> = {};
-  private statuses: Record<string, ServerStatus> = {};
-  private lastRefresh = -Infinity;
-  private inflight?: Promise<void>;
+  private slots: Record<string, ServerSlot> = {};
+  private started = false;
+  private initial?: Promise<void>;
+  private timer?: ReturnType<typeof setInterval>;
   private readonly log: (m: string) => void;
   private readonly now: () => number;
-  private readonly refreshMs: number;
 
   constructor(
     private readonly registry: Registry,
@@ -79,104 +98,176 @@ export class McpToolbox {
   ) {
     this.log = opts.log ?? ((m) => console.warn(m));
     this.now = opts.now ?? Date.now;
-    this.refreshMs = opts.refreshMs ?? 60_000;
   }
 
   status(): Record<string, ServerStatus> {
-    return { ...this.statuses };
+    return Object.fromEntries(Object.entries(this.slots).map(([n, s]) => [n, s.status]));
+  }
+
+  retryInfo(): Record<string, { attempts: number; nextAt: number }> {
+    return Object.fromEntries(
+      Object.entries(this.slots)
+        .filter(([, s]) => s.status.state === 'down')
+        .map(([n, s]) => [n, { attempts: s.attempts, nextAt: s.nextAt }]),
+    );
   }
 
   annotationsFor(publicName: string): ToolAnnotations | undefined {
-    return this.annotations[publicName];
+    for (const s of Object.values(this.slots)) if (publicName in s.annotations) return s.annotations[publicName];
+    return undefined;
   }
 
   /** One line for the system prompt when some apps are unavailable; '' when all is well. */
   statusNote(): string {
-    const down = Object.entries(this.statuses).filter(([, s]) => s.state === 'down').map(([n]) => n);
+    const down = Object.entries(this.slots).filter(([, s]) => s.status.state === 'down').map(([n]) => n);
     if (down.length === 0) return '';
     return `These apps are currently unavailable: ${down.join(', ')}. If the user asks for them, say so briefly instead of guessing.`;
   }
 
+  /**
+   * Tools for the next model call. Called on every message: down servers whose last attempt
+   * is older than ON_DEMAND_GAP_MS are retried first, so an app that came back is usable
+   * right away.
+   */
   async getTools(): Promise<Record<string, AnyTool>> {
-    const first = this.lastRefresh === -Infinity;
-    const anyDown = Object.values(this.statuses).some((s) => s.state === 'down');
-    // Only re-discover when something is down, so healthy connections aren't torn down mid-call.
-    if (first || (anyDown && this.now() - this.lastRefresh >= this.refreshMs)) {
-      this.inflight ??= this.refresh().finally(() => (this.inflight = undefined));
-      await this.inflight;
-    }
-    return this.tools;
+    await this.ensureStarted();
+    const now = this.now();
+    const due = Object.entries(this.slots).filter(([, s]) => s.status.state === 'down' && now - s.lastAttemptAt >= ON_DEMAND_GAP_MS);
+    await Promise.all(due.map(([n]) => this.connect(n)));
+    return this.allTools();
+  }
+
+  /** Background retry step: reconnect down servers whose backoff has elapsed. */
+  async tick(): Promise<void> {
+    await this.ensureStarted();
+    const now = this.now();
+    const due = Object.entries(this.slots).filter(([, s]) => s.status.state === 'down' && now >= s.nextAt);
+    await Promise.all(due.map(([n]) => this.connect(n)));
+  }
+
+  /** Start background retries (every `intervalMs` checks which servers are due). */
+  startBackgroundRetry(intervalMs = 5_000): void {
+    if (this.timer) return;
+    this.timer = setInterval(() => void this.tick().catch(() => {}), intervalMs);
+    this.timer.unref?.();
   }
 
   async close(): Promise<void> {
-    await this.client?.disconnect().catch(() => {});
-    this.client = undefined;
+    if (this.timer) clearInterval(this.timer);
+    this.timer = undefined;
+    await Promise.all(Object.values(this.slots).map((s) => s.client?.disconnect().catch(() => {})));
+    for (const s of Object.values(this.slots)) s.client = undefined;
   }
 
-  private async refresh(): Promise<void> {
-    this.lastRefresh = this.now();
-    const servers: Record<string, ConstructorParameters<typeof MCPClient>[0]['servers'][string]> = {};
-    const statuses: Record<string, ServerStatus> = {};
+  private allTools(): Record<string, AnyTool> {
+    return Object.assign({}, ...Object.values(this.slots).map((s) => s.tools));
+  }
 
+  private ensureStarted(): Promise<void> {
+    if (this.started) return this.initial ?? Promise.resolve();
+    this.started = true;
+    const toConnect: string[] = [];
     for (const [name, entry] of Object.entries(this.registry.servers)) {
-      if (!entry.enabled) {
-        statuses[name] = { state: 'skipped', reason: 'disabled' };
-        continue;
-      }
-      const url = resolveUrl(entry.url, this.env);
-      if (!url) {
-        statuses[name] = { state: 'skipped', reason: `url not configured (${entry.url})` };
-        continue;
-      }
-      const { headers, missing } = resolveHeaders(entry.headers, this.env);
-      if (missing.length) {
-        statuses[name] = { state: 'skipped', reason: `missing secret(s): ${missing.join(', ')}` };
-        continue;
-      }
-      servers[name] = {
-        url: new URL(url),
-        requestInit: { headers },
-        timeout: entry.timeoutMs,
-        connectTimeout: entry.timeoutMs,
-        onToolError: 'return',
-        logger: () => {},
+      const skip = this.skipReason(name, entry);
+      this.slots[name] = {
+        tools: {},
+        annotations: {},
+        status: { state: 'skipped', reason: skip ?? 'connecting' },
+        attempts: 0,
+        lastAttemptAt: -Infinity,
+        nextAt: 0,
       };
+      if (skip) this.log(`[mcp] ${name}: skipped (${skip})`);
+      else toConnect.push(name);
     }
+    this.initial = Promise.all(toConnect.map((n) => this.connect(n))).then(() => undefined);
+    return this.initial;
+  }
 
-    await this.close();
+  private skipReason(name: string, entry: Registry['servers'][string]): string | undefined {
+    if (!entry.enabled) return 'disabled';
+    const url = resolveUrl(entry.url, this.env);
+    if (!url) return `not configured on this machine (${entry.url})`;
+    try {
+      assertTransportSecurity(name, url);
+    } catch (err) {
+      return (err as Error).message;
+    }
+    const { missing } = resolveHeaders(entry.headers, this.env);
+    if (missing.length) return `missing secret(s): ${missing.join(', ')}`;
+    return undefined;
+  }
+
+  private connect(name: string): Promise<void> {
+    const slot = this.slots[name]!;
+    slot.inflight ??= this.doConnect(name).finally(() => (slot.inflight = undefined));
+    return slot.inflight;
+  }
+
+  private async doConnect(name: string): Promise<void> {
+    const slot = this.slots[name]!;
+    const entry = this.registry.servers[name]!;
+    slot.lastAttemptAt = this.now();
+    slot.attempts++;
+    await slot.client?.disconnect().catch(() => {});
+    const url = resolveUrl(entry.url, this.env)!;
+    const { headers } = resolveHeaders(entry.headers, this.env);
+    const client = new MCPClient({
+      id: `assistant-hub-${name}-${++clientSeq}`,
+      servers: {
+        [name]: {
+          url: new URL(url),
+          requestInit: { headers },
+          timeout: entry.timeoutMs,
+          connectTimeout: entry.timeoutMs,
+          onToolError: 'return',
+          logger: () => {},
+        },
+      },
+      clientInfo: { name: 'assistant-hub', version: '0.1.0' },
+    });
+    client.__setLogger(noopLogger); // failures are summarized by our own [mcp] log lines
+    slot.client = client;
+    const { tools: raw, errors } = await client
+      .listToolsWithErrors({ perServerTimeoutMs: this.opts.perServerTimeoutMs ?? 10_000 })
+      .catch((err: Error) => ({ tools: {}, errors: { [name]: err.message } as Record<string, string> }));
+    const err = (errors as Record<string, string>)[name];
+    if (err) {
+      slot.tools = slot.status.state === 'up' ? slot.tools : {};
+      this.markDown(name, firstLine(err));
+      return;
+    }
     const tools: Record<string, AnyTool> = {};
     const annotations: Record<string, ToolAnnotations | undefined> = {};
-
-    if (Object.keys(servers).length > 0) {
-      this.client = new MCPClient({ id: `assistant-hub-${this.lastRefresh}`, servers, clientInfo: { name: 'assistant-hub', version: '0.1.0' } });
-      this.client.__setLogger(noopLogger); // failures are summarized by our own [mcp] log lines
-      const { tools: raw, errors } = await this.client
-        .listToolsWithErrors({ perServerTimeoutMs: this.opts.perServerTimeoutMs ?? 10_000 })
-        .catch((err: Error) => ({ tools: {}, errors: Object.fromEntries(Object.keys(servers).map((n) => [n, err.message])) }));
-
-      const counts: Record<string, number> = {};
-      for (const [key, tool] of Object.entries(raw as Record<string, AnyTool>)) {
-        const server = Object.keys(servers).find((s) => key.startsWith(`${s}_`));
-        if (!server) continue;
-        const entry = this.registry.servers[server]!;
-        const name = publicToolName(server, key.slice(server.length + 1), entry.toolPrefix);
-        tools[name] = this.wrap(name, server, tool, entry.errorStyle);
-        annotations[name] = (tool as { mcp?: { annotations?: ToolAnnotations } }).mcp?.annotations;
-        counts[server] = (counts[server] ?? 0) + 1;
-      }
-      for (const name of Object.keys(servers)) {
-        const err = (errors as Record<string, string>)[name];
-        statuses[name] = err ? { state: 'down', reason: firstLine(err) } : { state: 'up', tools: counts[name] ?? 0 };
-      }
+    for (const [key, tool] of Object.entries(raw as Record<string, AnyTool>)) {
+      if (!key.startsWith(`${name}_`)) continue;
+      const pub = publicToolName(name, key.slice(name.length + 1), entry.toolPrefix);
+      tools[pub] = this.wrap(pub, name, tool, entry.errorStyle);
+      annotations[pub] = (tool as { mcp?: { annotations?: ToolAnnotations } }).mcp?.annotations;
     }
+    slot.tools = tools;
+    slot.annotations = annotations;
+    const downFor = slot.downSince !== undefined ? this.now() - slot.downSince : undefined;
+    slot.attempts = 0;
+    slot.downSince = undefined;
+    this.setStatus(name, { state: 'up', tools: Object.keys(tools).length });
+    if (downFor !== undefined) this.opts.onRecovered?.(name, downFor);
+  }
 
-    for (const [name, s] of Object.entries(statuses)) {
-      const prev = this.statuses[name]?.state;
-      if (s.state !== prev) this.log(`[mcp] ${name}: ${s.state}${'reason' in s ? ` (${s.reason})` : ` (${s.tools} tools)`}`);
-    }
-    this.tools = tools;
-    this.annotations = annotations;
-    this.statuses = statuses;
+  private markDown(name: string, reason: string): void {
+    const slot = this.slots[name]!;
+    slot.downSince ??= this.now();
+    const delay = Math.min(RETRY_BASE_MS * 2 ** Math.max(0, slot.attempts - 1), RETRY_MAX_MS);
+    slot.nextAt = this.now() + delay;
+    this.setStatus(name, { state: 'down', reason });
+  }
+
+  private setStatus(name: string, s: ServerStatus): void {
+    const slot = this.slots[name]!;
+    const prev = slot.status;
+    slot.status = s;
+    const changed = prev.state !== s.state || ('reason' in prev && prev.reason === 'connecting');
+    if (changed) this.log(`[mcp] ${name}: ${s.state}${'reason' in s ? ` (${s.reason})` : ` (${s.tools} tools)`}`);
   }
 
   private wrap(name: string, server: string, tool: AnyTool, style: ErrorStyle): AnyTool {
@@ -191,8 +282,14 @@ export class McpToolbox {
         try {
           return normalizeResult(await (t.execute as (i: unknown, c: unknown) => Promise<unknown>)(input, ctx), style);
         } catch (err) {
-          this.statuses[server] = { state: 'down', reason: firstLine((err as Error).message) };
-          return unavailableError(style, server, firstLine((err as Error).message));
+          const reason = firstLine((err as Error).message);
+          const slot = this.slots[server];
+          if (slot && slot.status.state === 'up') {
+            slot.attempts = 1;
+            slot.lastAttemptAt = this.now();
+            this.markDown(server, reason); // keeps its tools listed; retried on next message / tick
+          }
+          return unavailableError(style, server, reason);
         }
       },
     }) as unknown as AnyTool;

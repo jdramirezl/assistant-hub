@@ -13,9 +13,9 @@ const usage = { inputTokens: 10, outputTokens: 5, totalTokens: 15 };
  */
 export function scriptedModel(script: Turn[]) {
   let i = 0;
-  const calls: { prompt: unknown[] }[] = [];
-  const next = (prompt: unknown[]): { step: Step; n: number } => {
-    calls.push({ prompt });
+  const calls: { prompt: unknown[]; tools: string[] }[] = [];
+  const next = (prompt: unknown[], tools?: { name: string }[]): { step: Step; n: number } => {
+    calls.push({ prompt, tools: (tools ?? []).map((t) => t.name) });
     const n = i++;
     let turn = script[n];
     if (typeof turn === 'function') turn = turn(prompt);
@@ -23,7 +23,7 @@ export function scriptedModel(script: Turn[]) {
   };
   const model = new MastraLanguageModelV2Mock({
     doGenerate: async (options) => {
-      const { step, n } = next(options.prompt as unknown[]);
+      const { step, n } = next(options.prompt as unknown[], options.tools as { name: string }[] | undefined);
       return {
         content:
           'tool' in step
@@ -35,7 +35,7 @@ export function scriptedModel(script: Turn[]) {
       } as never;
     },
     doStream: async (options) => {
-      const { step, n } = next(options.prompt as unknown[]);
+      const { step, n } = next(options.prompt as unknown[], options.tools as { name: string }[] | undefined);
       const chunks =
         'tool' in step
           ? [
