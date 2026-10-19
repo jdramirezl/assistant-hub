@@ -88,8 +88,13 @@ export interface Candidate {
 export function candidates(item: Item, options: Option[], draftQuantity: number): Candidate[] {
   const out: Candidate[] = [];
   for (const o of options) {
+    // a generic unit ("a serving", "una porción") means MFP's suggested serving, unless that is a
+    // measure (100 g) and the food has a countable one ("1 breast (172 g)"): a portion of chicken is a breast
+    const countable = o.servings.find((s) => /^1\s/.test(norm(s.label).replace(/\([^)]*\)/g, '').trim()) && !MEASURE.test(norm(s.label).replace(/\([^)]*\)/g, '')));
+    const suggestedServing = o.servings.find((s) => s.serving === (o.suggested_serving ?? 0));
+    const generic = suggestedServing && MEASURE.test(norm(suggestedServing.label).replace(/\([^)]*\)/g, '')) && countable ? countable : suggestedServing;
     for (const s of o.servings) {
-      const n = servingsFor(item, s.label, { suggested: s.serving === (o.suggested_serving ?? 0) });
+      const n = servingsFor(item, s.label, { suggested: s === generic });
       if (n === undefined || typeof s.calories !== 'number') continue;
       const perServing = s.calories / (draftQuantity || 1);
       out.push({ option: o.option, name: o.name, serving: s.serving, label: s.label, servings: Math.round(n * 1000) / 1000, kcal: Math.round(perServing * n), pinned: !!o.pinned });
@@ -100,11 +105,13 @@ export function candidates(item: Item, options: Option[], draftQuantity: number)
 }
 
 const within = (a: number, b: number, f: number) => a <= b * f && a >= b / f;
+/** Within 2× of the estimate, or close in absolute terms (a 15 kcal salad vs a 40 kcal guess is fine). */
+const plausible = (kcal: number, est: number) => within(kcal, est, 2) || Math.abs(kcal - est) <= 60;
 
 /** Pick confidently, or return undefined (→ ask the user). */
 export function choose(item: Item, cands: Candidate[]): Candidate | undefined {
   const est = item.kcal_estimate;
-  const ok = cands.filter((c) => within(c.kcal, est, 2));
+  const ok = cands.filter((c) => plausible(c.kcal, est));
   if (!ok.length) return undefined;
   const pinned = ok.find((c) => c.pinned);
   if (pinned) return pinned;
@@ -150,7 +157,7 @@ export function createLogMeal(toolbox: MealToolbox, log: (m: string) => void = (
         quantity: item.quantity,
         unit: item.unit,
         kcal_estimate: item.kcal_estimate,
-        reason: !cands.length ? `no serving matches "${item.unit}"` : cands.some((c) => within(c.kcal, item.kcal_estimate, 2)) ? 'several different foods match' : 'no match within 2× of your estimate',
+        reason: !cands.length ? `no serving matches "${item.unit}"` : cands.some((c) => plausible(c.kcal, item.kcal_estimate)) ? 'several different foods match' : 'no match within 2× of your estimate',
         options: shown.map((c) => ({ name: c.name, serving: c.label, kcal: c.kcal, draft_id: String(d.draft_id), option: c.option, serving_index: c.serving, servings: c.servings })),
       });
       return undefined;

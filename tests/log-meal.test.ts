@@ -49,6 +49,15 @@ describe('choose (no guessing)', () => {
     expect(choose(it3, candidates(it3, o, 1))).toBeUndefined();
     expect(choose(it3, candidates(it3, opts([['Club', '1 sandwich', 590], ['Ham', '1 sandwich', 350]], 'Club'), 1))).toMatchObject({ name: 'Club' });
   });
+  it('tiny foods are not ambiguous over a small absolute difference', () => {
+    const it5 = item({ query: 'green salad', quantity: 1, unit: 'cup', kcal_estimate: 50 });
+    expect(choose(it5, candidates(it5, opts([['Green salad', '1 cup', 15]]), 1))).toMatchObject({ kcal: 15 });
+  });
+  it('"a serving" of chicken is the breast, not 100 g', () => {
+    const it6 = item({ query: 'chicken breast', quantity: 1, unit: 'serving', kcal_estimate: 250 });
+    const o = [{ option: 1, name: 'Chicken breast', suggested_serving: 0, servings: [{ serving: 0, label: '100 g', calories: 165 }, { serving: 1, label: '1 breast (172 g)', calories: 284 }] }];
+    expect(choose(it6, candidates(it6, o, 1))).toMatchObject({ label: '1 breast (172 g)', kcal: 284 });
+  });
   it('nothing within 2× of the estimate → ambiguous', () => {
     const it4 = item({ quantity: 1, kcal_estimate: 70 });
     expect(choose(it4, candidates(it4, opts([['Lasagna', '1 tray', 1700]]), 1))).toBeUndefined();
