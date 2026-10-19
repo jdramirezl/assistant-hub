@@ -14,13 +14,14 @@ export type Transcribe = (audio: Uint8Array, mediaType: string) => Promise<Trans
 
 interface GenerateModel {
   modelId?: string;
+  specificationVersion?: string;
   doGenerate(options: unknown): PromiseLike<{ content?: { type: string; text?: string }[]; usage?: Record<string, number | undefined> }>;
 }
 
 const PROMPT =
-  'Transcribe this voice note word for word, in the language it is spoken in (do not translate). ' +
-  'Return ONLY JSON: {"transcript": "...", "language": "<ISO 639-1 code, e.g. es or en>"}. ' +
-  'If there is no speech, return {"transcript": "", "language": ""}.';
+  'This is a voice note the user sent to their assistant (usually about meals, expenses or plans). ' +
+  'Transcribe it word for word in the language spoken (do not translate). ' +
+  'Return ONLY JSON: {"transcript": "...", "language": "<ISO 639-1 code, e.g. es or en>"}.';
 
 /** Parse the model's JSON reply (possibly fenced); undefined if unusable. */
 export function parseTranscript(text: string): Transcript | undefined {
@@ -32,6 +33,17 @@ export function parseTranscript(text: string): Transcript | undefined {
   } catch {
     return undefined;
   }
+}
+
+/**
+ * A file part in the shape the model's spec expects: LanguageModel v4 (@ai-sdk/google 4.x) takes
+ * `data: {type:'data', data}`; v2/v3 (and the test mocks) take the bytes directly. A wrong
+ * shape is silently dropped by the provider, so the model would "transcribe" nothing.
+ */
+function filePart(model: GenerateModel, audio: Uint8Array, mediaType: string) {
+  return model.specificationVersion === 'v4'
+    ? { type: 'file', data: { type: 'data', data: audio }, mediaType }
+    : { type: 'file', data: audio, mediaType };
 }
 
 export function createTranscriber(
@@ -49,7 +61,7 @@ export function createTranscriber(
     const outer = usageContext.getStore();
     const run = async () => {
       const res = await m.doGenerate({
-        prompt: [{ role: 'user', content: [{ type: 'text', text: PROMPT }, { type: 'file', data: audio, mediaType }] }],
+        prompt: [{ role: 'user', content: [{ type: 'text', text: PROMPT }, filePart(m, audio, mediaType)] }],
         responseFormat: { type: 'json' },
         ...(opts.providerOptions ? { providerOptions: opts.providerOptions } : {}),
       });

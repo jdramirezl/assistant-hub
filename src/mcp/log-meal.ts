@@ -106,8 +106,11 @@ export function candidates(item: Item, options: Option[], draftQuantity: number)
 }
 
 const within = (a: number, b: number, f: number) => a <= b * f && a >= b / f;
-/** Within 2× of the estimate, or close in absolute terms (a 15 kcal salad vs a 40 kcal guess is fine). */
-const plausible = (kcal: number, est: number) => within(kcal, est, 2) || Math.abs(kcal - est) <= 60;
+/**
+ * Within 2× of the estimate, or close in absolute terms (a 15 kcal salad vs a 40 kcal guess is
+ * fine), or both small (a 35 kcal bowl of salad vs a 100 kcal guess: a miss costs < 150 kcal).
+ */
+const plausible = (kcal: number, est: number) => within(kcal, est, 2) || Math.abs(kcal - est) <= 60 || (kcal < 80 && est <= 150);
 
 /** Pick confidently, or return undefined (→ ask the user). */
 export function choose(item: Item, cands: Candidate[]): Candidate | undefined {
@@ -158,7 +161,9 @@ export function createLogMeal(toolbox: MealToolbox, log: (m: string) => void = (
     const stdItem = std ? { ...asked, quantity: std.quantity, unit: std.unit } : undefined;
     // a common food's own size for a vague unit ("un plato de arroz" = 1.5 cups) comes first;
     // otherwise MFP's servings first and the standard portion before asking ("arroz" → 1 cup)
-    const tries = std?.specific ? [stdItem!, asked] : stdItem ? [asked, stdItem] : [asked];
+    // …unless MFP has a serving with the user's own unit ("1 bowl" of salad): that wins
+    const native = options.some((o) => o.servings.some((sv) => servingsFor(asked, sv.label) !== undefined));
+    const tries = !stdItem ? [asked] : std!.specific && !native ? [stdItem, asked] : [asked, stdItem];
     let cands: Candidate[] = [];
     let pick: Candidate | undefined;
     for (const t of tries) {

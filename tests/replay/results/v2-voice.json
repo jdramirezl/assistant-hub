@@ -1,0 +1,289 @@
+{
+ "label": "v2-voice",
+ "at": "2026-10-19T22:50:34.915Z",
+ "results": [
+  {
+   "id": "voice-expense",
+   "calls": 3,
+   "rateLimited": 0,
+   "inputTokens": 9017,
+   "cachedTokens": 0,
+   "outputTokens": 871,
+   "toolsSentAvg": 10,
+   "systemCharsAvg": 2827,
+   "actions": [
+    "finance.create EgresoNormal 35000 COP Nequi/Disponible 2026-10-19"
+   ],
+   "cards": [],
+   "ok": true,
+   "reply": "Muy bien, Amo Julián. Espero que su vuelo no sufra los habituales retrasos de este reino.\n\n- Gasto: $35,000 COP (Taxi al aeropuerto)\n- Cuenta: Nequi (Disponible)\n- Fecha: 2026-10-19",
+   "ms": 10618
+  },
+  {
+   "id": "voice-meal",
+   "calls": 3,
+   "rateLimited": 0,
+   "inputTokens": 11849,
+   "cachedTokens": 4009,
+   "outputTokens": 297,
+   "toolsSentAvg": 14,
+   "systemCharsAvg": 2647,
+   "actions": [
+    "mfp.log Dinner: Rice, white, cooked × 1 [1 cup] = 205 kcal",
+    "mfp.log Dinner: Chicken breast, grilled × 1 [1 breast (172 g)] = 284 kcal"
+   ],
+   "cards": [],
+   "ok": true,
+   "reply": "Muy bien, Amo Julián, aquí tiene el registro de su cena.\n\nCena: 2 items, 489 kcal (Arroz: 205 kcal, Pechuga de pollo a la plancha: 284 kcal).",
+   "ms": 8861
+  },
+  {
+   "id": "voice-breakfast",
+   "calls": 3,
+   "rateLimited": 0,
+   "inputTokens": 11949,
+   "cachedTokens": 6015,
+   "outputTokens": 428,
+   "toolsSentAvg": 14,
+   "systemCharsAvg": 2647,
+   "actions": [
+    "mfp.log Breakfast: Egg, whole, large × 2 [1 large egg] = 144 kcal",
+    "mfp.log Breakfast: Arepa, white corn × 1 [1 arepa (100 g)] = 220 kcal"
+   ],
+   "cards": [],
+   "ok": true,
+   "reply": "Como ordene, Amo Julián. He registrado su desayuno puntualmente.\n\n**Desayuno:** 2 items, 364 kcal\n- Huevos revueltos: 2 servings (144 kcal)\n- Arepa: 1 serving (220 kcal)",
+   "ms": 13876
+  },
+  {
+   "id": "voice-snack",
+   "calls": 3,
+   "rateLimited": 0,
+   "inputTokens": 11786,
+   "cachedTokens": 6014,
+   "outputTokens": 363,
+   "toolsSentAvg": 14,
+   "systemCharsAvg": 2647,
+   "actions": [
+    "mfp.log Snacks: Banana, medium × 1 [1 medium] = 105 kcal"
+   ],
+   "cards": [],
+   "ok": true,
+   "reply": "Muy bien, Amo Julián. Un banano ha sido debidamente registrado.\n\n**Snacks:** 1 item, 105 kcal",
+   "ms": 26678
+  },
+  {
+   "id": "voice-dinner-en",
+   "calls": 3,
+   "rateLimited": 0,
+   "inputTokens": 11851,
+   "cachedTokens": 6014,
+   "outputTokens": 328,
+   "toolsSentAvg": 14,
+   "systemCharsAvg": 2647,
+   "actions": [
+    "mfp.log Dinner: Rice, white, cooked × 1.5 [1 cup] = 308 kcal",
+    "mfp.log Dinner: Chicken breast, grilled × 1 [1 breast (172 g)] = 284 kcal"
+   ],
+   "cards": [],
+   "ok": true,
+   "reply": "Very good, Master Julian.\n\nDinner: 2 items, 592 kcal (Rice: 308 kcal, Chicken breast, grilled: 284 kcal).",
+   "ms": 10598
+  },
+  {
+   "id": "ambiguous-food",
+   "calls": 3,
+   "rateLimited": 0,
+   "inputTokens": 17816,
+   "cachedTokens": 10017,
+   "outputTokens": 663,
+   "toolsSentAvg": 21,
+   "systemCharsAvg": 3913,
+   "actions": [],
+   "cards": [],
+   "ok": true,
+   "reply": "Muy bien, Amo Julián, haré que la cocina sea más precisa la próxima vez. \n\n¿Cuál de estas opciones se ajusta mejor a su sándwich de almuerzo?\n1. **Club sandwich** (590 kcal)\n2. **Chicken sandwich** (450 kcal)\n3. **Ham and cheese sandwich** (350 kcal)",
+   "ms": 10085
+  },
+  {
+   "id": "eggs-toast",
+   "calls": 2,
+   "rateLimited": 0,
+   "inputTokens": 11588,
+   "cachedTokens": 4007,
+   "outputTokens": 243,
+   "toolsSentAvg": 21,
+   "systemCharsAvg": 3913,
+   "actions": [
+    "mfp.log Breakfast: Egg, whole, large × 2 [1 large egg] = 144 kcal",
+    "mfp.log Breakfast: Toast, white bread × 1 [1 slice] = 75 kcal"
+   ],
+   "cards": [],
+   "ok": true,
+   "reply": "Como ordene, Amo Julián. Enseguida atiendo sus menesteres matutinos.\n\nDesayuno: 2 items, 219 kcal (Huevo: 144 kcal, Tostada: 75 kcal).",
+   "ms": 7904
+  },
+  {
+   "id": "repeat-food",
+   "calls": 2,
+   "rateLimited": 0,
+   "inputTokens": 11602,
+   "cachedTokens": 4008,
+   "outputTokens": 286,
+   "toolsSentAvg": 21,
+   "systemCharsAvg": 3913,
+   "actions": [
+    "mfp.log Breakfast: Coffee with milk × 1 [1 cup (240 ml)] = 60 kcal"
+   ],
+   "cards": [],
+   "ok": true,
+   "reply": "Muy bien, Amo Julián. Su infusión matutina está debidamente registrada.\n\nDesayuno: 1 ítem, 60 kcal (Café con leche).",
+   "ms": 8202
+  },
+  {
+   "id": "correction",
+   "calls": 4,
+   "rateLimited": 0,
+   "inputTokens": 26120,
+   "cachedTokens": 6008,
+   "outputTokens": 536,
+   "toolsSentAvg": 24,
+   "systemCharsAvg": 4266,
+   "actions": [
+    "mfp.log Breakfast: Arepa, white corn × 1 [1 arepa (100 g)] = 220 kcal",
+    "mfp.modify Breakfast: Arepa, white corn → Arepa, white corn × 2 = 440 kcal"
+   ],
+   "cards": [
+    "tool:_fitness_modify_food_"
+   ],
+   "ok": true,
+   "reply": "Muy bien, Amo Julián, he ajustado la provisión a su apetito real.\n\n**Desayuno:** 2 arepas, 440 kcal.",
+   "ms": 19543
+  },
+  {
+   "id": "receipt-photo",
+   "calls": 2,
+   "rateLimited": 0,
+   "inputTokens": 10619,
+   "cachedTokens": 2009,
+   "outputTokens": 503,
+   "toolsSentAvg": 15,
+   "systemCharsAvg": 4183,
+   "actions": [
+    "finance.create EgresoNormal 70730 COP Nequi/Disponible 2026-10-19"
+   ],
+   "cards": [],
+   "ok": true,
+   "reply": "Muy bien, Amo Julián. He registrado el gasto de 70.730 COP en Nequi para Crepes & Waffles.",
+   "ms": 9431
+  },
+  {
+   "id": "over-800",
+   "calls": 3,
+   "rateLimited": 0,
+   "inputTokens": 21603,
+   "cachedTokens": 12040,
+   "outputTokens": 1181,
+   "toolsSentAvg": 25,
+   "systemCharsAvg": 4384,
+   "actions": [
+    "mfp.log Dinner: Lasagna, family tray × 1 [1 tray] = 1700 kcal"
+   ],
+   "cards": [
+    "tool:_fitness_log_food_"
+   ],
+   "ok": true,
+   "reply": "Una proeza culinaria verdaderamente notable, Amo Julián. He registrado la lasaña familiar en la cena.\n\n**Cena:** 1 item, 1.700 kcal.",
+   "ms": 22205
+  },
+  {
+   "id": "mixed",
+   "calls": 2,
+   "rateLimited": 0,
+   "inputTokens": 17802,
+   "cachedTokens": 12041,
+   "outputTokens": 752,
+   "toolsSentAvg": 34,
+   "systemCharsAvg": 5326,
+   "actions": [
+    "mfp.log Lunch: Arepa, white corn × 1 [1 arepa (100 g)] = 220 kcal",
+    "finance.create EgresoNormal 18000 COP Nequi/Disponible 2026-10-19"
+   ],
+   "cards": [],
+   "ok": true,
+   "reply": "A sus órdenes, Amo Julián. He registrado su almuerzo y el gasto correspondiente.\n\n- **Almuerzo:** Arepa, white corn (220 kcal)\n- **Gasto:** $18.000 COP en Nequi (Disponible)",
+   "ms": 11602
+  },
+  {
+   "id": "snacks",
+   "calls": 2,
+   "rateLimited": 0,
+   "inputTokens": 11720,
+   "cachedTokens": 6013,
+   "outputTokens": 351,
+   "toolsSentAvg": 21,
+   "systemCharsAvg": 3913,
+   "actions": [
+    "mfp.log Snacks: Banana, medium × 1 [1 medium] = 105 kcal",
+    "mfp.log Snacks: Greek yogurt, plain × 1 [1 container (170 g)] = 100 kcal"
+   ],
+   "cards": [],
+   "ok": true,
+   "reply": "En seguida, Amo Julián. \n\nSnacks: 2 items, 205 kcal (Banana, medium: 105 kcal; Greek yogurt, plain: 100 kcal).",
+   "ms": 8108
+  },
+  {
+   "id": "expense-yesterday",
+   "calls": 3,
+   "rateLimited": 0,
+   "inputTokens": 12294,
+   "cachedTokens": 0,
+   "outputTokens": 795,
+   "toolsSentAvg": 15,
+   "systemCharsAvg": 4183,
+   "actions": [
+    "finance.create EgresoNormal 60000 COP Bancolombia/Principal 2026-10-18"
+   ],
+   "cards": [],
+   "ok": true,
+   "reply": "Muy bien, Amo Julián, he anotado ese pequeño desembolso de ayer.\n\n60.000 COP — Mercado (Bancolombia)",
+   "ms": 10118
+  },
+  {
+   "id": "oatmeal",
+   "calls": 2,
+   "rateLimited": 0,
+   "inputTokens": 11597,
+   "cachedTokens": 4007,
+   "outputTokens": 282,
+   "toolsSentAvg": 21,
+   "systemCharsAvg": 3913,
+   "actions": [
+    "mfp.log Breakfast: Oatmeal, cooked × 1 [1 cup] = 166 kcal"
+   ],
+   "cards": [],
+   "ok": true,
+   "reply": "Muy bien, Amo Julián. Su desayuno ha sido debidamente registrado.\n\nDesayuno: 1 ítem, 166 kcal (Oatmeal, cooked).",
+   "ms": 7850
+  },
+  {
+   "id": "meal-3",
+   "calls": 2,
+   "rateLimited": 0,
+   "inputTokens": 11988,
+   "cachedTokens": 6017,
+   "outputTokens": 591,
+   "toolsSentAvg": 21,
+   "systemCharsAvg": 3913,
+   "actions": [
+    "mfp.log Lunch: Rice, white, cooked × 1 [1 cup] = 205 kcal",
+    "mfp.log Lunch: Chicken breast, grilled × 1 [1 breast (172 g)] = 284 kcal",
+    "mfp.log Lunch: Green salad × 1 [1 bowl] = 35 kcal"
+   ],
+   "cards": [],
+   "ok": true,
+   "reply": "Muy bien, Amo Julián. He registrado su almuerzo:\n\nAlmuerzo: 3 items, 524 kcal\n- Rice, white, cooked (1 cup): 205 kcal\n- Chicken breast, grilled (1 breast): 284 kcal\n- Green salad (1 bowl): 35 kcal",
+   "ms": 8641
+  }
+ ]
+}

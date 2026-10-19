@@ -58,6 +58,12 @@ describe('choose (no guessing)', () => {
     const o = [{ option: 1, name: 'Chicken breast', suggested_serving: 0, servings: [{ serving: 0, label: '100 g', calories: 165 }, { serving: 1, label: '1 breast (172 g)', calories: 284 }] }];
     expect(choose(it6, candidates(it6, o, 1))).toMatchObject({ label: '1 breast (172 g)', kcal: 284 });
   });
+  it('low-calorie foods are logged even when the guess is a bit high (salad bowl 35 vs 100)', () => {
+    const it7 = item({ query: 'green salad', quantity: 1, unit: 'bowl', kcal_estimate: 100 });
+    expect(choose(it7, candidates(it7, opts([['Green salad', '1 bowl', 35]]), 1))).toMatchObject({ kcal: 35 });
+    const it8 = item({ query: 'green salad', quantity: 1, unit: 'bowl', kcal_estimate: 400 });
+    expect(choose(it8, candidates(it8, opts([['Green salad', '1 bowl', 35]]), 1))).toBeUndefined();
+  });
   it('nothing within 2× of the estimate → ambiguous', () => {
     const it4 = item({ quantity: 1, kcal_estimate: 70 });
     expect(choose(it4, candidates(it4, opts([['Lasagna', '1 tray', 1700]]), 1))).toBeUndefined();
@@ -146,6 +152,11 @@ describe('log_meal through the agent (fake Mason)', () => {
     const { seen } = await run({ items: [{ query: 'rice', quantity: 1, unit: 'plate', kcal_estimate: 1200, meal: 'dinner' }] });
     expect(seen.logged).toBeUndefined();
     expect(seen.ambiguous?.[0]).toMatchObject({ query: 'rice' });
+  });
+
+  it('MFP\'s own serving for the user\'s unit wins over the standard portion (1 bowl of salad)', async () => {
+    const { seen } = await run({ items: [{ query: 'rice', quantity: 1, unit: 'cup', kcal_estimate: 200, meal: 'lunch' }] });
+    expect(seen.logged?.[0]).toMatchObject({ serving: '1 cup', servings: 1 });
   });
 
   it('a sandwich (no standard portion) is still ambiguous', async () => {

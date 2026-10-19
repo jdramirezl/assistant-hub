@@ -10,6 +10,8 @@ export interface Scenario {
   diary?: DiaryEntry[];
   pins?: ReplicaState['pins'];
   movements?: Record<string, unknown>[];
+  /** Pin the local (Bogotá) hour the hub sees, e.g. for the meal-by-time fallback. */
+  localHour?: number;
   /** Sanity check of the end state (the main check is "same actions as the baseline"). */
   ok(r: { actions: Action[]; state: ReplicaState; cards: string[]; reply: string; today: string; yesterday: string }): boolean | string;
 }
@@ -19,6 +21,10 @@ const fin = (a: Action[], op: string) => a.filter((x) => x.app === 'finance' && 
 const none = (a: Action[]) => a.length === 0 || `unexpected actions: ${a.map((x) => x.detail).join('; ')}`;
 const kcalOf = (s: string) => Number(s.match(/= (\d+) kcal/)?.[1] ?? NaN);
 const has = (a: Action[], re: RegExp) => a.some((x) => re.test(x.detail));
+/** The reply is in Spanish / English (rough, word-based). */
+const spanish = (t: string) => /\b(registr|anot|listo|amo|julián|cena|desayuno|almuerzo|merienda|he )\w*/i.test(t) || `not Spanish: ${t.slice(0, 80)}`;
+const english = (t: string) => (/\b(logged|dinner|master|julian|recorded|added)\b/i.test(t) && !/\b(registr\w*|amo julián|cena)\b/i.test(t)) || `not English: ${t.slice(0, 80)}`;
+const both = (...r: (boolean | string)[]) => r.find((x) => x !== true) ?? true;
 const nequi = `${ACCOUNTS[0]!.name}/${POCKETS[0]!.name}`;
 
 const BREAKFAST: DiaryEntry[] = [
@@ -116,9 +122,31 @@ export const SCENARIOS: Scenario[] = [
   {
     id: 'voice-meal',
     turns: [{ voice: 'voice-meal.wav' }],
-    ok: ({ actions }) => {
+    ok: ({ actions, reply }) => {
       const l = logs(actions, 'Dinner');
-      return (l.length === 2 && has(l, /Rice/) && has(l, /Chicken/)) || l.map((x) => x.detail).join('; ') || 'nothing logged';
+      return both((l.length === 2 && has(l, /Rice/) && has(l, /Chicken/)) || actions.map((x) => x.detail).join('; ') || 'nothing logged', spanish(reply));
+    },
+  },
+  {
+    id: 'voice-breakfast',
+    turns: [{ voice: 'voice-breakfast.wav' }], // "En el desayuno me comí dos huevos revueltos y una arepa."
+    ok: ({ actions, reply }) => {
+      const l = logs(actions, 'Breakfast');
+      return both((l.length === 2 && has(l, /Egg/) && has(l, /Arepa/)) || actions.map((x) => x.detail).join('; ') || 'nothing logged', spanish(reply));
+    },
+  },
+  {
+    id: 'voice-snack',
+    localHour: 16, // no meal word: 16:xx in Bogotá → Snacks
+    turns: [{ voice: 'voice-snack.wav' }], // "Me comí un banano."
+    ok: ({ actions }) => (logs(actions, 'Snacks').length === 1 && has(actions, /Banana/) && logs(actions).length === 1) || actions.map((x) => x.detail).join('; ') || 'nothing logged',
+  },
+  {
+    id: 'voice-dinner-en',
+    turns: [{ voice: 'voice-dinner-en.wav' }], // "For dinner I had a plate of rice and a grilled chicken breast."
+    ok: ({ actions, reply }) => {
+      const l = logs(actions, 'Dinner');
+      return both((l.length === 2 && has(l, /Rice/) && has(l, /Chicken/)) || actions.map((x) => x.detail).join('; ') || 'nothing logged', english(reply));
     },
   },
   {

@@ -77,6 +77,9 @@ function pacedFetch() {
   return { fetch: f, busy: () => inflight > 0, lastActivity: () => lastActivity, total: () => total };
 }
 
+/** Today at hh:30 in Bogotá (UTC-5, no DST). */
+const atLocalHour = (h: number) => Date.parse(`${bogotaDay(Date.now(), 'America/Bogota')}T${String(h).padStart(2, '0')}:30:00-05:00`);
+
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 async function runScenario(s: Scenario, pacer: ReturnType<typeof pacedFetch>, apiKey: string): Promise<ScenarioResult> {
@@ -93,7 +96,7 @@ async function runScenario(s: Scenario, pacer: ReturnType<typeof pacedFetch>, ap
   const mason = await startMasonReplica(state, today);
   const finance = await startFinanceReplica(state, today, 'replay-token');
   const tg = await new MockTelegram().start();
-  for (const f of ['receipt.png', 'voice-expense.wav', 'voice-meal.wav']) {
+  for (const f of ['receipt.png', 'voice-expense.wav', 'voice-meal.wav', 'voice-breakfast.wav', 'voice-snack.wav', 'voice-dinner-en.wav']) {
     tg.addFile(f, { path: `files/${f}`, mime: f.endsWith('.png') ? 'image/png' : 'audio/wav', bytes: readFileSync(join(FIXTURES, f)) });
   }
   const dataDir = mkdtempSync(join(tmpdir(), 'replay-'));
@@ -111,6 +114,7 @@ async function runScenario(s: Scenario, pacer: ReturnType<typeof pacedFetch>, ap
   const hub: Hub = createHub(loadConfig(env), {
     env,
     geminiFetch: pacer.fetch,
+    ...(s.localHour !== undefined ? { localNow: () => atLocalHour(s.localHour!) } : {}),
     telegram: { apiBaseUrl: tg.url, longPolling: { timeout: 0, retryDelayMs: 50 }, log: (m) => logs.push(m) },
   });
   const memory = await hub.mastra.getAgentById('assistant').getMemory();
@@ -190,6 +194,7 @@ async function runScenario(s: Scenario, pacer: ReturnType<typeof pacedFetch>, ap
   };
   const verdict = s.ok({ actions: state.actions, state, cards, reply, today, yesterday });
   result.ok = verdict === true ? true : String(verdict);
+  if (process.env.REPLAY_DEBUG) console.log(`--- ${s.id} hub log\n${logs.filter((l) => !/^\[mcp\] \w+: up/.test(l)).join('\n')}\n--- reply: ${reply}`);
   await hub.stop();
   await tg.stop();
   await mason.close();
