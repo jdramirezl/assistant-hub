@@ -18,13 +18,19 @@ import { createDigestWorkflow } from './workflows/weekly-digest.js';
 import { sendStartupPing, startHeartbeat } from './ops.js';
 import { hostname } from 'node:os';
 import { createVoice, personaPrompt } from './persona.js';
+import { PlanStore } from './plans/store.js';
+import { PlanService, planResultsPrompt } from './plans/service.js';
+import { LogPlanPresenter, TelegramPlanPresenter } from './plans/presenter.js';
+import { createProposePlanTool } from './plans/tool.js';
+import { PlanGuard } from './plans/guard.js';
+import { TelegramApi } from './telegram-api.js';
 
 export interface HubDeps {
   /** Test seam: model used by the assistant and reporter instead of Gemini. */
   model?: AssistantOptions['model'];
   /** Test seam: stronger model used when a response is malformed (defaults to `model`). */
   escalationModel?: unknown;
-  telegram?: Omit<TelegramDeps, 'kv' | 'gate' | 'voice'>;
+  telegram?: Omit<TelegramDeps, 'kv' | 'gate' | 'voice' | 'onPlanAction'>;
   /** Inline registry (tests); default: load config.mcpRegistryPath. */
   registry?: unknown;
   env?: Record<string, string | undefined>;
@@ -44,6 +50,7 @@ export interface Hub {
   digest: Digest;
   notify: Notify;
   telegram?: TelegramProvider;
+  plans: PlanService;
   /**
    * Connect channels (network), catch up a missed digest, and (with `ops`) send the
    * "I'm up" ping and start the healthchecks.io heartbeat. Safe without Telegram.
@@ -93,6 +100,30 @@ export function createHub(config: HubConfig, deps: HubDeps = {}): Hub {
     },
   });
 
+  const planStore = new PlanStore(kv, deps.now);
+  const presenter = config.telegram.enabled
+    ? new TelegramPlanPresenter(
+        new TelegramApi(config.telegram.botToken, deps.telegram?.apiBaseUrl),
+        config.telegram.allowedUserIds[0]!,
+        config.persona.language,
+        Math.round(planStore.ttlMs / 60_000),
+        log,
+      )
+    : new LogPlanPresenter(config.persona.language, log);
+  let summarizePlan: (prompt: string, memory?: { thread: string; resource: string }) => Promise<string> = async () => '';
+  const plans = new PlanService({
+    store: planStore,
+    toolbox,
+    presenter,
+    voice,
+    language: config.persona.language,
+    allowedUserIds: config.telegram.allowedUserIds,
+    log,
+    summarize: (plan, results) =>
+      summarizePlan(planResultsPrompt(plan, results), plan.threadId ? { thread: plan.threadId, resource: plan.owner } : undefined),
+  });
+  const proposePlan = createProposePlanTool(plans);
+
   const gemini = deps.model ? undefined : createGeminiModels(config.googleApiKey, log);
   if (gemini) gemini.default = withMalformedFallback(gemini.default, gemini.report, log);
   const assistant = createAssistantAgent({
@@ -100,10 +131,15 @@ export function createHub(config: HubConfig, deps: HubDeps = {}): Hub {
     model: deps.model ? withMalformedFallback(deps.model, deps.escalationModel, log) : modelChain('default', gemini!),
     memory,
     persona: config.persona,
-    tools: () => toolbox.getTools(),
+    tools: async () => ({ ...(await toolbox.getTools()), propose_plan: proposePlan }),
     extraInstructions: () => toolbox.statusNote(),
     guards: [guard],
+    outputGuards: [new PlanGuard((t) => toolbox.isGated(t), log)],
   });
+  summarizePlan = async (prompt, memory) => {
+    const res = await assistant.generate(prompt, { ...(memory ? { memory } : {}), maxSteps: 1, toolChoice: 'none' } as never);
+    return res.text;
+  };
   const reporter = new Agent({
     id: 'reporter',
     name: 'Reporter',
@@ -131,6 +167,7 @@ export function createHub(config: HubConfig, deps: HubDeps = {}): Hub {
     kv,
     voice,
     gate: async () => ((await budget.check()).ok ? undefined : BUDGET_MESSAGE),
+    onPlanAction: (actionId, userId) => plans.handleAction(actionId, userId),
   });
 
   const mastra = new Mastra({
@@ -161,6 +198,7 @@ export function createHub(config: HubConfig, deps: HubDeps = {}): Hub {
     digest,
     notify,
     telegram,
+    plans,
     runDigest,
     async start(opts = {}) {
       await toolbox.getTools(); // discover apps at boot so status is logged early

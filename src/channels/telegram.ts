@@ -27,6 +27,8 @@ export interface TelegramDeps {
   gate?: () => Promise<string | undefined>;
   /** Persona wording for rate-limit notices. */
   voice?: Voice;
+  /** Batch-plan buttons (plan:<a|e|c>:<id>); everything else goes to the built-in approvals. */
+  onPlanAction?: (actionId: string, userId: string | undefined, notify: (text: string) => Promise<void>) => Promise<void>;
 }
 
 /**
@@ -98,6 +100,17 @@ export function createTelegramChannel(config: HubConfig, deps: TelegramDeps = {}
     onDirectMessage: handler,
     onSubscribedMessage: handler,
     onMention: handler,
+    onAction: async (event, defaultHandler) => {
+      if (!event.actionId.startsWith('plan:')) return defaultHandler();
+      const userId = event.user?.userId;
+      if (!userId || !config.telegram.allowedUserIds.includes(String(userId))) {
+        return log(`[telegram] ignoring plan button from non-allowlisted user ${userId}`);
+      }
+      const notify = async (text: string) => void (await event.thread?.post(text));
+      await rateLimitContext.run({ notify, format: deps.voice?.rateLimit }, () =>
+        deps.onPlanAction ? deps.onPlanAction(event.actionId, String(userId), notify) : Promise.resolve(),
+      );
+    },
   };
 
   return new TelegramProvider({

@@ -65,6 +65,42 @@ the dev laptop: it writes to real finances. To test finance in dev, point it at 
   Defaults: `DAILY_TOKEN_CAP=2000000`, `DAILY_COST_CAP_USD=1`. When either is hit the bot replies
   "⏸️ Paused, budget hit" without calling the model. The prepaid Gemini balance remains the hard stop.
 
+## Batch plans (one approval for many changes)
+
+When a request needs 2 or more approval-gated actions (e.g. clearing an MFP day, deleting several
+finance movements), the agent calls the hub-local `propose_plan` tool instead of asking 17 times.
+Telegram shows ONE message: the plan grouped by section (meal / account), with
+**✅ Approve all**, **✏️ Edit** and **❌ Cancel**. Long plans are split across messages.
+
+- **Approve all:** the hub runs exactly the stored calls, in order, without asking the model again
+  (the plan is fingerprinted; a changed plan is refused). No tool chatter while it runs; then the
+  agent sends one summary. It stops early on `MFP_SESSION_EXPIRED` / `UNAUTHORIZED`, otherwise it
+  continues and reports each failure.
+- **Edit:** reply in text ("skip the coffee"); the agent sends a revised plan and the old one is disabled.
+- **Cancel:** nothing runs. Plans expire after 30 min, survive restarts (LibSQL), and only the
+  allowlisted user can press the buttons.
+- Backstop: if the model still calls 2+ gated tools in one step, they are not run and it is told to
+  use `propose_plan`. A single gated action keeps the normal Approve/Deny card.
+
+## MyFitnessPal logging quality
+
+- The agent searches and drafts in English, picks the serving that matches the user's unit
+  (1 egg, 1 slice, 100 g) and estimates kcal before logging (rejecting > 2× mismatches).
+- **Hard guard:** any single `fitness_log_food` entry estimated above **800 kcal** needs approval,
+  whatever the model decided. The estimate comes from Mason's draft (calories per serving for the
+  whole entry, scaled by a quantity override) or search results; for pinned foods (no estimate up
+  front) the log result is checked and the agent is told to confirm or fix it.
+- Each log result carries `entry_kcal` and `meal_total`, so the agent reports e.g.
+  "Breakfast logged: 3 items, 420 kcal".
+
+## Persona
+
+By default the assistant is **Alfred** (Alfred Pennyworth): formal, dry wit, "Amo Julián" in
+Spanish and "Master Julian" in English, one short line and then plain facts. It also voices the
+startup ping, weekly digest, "app is back" and rate-limit notices. Switch off with
+`HUB_PERSONA=plain`; `HUB_LANGUAGE` (es/en) sets the language of notices and plan buttons, and
+`OWNER_NAME` the name.
+
 ## Weekly digest
 
 - The `weekly-digest` workflow is scheduled by Mastra for **Sunday 19:00 America/Bogota** (`0 19 * * 0`).

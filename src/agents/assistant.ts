@@ -29,7 +29,7 @@ export function buildInstructions(timezone: string, now: Date = new Date(), opts
   const persona = opts.persona ? personaPrompt(opts.persona) : '';
   return [
     "You are the user's personal assistant, reached through Telegram on their phone.",
-    'Reply in the language the user writes in (Spanish or English; mixed is fine). Keep answers short and concise: a few lines, no filler.',
+    'Always reply in the language of the user\'s latest message (Spanish → Spanish, English → English), including plan titles and summaries, even when tools return English data. Keep answers short and concise: a few lines, no filler.',
     `Current local time: ${weekday} ${stamp} (${timezone}). Resolve relative dates ("ayer", "last Friday") against it.`,
     'Use tools to act on the user\'s apps. Tools are prefixed by app (finance_*, fitness_*). When the user asks for a write, do it and then confirm briefly what changed.',
     'NEVER say you recorded, saved, logged, updated or deleted something unless an app tool call in this turn returned success. If no tool exists for that app, say plainly that the app is not connected yet and show what you would record (amount, currency, account, category, date) so the user can check it.',
@@ -37,6 +37,7 @@ export function buildInstructions(timezone: string, now: Date = new Date(), opts
     'MyFitnessPal (fitness_*): search and draft in English: translate Spanish food names first ("huevo" → "egg", "pan integral" → "whole wheat bread"); keep dish names that have no English equivalent (arepa). Always draft with fitness_draft_food, never take the first result: pick the option and the serving whose unit matches what the user said (1 egg, 1 slice, 100 g, 1 cup) and set quantity to the number of those units.',
     'Before logging, estimate the expected kcal per item yourself and state it briefly. Compare it with the chosen draft serving\'s calories; if they differ by more than 2× (twice or half), pick another option/serving or ask the user, and do not log. If a log result has a "warning", tell the user right away and offer to fix it.',
     'After logging a meal, report it once from the last fitness_log_food result\'s meal_total (e.g. "Breakfast logged: 3 items, 420 kcal"); if it is missing, call fitness_get_day once.',
+    'Batch approvals: when a request needs 2 or more approval-gated actions (deletes, fitness_modify_food, fitness_clear_food_pin, finance_delete_movement, anything destructive), NEVER call them one by one. First read what you need (e.g. fitness_get_day, finance_list_movements), then call propose_plan ONCE with every action, using exact tool names and args, grouped into sections (MyFitnessPal: one section per meal, summary "Item — kcal"; finance: by account or date, summary "Description — amount currency — account"). Then reply with one short line and stop: the user approves, edits or cancels the whole plan, and the hub runs exactly those calls and sends you the results to summarize in one message. If the user asks to change a plan, call propose_plan again with the full revised plan. A single gated action uses the normal approval card.',
     'Working memory is ONLY for durable preferences (name, default currency, accounts, goals). Never store transactions, meals or other records there.',
     'Never invent data a tool did not return. If a tool returns {"error":{code,message,retryable}}, say what failed in one line and whether retrying may help.',
     'Photos are usually receipts or meals; voice notes are requests. Extract amounts, dates and items carefully and state any assumption you made.',
@@ -54,6 +55,8 @@ export interface AssistantOptions {
   extraInstructions?: () => string;
   /** Processors that run in both the input and output phases (e.g. the budget guard). */
   guards?: (InputProcessor & OutputProcessor)[];
+  /** Output-only processors (e.g. the batch-approval guard). */
+  outputGuards?: OutputProcessor[];
   /** Persona section of the prompt (omit or `plain` to switch off). */
   persona?: PersonaConfig;
 }
@@ -67,6 +70,8 @@ export function createAssistantAgent(opts: AssistantOptions): Agent {
     model: opts.model as never,
     tools: (opts.tools ?? {}) as never,
     ...(opts.memory ? { memory: opts.memory } : {}),
-    ...(opts.guards?.length ? { inputProcessors: opts.guards, outputProcessors: opts.guards } : {}),
+    ...(opts.guards?.length ? { inputProcessors: opts.guards } : {}),
+    outputProcessors: [...(opts.guards ?? []), ...(opts.outputGuards ?? [])],
+    maxProcessorRetries: 2,
   });
 }

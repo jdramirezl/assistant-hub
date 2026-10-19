@@ -9,6 +9,8 @@ import type { AddressInfo } from 'node:net';
 export interface MockCall {
   method: string;
   body: Record<string, unknown>;
+  /** What the fake Bot API answered (e.g. the sent message, with its message_id). */
+  result?: unknown;
 }
 
 export interface MockFile {
@@ -114,8 +116,10 @@ export class MockTelegram {
     } catch {
       body = { raw };
     }
-    if (method !== 'getUpdates') this.calls.push({ method, body });
+    const call: MockCall = { method, body };
+    if (method !== 'getUpdates') this.calls.push(call);
     const result = await this.respond(method, body);
+    call.result = result;
     res.writeHead(200, { 'content-type': 'application/json' });
     res.end(JSON.stringify({ ok: true, result }));
   }
@@ -237,7 +241,23 @@ export function findButton(tg: MockTelegram, needle: string): { messageId: numbe
   for (const call of [...tg.calls].reverse()) {
     const kb = (call.body.reply_markup as { inline_keyboard?: { callback_data?: string }[][] } | undefined)?.inline_keyboard;
     const btn = kb?.flat().find((b) => b.callback_data?.includes(needle));
-    if (btn) return { messageId: Number(call.body.message_id ?? 0), data: btn.callback_data! };
+    if (btn) {
+      const sent = (call.result as { message_id?: number } | undefined)?.message_id;
+      return { messageId: Number(call.body.message_id ?? sent ?? 0), data: btn.callback_data! };
+    }
   }
   return undefined;
+}
+
+/** Every inline button currently attached to messages (last write per message wins). */
+export function liveButtons(tg: MockTelegram): string[] {
+  const byMsg = new Map<string, string[]>();
+  for (const call of tg.calls) {
+    if (!['sendMessage', 'editMessageText', 'editMessageReplyMarkup'].includes(call.method)) continue;
+    const id = String(call.body.message_id ?? (call.result as { message_id?: number } | undefined)?.message_id);
+    const kb = (call.body.reply_markup as { inline_keyboard?: { callback_data?: string }[][] } | undefined)?.inline_keyboard;
+    if (call.method === 'sendMessage' && !kb) continue;
+    byMsg.set(id, (kb ?? []).flat().map((b) => b.callback_data ?? ''));
+  }
+  return [...byMsg.values()].flat();
 }

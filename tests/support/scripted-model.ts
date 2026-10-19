@@ -1,7 +1,11 @@
 import { MastraLanguageModelV2Mock, simulateReadableStream } from '@mastra/core/test-utils/llm-mock';
 
 /** One model turn: either call a tool or answer with text. */
-export type Step = { tool: string; args: Record<string, unknown> } | { text: string } | { malformed: true };
+export type Step =
+  | { tool: string; args: Record<string, unknown> }
+  | { calls: { tool: string; args: Record<string, unknown> }[] }
+  | { text: string }
+  | { malformed: true };
 export type Turn = Step | ((prompt: unknown[]) => Step);
 
 const usage = { inputTokens: 10, outputTokens: 5, totalTokens: 15 };
@@ -25,6 +29,14 @@ export function scriptedModel(script: Turn[]) {
     doGenerate: async (options) => {
       const { step, n } = next(options.prompt as unknown[], options.tools as { name: string }[] | undefined);
       if ('malformed' in step) return { content: [], finishReason: 'error', usage, warnings: [] } as never;
+      if ('calls' in step) {
+        return {
+          content: step.calls.map((c, k) => ({ type: 'tool-call', toolCallId: `call-${n}-${k}`, toolName: c.tool, input: JSON.stringify(c.args) })),
+          finishReason: 'tool-calls',
+          usage,
+          warnings: [],
+        } as never;
+      }
       return {
         content:
           'tool' in step
@@ -38,7 +50,13 @@ export function scriptedModel(script: Turn[]) {
     doStream: async (options) => {
       const { step, n } = next(options.prompt as unknown[], options.tools as { name: string }[] | undefined);
       const chunks =
-        'malformed' in step
+        'calls' in step
+          ? [
+              { type: 'stream-start', warnings: [] },
+              ...step.calls.map((c, k) => ({ type: 'tool-call', toolCallId: `call-${n}-${k}`, toolName: c.tool, input: JSON.stringify(c.args) })),
+              { type: 'finish', finishReason: 'tool-calls', usage },
+            ]
+          : 'malformed' in step
           ? [
               { type: 'stream-start', warnings: [] },
               { type: 'finish', finishReason: 'error', usage },
