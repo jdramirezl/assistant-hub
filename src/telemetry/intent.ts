@@ -1,5 +1,5 @@
 /** Coarse request intent, from keywords only (no model call). Also used by the tool router. */
-export type Intent = 'meal' | 'mfp-other' | 'expense' | 'finance-read' | 'plan' | 'mixed' | 'chat';
+export type Intent = 'meal' | 'mfp-other' | 'mfp-read' | 'expense' | 'finance-read' | 'plan' | 'mixed' | 'chat';
 export type Media = 'text' | 'photo' | 'voice' | 'pdf';
 
 const norm = (s: string) => s.toLowerCase().normalize('NFD').replace(/\p{Diacritic}/gu, '');
@@ -31,7 +31,8 @@ export function classifyIntent(text: string, media: Media = 'text'): Intent {
   }
   if (money) return FINANCE_READ.test(t) ? 'finance-read' : 'expense';
   if (food) {
-    if (FOOD_READ.test(t) || /(borra|elimina|quita|cambia|corrige|delete|remove|\bpeso\b|\bpese\b|weigh|\bagua\b|water|ejercicio|exercise)/.test(t)) return 'mfp-other';
+    if (FOOD_READ.test(t)) return 'mfp-read';
+    if (/(borra|elimina|quita|cambia|corrige|delete|remove|\bpeso\b|\bpese\b|weigh|\bagua\b|water|ejercicio|exercise)/.test(t)) return 'mfp-other';
     return 'meal';
   }
   if (media === 'voice' || media === 'photo' || media === 'pdf') return 'mixed';

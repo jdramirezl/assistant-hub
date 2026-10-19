@@ -88,6 +88,16 @@ describe('false save guard', () => {
   });
 });
 
+describe('false save guard: reads are never touched', () => {
+  it('"¿qué comí hoy?" answered with "hoy ha registrado…" keeps the reply', async () => {
+    const sm = await boot([{ text: 'Hoy ha registrado 3 alimentos en el desayuno: 279 kcal.' }]);
+    tg.push(textUpdate(ME, '¿qué comí hoy?'));
+    await tg.waitFor(() => tg.outgoingText(ME).includes('279 kcal'));
+    expect(tg.outgoingText(ME)).not.toContain('no lo guardé');
+    expect(sm.calls).toHaveLength(1);
+  });
+});
+
 describe('false save guard: other MyFitnessPal writes', () => {
   it('"tomé 500 ml de agua" answered with "Agua registrada" and no tool → not saved notice', async () => {
     const sm = await boot([{ text: 'Muy bien, amo Julián. Agua registrada: 500 ml.' }, { text: 'Agua registrada.' }]);

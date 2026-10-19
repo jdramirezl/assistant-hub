@@ -18,7 +18,7 @@ describe('classifyIntent', () => {
   it.each([
     ['registra 2 huevos y una tostada en el desayuno', 'meal'],
     ['comí arroz con pollo y ensalada', 'meal'],
-    ['¿qué comí hoy?', 'mfp-other'],
+    ['¿qué comí hoy?', 'mfp-read'],
     ['borra el café del desayuno', 'mfp-other'],
     ['borra todo el desayuno de hoy', 'plan'],
     ['gasté 25k en almuerzo con Nequi', 'expense'],
