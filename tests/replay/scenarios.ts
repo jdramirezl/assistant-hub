@@ -1,7 +1,9 @@
 import type { Action, DiaryEntry, ReplicaState } from './replica.js';
 import { ACCOUNTS, POCKETS } from './replica.js';
 
-export type Msg = string | { photo: string; caption?: string } | { voice: string };
+import type { CinesAction, FakeCinesOptions } from '../support/fake-cines.js';
+
+export type Msg = string | { photo: string; caption?: string } | { voice: string } | { secret: string };
 
 export interface Scenario {
   id: string;
@@ -12,8 +14,23 @@ export interface Scenario {
   movements?: Record<string, unknown>[];
   /** Pin the local (Bogotá) hour the hub sees, e.g. for the meal-by-time fallback. */
   localHour?: number;
+  /** Fake cines-mx-mcp behavior (Phase 3 tools are always served). */
+  cines?: FakeCinesOptions;
   /** Sanity check of the end state (the main check is "same actions as the baseline"). */
-  ok(r: { actions: Action[]; state: ReplicaState; cards: string[]; reply: string; today: string; yesterday: string }): boolean | string;
+  ok(r: {
+    actions: Action[];
+    state: ReplicaState;
+    cards: string[];
+    reply: string;
+    today: string;
+    yesterday: string;
+    cines: { calls: string[]; args: { tool: string; args: Record<string, unknown> }[]; actions: CinesAction[]; secrets: string[] };
+    /** Photos the hub sent (sendPhoto). */
+    photos: number;
+    logs: string[];
+    /** Every text the bot showed. */
+    outgoing: string;
+  }): boolean | string;
 }
 
 const logs = (a: Action[], meal?: string) => a.filter((x) => x.app === 'mfp' && x.op === 'log' && (!meal || x.detail.startsWith(`${meal}:`)));
@@ -34,6 +51,9 @@ const BREAKFAST: DiaryEntry[] = [
   { meal: 'Breakfast', name: 'Orange juice', calories: 112 },
   { meal: 'Lunch', name: 'Rice, white, cooked', calories: 205 },
 ];
+
+const called = (calls: string[], tool: string) => calls.includes(tool) || `${tool} not called (calls: ${calls.join(', ') || 'none'})`;
+const noFinanceOrMfp = (a: Action[]) => a.length === 0 || `unexpected writes: ${a.map((x) => x.detail).join('; ')}`;
 
 export const SCENARIOS: Scenario[] = [
   {
@@ -213,5 +233,55 @@ export const SCENARIOS: Scenario[] = [
     id: 'oatmeal',
     turns: ['desayuné una taza de avena'],
     ok: ({ actions }) => (logs(actions, 'Breakfast').length === 1 && has(actions, /Oatmeal.*= 166 kcal/)) || actions.map((x) => x.detail).join('; ') || 'nothing logged',
+  },
+  {
+    id: 'cines-listings',
+    turns: ['¿qué hay en el Toreo hoy?'],
+    ok: ({ cines, reply, actions }) => both(called(cines.calls, 'cines_listings'), /dune/i.test(reply) || `reply: ${reply.slice(0, 80)}`, noFinanceOrMfp(actions)),
+  },
+  {
+    id: 'cines-where',
+    turns: ['¿dónde pasan Dune?'],
+    ok: ({ cines, reply }) => both(cines.calls.some((t) => t === 'cines_find_movie' || t === 'cines_showtimes') || `calls: ${cines.calls.join(',')}`, /toreo|carso|miyana/i.test(reply) || `reply: ${reply.slice(0, 80)}`),
+  },
+  {
+    id: 'cines-tonight',
+    turns: ['quiero ver Dune hoy en la noche'],
+    ok: ({ cines, reply }) => {
+      const best = cines.args.find((c) => c.tool === 'cines_best_showtime');
+      return both(
+        !!best || `calls: ${cines.calls.join(',')}`,
+        !best || ['night', 'evening'].includes(String(best.args.window)) || /^(19|2\d)/.test(String(best.args.after ?? '')) || `window: ${JSON.stringify(best?.args)}`,
+        (/20:30/.test(reply) && /(21:00|20:00)/.test(reply)) || `best + 2 alternatives not in reply: ${reply.slice(0, 120)}`,
+      );
+    },
+  },
+  {
+    id: 'cines-seats',
+    turns: ['quiero ver Dune hoy en la noche', 'la de las 20:30 en el Toreo, somos 2, muéstrame los asientos'],
+    ok: ({ cines, photos, reply, actions }) =>
+      both(
+        called(cines.calls, 'cines_seat_map'),
+        photos >= 1 || 'no photo sent',
+        /F7/i.test(reply) || `proposal not in reply: ${reply.slice(0, 100)}`,
+        !/\/images\//.test(reply) || 'image URL leaked into the reply',
+        !cines.calls.includes('cines_hold_seats') || 'held without being asked',
+        noFinanceOrMfp(actions),
+      ),
+  },
+  {
+    id: 'cines-buy',
+    cines: { purchaseInputs: ['cvv'] },
+    turns: ['aparta y compra F7 y F8 para la función 570-1002 de Dune en el Toreo', { secret: '7391' }],
+    ok: ({ cines, cards, outgoing, logs }) =>
+      both(
+        cines.actions.map((a) => a.op).join(',') === 'hold,purchase' || `cines actions: ${cines.actions.map((a) => a.op).join(',') || 'none'}`,
+        cards.length >= 2 || `approval cards pressed: ${cards.length}`,
+        /Confirmar compra[\s\S]*\$184 MXN/.test(outgoing) || 'no purchase summary card',
+        cines.secrets.join() === '7391' || `secrets: ${cines.secrets.length}`,
+        !logs.join('\n').includes('7391') || 'secret in logs',
+        !logs.some((l) => l.startsWith('LEAK')) || 'secret sent to Gemini',
+        (cines.args.find((c) => c.tool === 'cines_purchase')?.args.expectedTotalMxn === 184) || 'purchase total not from the hold',
+      ),
   },
 ];

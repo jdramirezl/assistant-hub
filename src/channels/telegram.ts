@@ -51,6 +51,9 @@ export interface SecureInputPort {
 
 const CANCEL = /^\s*(cancel|cancelar|cancela|stop|para|no)\s*[.!]?\s*$/i;
 
+/** Last request's domains per user, so a short follow-up ("la de las 20:30", "sí", a button) keeps them. */
+type RecentTopics = Map<string, { domains: Domain[]; at: number }>;
+
 /** How long a conversation topic (e.g. cines) carries over to unclear follow-ups. */
 export const STICKY_MS = 20 * 60_000;
 
@@ -116,9 +119,8 @@ function guarded(
   voice?: Voice,
   transcribe?: Transcribe,
   secure?: SecureInputPort,
+  recent: RecentTopics = new Map(),
 ): ChannelHandler {
-  /** Last request's domains per user, so a short follow-up ("la de las 20:30", "sí") keeps them. */
-  const recent = new Map<string, { domains: Domain[]; at: number }>();
   return async (thread: Thread, message: Message, defaultHandler) => {
     if (!thread.isDM) return log(`[telegram] ignoring non-DM message in ${thread.id}`);
     if (!isAllowed(allowed, message)) return log(`[telegram] ignoring message from non-allowlisted user ${message.author?.userId}`);
@@ -197,7 +199,8 @@ export function createTelegramChannel(config: HubConfig, deps: TelegramDeps = {}
   // The adapter reads its allowlist from this env var; make it match config exactly.
   process.env.TELEGRAM_ALLOWED_USER_IDS = config.telegram.allowedUserIds.join(',');
 
-  const handler = guarded(config.telegram.allowedUserIds, deps.kv, log, deps.gate, deps.voice, deps.transcribe, deps.secureInput);
+  const recent: RecentTopics = new Map();
+  const handler = guarded(config.telegram.allowedUserIds, deps.kv, log, deps.gate, deps.voice, deps.transcribe, deps.secureInput, recent);
   const display: ToolDisplayFn = (event, ctx) => deps.approvalCard?.(event) ?? toolDisplay(event, ctx);
   const handlers: ChannelHandlers = {
     onDirectMessage: handler,
@@ -216,7 +219,10 @@ export function createTelegramChannel(config: HubConfig, deps: TelegramDeps = {}
     onAction: async (event, defaultHandler) => {
       if (!event.actionId.startsWith('plan:')) {
         const chatId = event.user?.userId ? String(event.user.userId) : undefined;
-        return withUsageScope({ requestId: newRequestId(), intent: 'resume', media: 'text', kind: 'resume', chatId }, () => defaultHandler());
+        // an approval resumes the same conversation: keep its topic's tools (fewer tokens)
+        const last = chatId ? recent.get(chatId) : undefined;
+        const domains = last && Date.now() - last.at < STICKY_MS ? last.domains : undefined;
+        return withUsageScope({ requestId: newRequestId(), intent: 'resume', media: 'text', kind: 'resume', chatId, ...(domains ? { domains } : {}) }, () => defaultHandler());
       }
       const userId = event.user?.userId;
       if (!userId || !config.telegram.allowedUserIds.includes(String(userId))) {

@@ -7,6 +7,7 @@ and calls your apps (finance, MyFitnessPal, …) through MCP servers listed in `
 Telegram ⇄ (long polling) ⇄ assistant-hub [Mastra · 127.0.0.1:4111 · LibSQL]
                                  ├─ Gemini (gemini-3.5-flash-lite / gemini-3.8-flash)
                                  ├─ Mason MFP MCP   http://127.0.0.1:8484/mcp
+                                 ├─ cines-mx-mcp    http://127.0.0.1:8686/mcp (Cinépolis)
                                  └─ finance-app MCP https://<finance-app>/mcp (bearer token)
 ```
 
@@ -49,7 +50,11 @@ referenced by env var name, never written in the file:
 - `errorStyle: "mason"` maps Mason's plain-text `isError` failures to `MFP_UNAVAILABLE` (retryable), `MFP_SESSION_EXPIRED`, `MFP_BLOCKED`, `MFP_BAD_REQUEST`, `MFP_ERROR`.
 - Approval by name, in addition to `destructiveHint`/delete-like verbs: `fitness_delete_food`, `fitness_delete_exercise`, `fitness_modify_food`, `fitness_clear_food_pin`.
 
-Going live on the server Mac: set `"enabled": true` for `mfp` once Mason runs there.
+Going live on the server Mac: apps are switched on by their URL in `.env` (see below).
+`cines` (cines-mx-mcp) is enabled where `CINES_MCP_URL` is set; it uses the default error style
+(`CINES_UNAVAILABLE` retryable; `CINES_BLOCKED`, `CINES_SCHEMA_CHANGED`, `CINES_NOT_FOUND`,
+`CINES_BAD_REQUEST`, `CINES_SESSION_EXPIRED`, `CINES_HOLD_EXPIRED`, `CINES_PAYMENT_FAILED`,
+`CINES_LIMIT_EXCEEDED` not).
 `finance` is enabled in the registry but **gated per machine by `.env`**: with `FINANCE_MCP_URL`/`FINANCE_MCP_TOKEN`
 set (server Mac, prod token) it connects; left as `CHANGEME` (dev laptop) it is skipped. Never put the prod token on
 the dev laptop: it writes to real finances. To test finance in dev, point it at a Vercel **preview** deployment with
@@ -96,6 +101,47 @@ Telegram shows ONE message: the plan grouped by section (meal / account), with
 - Each log result carries `entry_kcal` and `meal_total`, so the agent reports e.g.
   "Breakfast logged: 3 items, 420 kcal".
 
+## Voice notes
+
+- A voice note is transcribed by the hub first (one flash-lite call, kind `transcribe` in `llm_calls`,
+  counted in the daily budget). The agent then gets `[voice note] <transcript>` as text, so the
+  topic router, the meal and the reply language work as for typed messages. If transcription fails,
+  the audio is sent to the agent as before.
+- **Meal in code:** `log_meal` uses the meal the user said (cena → Dinner, almuerzo/comida → Lunch,
+  desayuno → Breakfast, snack/merienda/onces → Snacks); with no meal word, a plain "comí X" about
+  now uses the Bogotá hour. The model's guess is overridden (and logged).
+- **Language:** a voice note's language goes in the prompt tail ("reply in Spanish").
+- **Common foods** (rice, beans, pasta, soup, salad, drinks, chicken, eggs, bread, arepa, fruit) get a
+  standard portion when the unit is vague ("arroz", "un plato de arroz" = 1.5 cups), so they are
+  logged without asking. The 2× check and the 800 kcal guard still apply.
+
+## Cines (Cinépolis)
+
+- **Topic:** película, cine, cartelera, función, boletos, Cinépolis, horarios, asientos, estreno,
+  preventa, IMAX, VIP, the cinema names and seat labels ("F7,F8") load only the `cines_*` tools and
+  the cines rules (the user's cinemas, subtitled first, 1–4 adults, seat preferences, best + 2
+  alternatives). An unclear follow-up within 20 min, and approval buttons, keep the topic.
+- **Seat maps:** when a result carries `imageUrl`, the hub fetches it (loopback http only, PNG
+  checked, ≤ 5 MB, 5 s) and uploads it with `sendPhoto` before the reply. The model only sees
+  "image sent"; if it fails, it is told to say so and list the seats.
+- **Secure input** (CVV, bank 3DS/OTP, Cinépolis e-mail code): a result `{status:"needs_input",
+  requestId, kind}` opens ONE pending request per chat (LibSQL, no secret stored, ≤ 5 min) and
+  Alfred asks "🔒 Envíe el CVV, Amo Julián. No lo verá el modelo…". The user's next message is taken
+  by the channel before the agent: it is deleted from the chat, sent straight to the hub-only
+  `cines_secure_input`, and never reaches the model, memory, logs or `llm_calls`; the agent gets
+  only the redacted result. A bad format is asked again without the model; "cancelar" stops.
+- **Purchase rules (code, not prompt):**
+  - `cines_hold_seats` and `cines_purchase` are approval-gated; `cines_release_hold` never is.
+  - The first 3 successful purchases always show a summary card (cinema, movie, time, seats,
+    total MXN) with ✅/❌. After that, the hold's approval covers the purchase of that hold.
+  - Hard cap **$1,000 MXN** per purchase, checked against the total of the hold the hub saw (never
+    the model's number); over it the call is refused before reaching the server.
+  - The hub sets `expectedTotalMxn` and `userApproved` itself; the model cannot.
+  - A hold is paid at most once (claimed before the call): a failed or unknown payment is never
+    retried. The success counter is persistent (LibSQL). Money tools cannot go in batch plans.
+- The Phase 3 tool shapes (hold/purchase/secure input) follow the cines fork's draft and live in
+  `src/cines/contract.ts` only.
+
 ## Persona
 
 By default the assistant is **Alfred** (Alfred Pennyworth): formal, dry wit, "Amo Julián" in
@@ -115,8 +161,9 @@ startup ping, weekly digest, "app is back" and rate-limit notices. Switch off wi
   cost at paid prices (flash-lite $0.30 in / $0.03 cached / $2.50 out per 1M; thinking billed as output).
 - **Replay** (`npm run replay -- --label <name> [--only id,id]`, opt-in, uses real Gemini and the
   free-tier quota, paced at 12 RPM): 25 typical requests through the real Telegram channel against
-  replicas of Mason and finance-app that serve their exact production tool definitions
-  (`tests/support/fixtures/*-tools.json`). It records the writes each request caused plus calls and
+  replicas of Mason, finance-app and cines-mx-mcp that serve their exact tool definitions
+  (`tests/support/fixtures/*-tools.json`); voice fixtures are regenerated with
+  `tests/support/fixtures/make-voice.sh`; `REPLAY_DEBUG=1` prints the hub log and the bot's messages. It records the writes each request caused plus calls and
   tokens; `npm run replay -- --compare baseline,final` prints the before/after table.
 
 ## How calls and tokens are kept low
@@ -196,6 +243,7 @@ Apps are switched on by their URL in `.env`, not by editing `mcp-servers.json`:
 
 ```bash
 MFP_MCP_URL=http://127.0.0.1:8484/mcp               # Mason on this Mac
+CINES_MCP_URL=http://127.0.0.1:8686/mcp             # cines-mx-mcp on this Mac
 FINANCE_MCP_URL=https://finance-app-backend-ten.vercel.app/mcp
 FINANCE_MCP_TOKEN=<contents of ~/.config/finance-mcp/prod.token>
 HEALTHCHECK_URL=https://hc-ping.com/<uuid>          # optional, healthchecks.io check (period 5 min, grace 10 min)
@@ -241,6 +289,8 @@ Keep the checkout clean: `deploy.sh` refuses to run with local edits.
 | `src/channels/telegram.ts` | Telegram channel (polling, allowlist, dedup) |
 | `src/mcp/` | Registry parsing and the MCP toolbox |
 | `src/approvals.ts` | Which tools need approval |
+| `src/cines/` | Cines: contract adapter, purchase policy + secure input, images, approval cards |
+| `src/voice/`, `src/meal.ts` | Voice-note transcription; meal and language from the user's words |
 | `src/budget.ts` | Daily token/cost cap (counter + agent processor) |
 | `src/digest.ts`, `src/workflows/weekly-digest.ts` | Weekly digest and its schedule |
 | `src/notify.ts` | Proactive Telegram messages (digest, startup ping) |

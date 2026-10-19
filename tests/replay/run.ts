@@ -19,6 +19,7 @@ import { MockTelegram, photoUpdate, textUpdate, callbackUpdate, voiceUpdate } fr
 import { startFinanceReplica, startMasonReplica, type ReplicaState } from './replica.js';
 import { SCENARIOS, type Msg, type Scenario } from './scenarios.js';
 import { devGeminiKey } from '../support/dev-key.js';
+import { startFakeCines } from '../support/fake-cines.js';
 
 const RESULTS = join(import.meta.dirname, 'results');
 const FIXTURES = join(import.meta.dirname, '..', 'support', 'fixtures');
@@ -51,6 +52,7 @@ function pacedFetch() {
   let inflight = 0;
   let total = 0;
   let lastActivity = Date.now();
+  const bodies: string[] = [];
   const f = (async (input: Parameters<typeof fetch>[0], init?: Parameters<typeof fetch>[1]) => {
     inflight++; // waiting for a slot counts as busy
     lastActivity = Date.now();
@@ -67,6 +69,7 @@ function pacedFetch() {
     total++;
     starts.push(Date.now());
     lastActivity = Date.now();
+    bodies.push(typeof init?.body === 'string' ? init.body : '');
     try {
       return await fetch(input, init);
     } finally {
@@ -74,7 +77,7 @@ function pacedFetch() {
       lastActivity = Date.now();
     }
   }) as typeof fetch;
-  return { fetch: f, busy: () => inflight > 0, lastActivity: () => lastActivity, total: () => total };
+  return { fetch: f, busy: () => inflight > 0, lastActivity: () => lastActivity, total: () => total, bodies };
 }
 
 /** Today at hh:30 in Bogotá (UTC-5, no DST). */
@@ -95,6 +98,7 @@ async function runScenario(s: Scenario, pacer: ReturnType<typeof pacedFetch>, ap
   };
   const mason = await startMasonReplica(state, today);
   const finance = await startFinanceReplica(state, today, 'replay-token');
+  const cines = await startFakeCines({ phase3: true, ...(s.cines ?? {}) });
   const tg = await new MockTelegram().start();
   for (const f of ['receipt.png', 'voice-expense.wav', 'voice-meal.wav', 'voice-breakfast.wav', 'voice-snack.wav', 'voice-dinner-en.wav']) {
     tg.addFile(f, { path: `files/${f}`, mime: f.endsWith('.png') ? 'image/png' : 'audio/wav', bytes: readFileSync(join(FIXTURES, f)) });
@@ -108,6 +112,7 @@ async function runScenario(s: Scenario, pacer: ReturnType<typeof pacedFetch>, ap
     MFP_MCP_URL: mason.url,
     FINANCE_MCP_URL: finance.url,
     FINANCE_MCP_TOKEN: 'replay-token',
+    CINES_MCP_URL: cines.url,
     MCP_REGISTRY_PATH: join(process.cwd(), 'mcp-servers.json'),
   };
   const logs: string[] = [];
@@ -165,6 +170,12 @@ async function runScenario(s: Scenario, pacer: ReturnType<typeof pacedFetch>, ap
   };
 
   for (const turn of s.turns) {
+    if (typeof turn === 'object' && 'secret' in turn) {
+      // the user types a secret: must go to cines_secure_input, never to the model
+      tg.push(textUpdate(ME, turn.secret));
+      await settle();
+      continue;
+    }
     tg.push(toUpdate(turn));
     await settle();
     await approvePending();
@@ -186,23 +197,30 @@ async function runScenario(s: Scenario, pacer: ReturnType<typeof pacedFetch>, ap
     outputTokens: ok.reduce((a, r) => a + r.outputTokens, 0),
     toolsSentAvg: ok.length ? Math.round(ok.reduce((a, r) => a + r.toolsSent, 0) / ok.length) : 0,
     systemCharsAvg: ok.length ? Math.round(ok.reduce((a, r) => a + r.systemChars, 0) / ok.length) : 0,
-    actions: state.actions.map((a) => `${a.app}.${a.op} ${a.detail}`),
+    actions: [...state.actions.map((a) => `${a.app}.${a.op} ${a.detail}`), ...cines.actions.map((a) => `cines.${a.op} ${a.detail}`)],
     cards,
     ok: true,
     reply: reply.slice(0, 400),
     ms: Date.now() - t0,
   };
-  const verdict = s.ok({ actions: state.actions, state, cards, reply, today, yesterday });
+  const cinesCalls = cines.calls.map((c) => c.tool);
+  const photos = tg.sent('sendPhoto').length;
+  // a secret the user typed must never reach Gemini
+  for (const t of s.turns) if (typeof t === 'object' && 'secret' in t && pacer.bodies.some((b) => b.includes(t.secret))) logs.push('LEAK: secret sent to Gemini');
+  const verdict = s.ok({ actions: state.actions, state, cards, reply, today, yesterday, cines: { calls: cinesCalls, args: cines.calls, actions: cines.actions, secrets: cines.secrets }, photos, logs, outgoing: tg.outgoingText(ME) });
   result.ok = verdict === true ? true : String(verdict);
+  if (process.env.REPLAY_DEBUG) console.log(`--- ${s.id} bot said:\n${tg.calls.filter((c) => /send|edit/.test(c.method) && c.method !== 'sendChatAction').map((c) => `  [${c.method}] ${String((c.body.rich_message as { markdown?: string } | undefined)?.markdown ?? c.body.text ?? '').slice(0, 300)}`).join('\n')}\n--- cines calls: ${JSON.stringify(cines.calls)}`);
   if (process.env.REPLAY_DEBUG) console.log(`--- ${s.id} hub log\n${logs.filter((l) => !/^\[mcp\] \w+: up/.test(l)).join('\n')}\n--- reply: ${reply}`);
   await hub.stop();
   await tg.stop();
   await mason.close();
   await finance.close();
+  await cines.close();
   return result;
 
   function toUpdate(m: Msg) {
     if (typeof m === 'string') return textUpdate(ME, m);
+    if ('secret' in m) return textUpdate(ME, m.secret);
     if ('photo' in m) return photoUpdate(ME, m.photo, m.caption);
     const u = voiceUpdate(ME, m.voice) as { message: { voice: { mime_type: string } } };
     u.message.voice.mime_type = 'audio/wav';

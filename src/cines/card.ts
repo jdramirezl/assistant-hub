@@ -13,8 +13,12 @@ type Rec = Record<string, unknown>;
 const mxn = (n: number) => `$${n.toLocaleString('es-MX', { minimumFractionDigits: 0, maximumFractionDigits: 2 })} MXN`;
 
 export function cinesApprovalCard(event: ToolDisplayEvent, cines: Pick<CinesHub, 'holdSummary'>, lang: Language): ToolDisplayResult | undefined {
-  if (event.kind !== 'approval' || (event.toolName !== HOLD_TOOL && event.toolName !== PURCHASE_TOOL)) return undefined;
+  if (event.toolName !== HOLD_TOOL && event.toolName !== PURCHASE_TOOL) return undefined;
   const es = lang === 'es';
+  const hold = event.toolName === HOLD_TOOL;
+  if (event.kind === 'approved') return { kind: 'post', message: hold ? (es ? '✅ Apartando asientos…' : '✅ Holding seats…') : es ? '✅ Compra aprobada, pagando…' : '✅ Purchase approved, paying…' };
+  if (event.kind === 'denied') return { kind: 'post', message: hold ? (es ? '❌ No se apartó nada.' : '❌ Nothing was held.') : es ? '❌ Compra cancelada; no se cobró nada.' : '❌ Purchase cancelled; nothing was charged.' };
+  if (event.kind !== 'approval') return undefined;
   const args = (event.args ?? {}) as Rec;
   const buttons = (ok: string, no: string) =>
     Actions([

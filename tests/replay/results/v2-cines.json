@@ -1,0 +1,259 @@
+{
+ "label": "v2-cines",
+ "at": "2026-10-19T23:19:45.154Z",
+ "results": [
+  {
+   "id": "eggs-toast",
+   "calls": 2,
+   "rateLimited": 0,
+   "inputTokens": 11667,
+   "cachedTokens": 4008,
+   "outputTokens": 307,
+   "toolsSentAvg": 21,
+   "systemCharsAvg": 3922,
+   "actions": [
+    "mfp.log Breakfast: Egg, whole, large × 2 [1 large egg] = 144 kcal",
+    "mfp.log Breakfast: Toast, white bread × 1 [1 slice] = 75 kcal"
+   ],
+   "cards": [],
+   "ok": true,
+   "reply": "Muy bien, Amo Julián, en seguida lo anoto.\n\nDesayuno: 2 items, 219 kcal (2 huevos: 144 kcal, 1 tostada: 75 kcal).",
+   "ms": 8159
+  },
+  {
+   "id": "plan-delete-breakfast",
+   "calls": 3,
+   "rateLimited": 0,
+   "inputTokens": 18710,
+   "cachedTokens": 10028,
+   "outputTokens": 1066,
+   "toolsSentAvg": 21,
+   "systemCharsAvg": 3922,
+   "actions": [
+    "mfp.delete Breakfast: Coffee with milk",
+    "mfp.delete Breakfast: Egg, whole, large",
+    "mfp.delete Breakfast: Toast, white bread",
+    "mfp.delete Breakfast: Orange juice"
+   ],
+   "cards": [
+    "plan(4)"
+   ],
+   "ok": true,
+   "reply": "📋 Borrar desayuno (4 entradas): ✅ 4/4 ejecutadas",
+   "ms": 19197
+  },
+  {
+   "id": "expense-nequi",
+   "calls": 2,
+   "rateLimited": 0,
+   "inputTokens": 8362,
+   "cachedTokens": 0,
+   "outputTokens": 405,
+   "toolsSentAvg": 15,
+   "systemCharsAvg": 4192,
+   "actions": [
+    "finance.create EgresoNormal 25000 COP Nequi/Disponible 2026-10-19"
+   ],
+   "cards": [],
+   "ok": true,
+   "reply": "Como ordene, Amo Julián. Su frugal almuerzo ha quedado debidamente registrado.\n\n- **Egreso:** $25,000 COP (Almuerzo)\n- **Cuenta:** Nequi (Disponible)",
+   "ms": 11401
+  },
+  {
+   "id": "transfer",
+   "calls": 2,
+   "rateLimited": 0,
+   "inputTokens": 8559,
+   "cachedTokens": 0,
+   "outputTokens": 708,
+   "toolsSentAvg": 15,
+   "systemCharsAvg": 4192,
+   "actions": [
+    "finance.transfer 200000 Bancolombia/Principal → Nequi/Disponible 2026-10-19"
+   ],
+   "cards": [],
+   "ok": true,
+   "reply": "Enseguida, Amo Julián. He transferido $200.000 de Bancolombia a Nequi.",
+   "ms": 14682
+  },
+  {
+   "id": "what-did-i-eat",
+   "calls": 2,
+   "rateLimited": 0,
+   "inputTokens": 11609,
+   "cachedTokens": 4008,
+   "outputTokens": 285,
+   "toolsSentAvg": 21,
+   "systemCharsAvg": 3922,
+   "actions": [],
+   "cards": [],
+   "ok": true,
+   "reply": "Muy bien, Amo Julián. Su registro de hoy indica lo siguiente:\n\n- **Desayuno**: Café con leche (60 kcal), Huevo (144 kcal), Pan blanco (75 kcal), Zumo de naranja (112 kcal).\n- **Almuerzo**: Arroz blanco (205 kcal).\n- **Total**: 596 kcal consumidas de una meta de 2.200 kcal.",
+   "ms": 7895
+  },
+  {
+   "id": "voice-expense",
+   "calls": 3,
+   "rateLimited": 0,
+   "inputTokens": 8603,
+   "cachedTokens": 0,
+   "outputTokens": 419,
+   "toolsSentAvg": 10,
+   "systemCharsAvg": 2833,
+   "actions": [
+    "finance.create EgresoNormal 35000 COP Nequi/Disponible 2026-10-19"
+   ],
+   "cards": [],
+   "ok": true,
+   "reply": "Muy bien, Amo Julián. He registrado el gasto de su traslado.\n\n• Taxi al aeropuerto — $35,000 COP — Nequi",
+   "ms": 9378
+  },
+  {
+   "id": "voice-meal",
+   "calls": 3,
+   "rateLimited": 0,
+   "inputTokens": 11868,
+   "cachedTokens": 6013,
+   "outputTokens": 315,
+   "toolsSentAvg": 14,
+   "systemCharsAvg": 2653,
+   "actions": [
+    "mfp.log Dinner: Rice, white, cooked × 1 [1 cup] = 205 kcal",
+    "mfp.log Dinner: Chicken breast, grilled × 1 [1 breast (172 g)] = 284 kcal"
+   ],
+   "cards": [],
+   "ok": true,
+   "reply": "Muy bien, Amo Julián. Ha quedado registrado en un instante.\n\n**Cena:** 2 items, 489 kcal\n- Rice, white, cooked (1 cup) — 205 kcal\n- Chicken breast, grilled (1 breast) — 284 kcal",
+   "ms": 12898
+  },
+  {
+   "id": "mixed",
+   "calls": 2,
+   "rateLimited": 0,
+   "inputTokens": 17702,
+   "cachedTokens": 10033,
+   "outputTokens": 650,
+   "toolsSentAvg": 34,
+   "systemCharsAvg": 5335,
+   "actions": [
+    "mfp.log Lunch: Arepa, white corn × 1 [1 arepa (100 g)] = 220 kcal",
+    "finance.create EgresoNormal 18000 COP Nequi/Disponible 2026-10-19"
+   ],
+   "cards": [],
+   "ok": true,
+   "reply": "En seguida, Amo Julián. Queda registrado el almuerzo y el gasto correspondiente.\n\n- **Almuerzo:** 1 item, 220 kcal (Arepa, white corn).\n- **Gasto Nequi:** $18.000 COP (Almuerzo).",
+   "ms": 12422
+  },
+  {
+   "id": "chat",
+   "calls": 1,
+   "rateLimited": 0,
+   "inputTokens": 8408,
+   "cachedTokens": 6020,
+   "outputTokens": 30,
+   "toolsSentAvg": 34,
+   "systemCharsAvg": 5335,
+   "actions": [],
+   "cards": [],
+   "ok": true,
+   "reply": "Muy bien, Amo Julián, a su servicio y aguardando sus órdenes. ¿En qué puedo asistirle en esta apacible tarde?",
+   "ms": 9636
+  },
+  {
+   "id": "balance",
+   "calls": 2,
+   "rateLimited": 0,
+   "inputTokens": 8333,
+   "cachedTokens": 1999,
+   "outputTokens": 306,
+   "toolsSentAvg": 15,
+   "systemCharsAvg": 4192,
+   "actions": [],
+   "cards": [],
+   "ok": true,
+   "reply": "Muy bien, Amo Julián. En su cuenta de Nequi tiene un saldo de $850.000 COP.",
+   "ms": 16926
+  },
+  {
+   "id": "cines-listings",
+   "calls": 2,
+   "rateLimited": 0,
+   "inputTokens": 7481,
+   "cachedTokens": 0,
+   "outputTokens": 260,
+   "toolsSentAvg": 14,
+   "systemCharsAvg": 4300,
+   "actions": [],
+   "cards": [],
+   "ok": true,
+   "reply": "Amo Julián, aquí tiene la cartelera de Cinépolis Parque Toreo para hoy:\n\n- **Dune: Mesías** (B): 17:10 (SUB), 20:30 (SUB), 21:15 (ESP)\n- **Coco 2** (A): 16:00 (ESP), 19:40 (ESP)",
+   "ms": 10396
+  },
+  {
+   "id": "cines-where",
+   "calls": 2,
+   "rateLimited": 0,
+   "inputTokens": 7386,
+   "cachedTokens": 0,
+   "outputTokens": 168,
+   "toolsSentAvg": 14,
+   "systemCharsAvg": 4300,
+   "actions": [],
+   "cards": [],
+   "ok": true,
+   "reply": "Enseguida, Amo Julián. \n\nDune: Mesías se proyecta hoy y mañana en:\n- Cinépolis Parque Toreo\n- Cinépolis Plaza Carso\n- Cinépolis VIP Miyana Polanco",
+   "ms": 8655
+  },
+  {
+   "id": "cines-seats",
+   "calls": 5,
+   "rateLimited": 0,
+   "inputTokens": 19973,
+   "cachedTokens": 1990,
+   "outputTokens": 456,
+   "toolsSentAvg": 14,
+   "systemCharsAvg": 4300,
+   "actions": [],
+   "cards": [],
+   "ok": true,
+   "reply": "Amo Julián, le propongo los asientos **F7 y F8**, ubicados en el centro de la sala. ¿Le parecen bien o prefiere otros?",
+   "ms": 20200
+  },
+  {
+   "id": "cines-buy",
+   "calls": 5,
+   "rateLimited": 0,
+   "inputTokens": 20065,
+   "cachedTokens": 1998,
+   "outputTokens": 754,
+   "toolsSentAvg": 14,
+   "systemCharsAvg": 4300,
+   "actions": [
+    "cines.hold hold_1 570-1002 F7,F8 $184",
+    "cines.purchase hold_1 $184"
+   ],
+   "cards": [
+    "tool:?",
+    "tool:?"
+   ],
+   "ok": true,
+   "reply": "Amo Julián, su compra ha sido completada con éxito.\n\n- **Película:** Dune\n- **Cine:** Parque Toreo\n- **Asientos:** F7, F8\n- **Total:** $184 MXN\n- **Número de confirmación:** BK001",
+   "ms": 30812
+  },
+  {
+   "id": "cines-tonight",
+   "calls": 2,
+   "rateLimited": 0,
+   "inputTokens": 7730,
+   "cachedTokens": 0,
+   "outputTokens": 309,
+   "toolsSentAvg": 14,
+   "systemCharsAvg": 4425,
+   "actions": [],
+   "cards": [],
+   "ok": true,
+   "reply": "Con gusto, Amo Julián. Aquí tiene las mejores opciones para ver *Dune: Mesías* hoy en la noche:\n\n1. **Parque Toreo** — 20:30 (2D, Subtitulada) | **$92 MXN** (Mejor opción, más cercana)\n2. **Plaza Carso** — 21:00 (IMAX, Subtitulada) | **$165 MXN**\n3. **Miyana Polanco** — 20:00 (VIP, Subtitulada) | **$260 MXN** *(Aviso: Precio VIP)*\n\n¿Cuál le apetece reservar?",
+   "ms": 7912
+  }
+ ]
+}
