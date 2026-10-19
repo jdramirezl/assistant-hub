@@ -9,6 +9,8 @@ import type { KvStore } from './kv.js';
 import { loadRegistry, parseRegistry } from './mcp/registry.js';
 import { McpToolbox } from './mcp/toolbox.js';
 import { NutritionTracker } from './mcp/nutrition.js';
+import { trimForModel } from './mcp/trim.js';
+import { ToolCallFilter } from '@mastra/core/processors';
 import { Budget, BudgetGuard, BUDGET_MESSAGE } from './budget.js';
 import { createGeminiModels, modelChain } from './models.js';
 import { withMalformedFallback } from './llm/escalate.js';
@@ -104,9 +106,12 @@ export function createHub(config: HubConfig, deps: HubDeps = {}): Hub {
     hooks: {
       approval: (tool) => (tool === 'fitness_log_food' ? (input) => nutrition.needsConfirmation(input) : undefined),
       afterResult: (tool, input, result) => {
-        if (!tool.startsWith('fitness_')) return result;
-        nutrition.recordResult(tool, input, result);
-        return tool === 'fitness_log_food' ? nutrition.annotateLog(input, result) : result;
+        let out = result;
+        if (tool.startsWith('fitness_')) {
+          nutrition.recordResult(tool, input, result); // guards see the FULL result
+          if (tool === 'fitness_log_food') out = nutrition.annotateLog(input, result);
+        }
+        return trimForModel(tool, out);
       },
     },
     onRecovered: (name, downForMs) => {
@@ -152,7 +157,8 @@ export function createHub(config: HubConfig, deps: HubDeps = {}): Hub {
     tools: async () => ({ ...(await toolbox.getTools()), propose_plan: proposePlan }),
     extraInstructions: () => toolbox.statusNote(),
     guards: [guard],
-    inputGuards: [new WorkingMemoryPrompt(memory)],
+    // Older turns keep their text but drop tool calls/results; the current run keeps all of them.
+    inputGuards: [new WorkingMemoryPrompt(memory), new ToolCallFilter()],
     outputGuards: [new PlanGuard((t) => toolbox.isGated(t), log)],
   });
   summarizePlan = async (prompt, memory) => {

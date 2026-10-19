@@ -71,7 +71,7 @@ export function createMemory(storage: LibSQLStore): Memory {
   return new Memory({
     storage,
     options: {
-      lastMessages: 20,
+      lastMessages: 15,
       semanticRecall: false, // no embedder/vector store needed; keeps cost at zero
       workingMemory: { enabled: true, scope: 'resource', template: WORKING_MEMORY_TEMPLATE },
     },
