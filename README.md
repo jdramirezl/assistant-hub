@@ -124,23 +124,31 @@ Telegram shows ONE message: the plan grouped by section (meal / account), with
 - **Seat maps:** when a result carries `imageUrl`, the hub fetches it (loopback http only, PNG
   checked, ≤ 5 MB, 5 s) and uploads it with `sendPhoto` before the reply. The model only sees
   "image sent"; if it fails, it is told to say so and list the seats.
-- **Secure input** (CVV, bank 3DS/OTP, Cinépolis e-mail code): a result `{status:"needs_input",
-  requestId, kind}` opens ONE pending request per chat (LibSQL, no secret stored, ≤ 5 min) and
-  Alfred asks "🔒 Envíe el CVV, Amo Julián. No lo verá el modelo…". The user's next message is taken
-  by the channel before the agent: it is deleted from the chat, sent straight to the hub-only
-  `cines_secure_input`, and never reaches the model, memory, logs or `llm_calls`; the agent gets
-  only the redacted result. A bad format is asked again without the model; "cancelar" stops.
+- **Secure input** (CVV, bank 3DS/OTP, Cinépolis e-mail code): a result
+  `{status:"needs_cvv"|"needs_3ds"|"needs_email_code", challengeId, kind, expiresAt}` opens ONE
+  pending request per chat (LibSQL, no secret stored, ≤ 5 min or the server's `expiresAt`) and
+  Alfred asks "🔒 Envíe el CVV, Amo Julián. No lo verá el modelo…" (plus the result's image, if any).
+  The user's next message is taken by the channel before the agent: it is deleted from the chat,
+  format-checked by the hub (code 6 digits, CVV 3–4, OTP 4–10 alphanumerics; a bad one is asked
+  again without calling anything), sent straight to the hub-only `cines_submit_code`, and never
+  reaches the model, memory, logs or `llm_calls`; the agent gets only the redacted result.
+  "cancelar" stops; a late reply up to 10 min after expiry is still deleted and not used.
 - **Purchase rules (code, not prompt):**
   - `cines_hold_seats` and `cines_purchase` are approval-gated; `cines_release_hold` never is.
   - The first 3 successful purchases always show a summary card (cinema, movie, time, seats,
     total MXN) with ✅/❌. After that, the hold's approval covers the purchase of that hold.
   - Hard cap **$1,000 MXN** per purchase, checked against the total of the hold the hub saw (never
     the model's number); over it the call is refused before reaching the server.
-  - The hub sets `expectedTotalMxn` and `userApproved` itself; the model cannot.
+  - The hub sets `expectedTotal` (the hold's `total`, fees included) and `userApproved` itself; the
+    model cannot. If the server's hold result still says `purchaseApprovalRequired`, the card is shown.
+  - ❌ on the purchase card releases the hold (`cines_release_hold`); unanswered holds expire on the
+    server after ~9 min.
+  - `CINES_PURCHASE_DRY_RUN=1` sends every purchase with `dryRun` (nothing is charged; not counted).
+    Real payment is disabled on cines-mx-mcp until the live PayPal check.
   - A hold is paid at most once (claimed before the call): a failed or unknown payment is never
     retried. The success counter is persistent (LibSQL). Money tools cannot go in batch plans.
-- The Phase 3 tool shapes (hold/purchase/secure input) follow the cines fork's draft and live in
-  `src/cines/contract.ts` only.
+- The Phase 3 tool shapes follow cines-mx-mcp's final contract v1 (docs/hub-integration.md,
+  `542f827`) and live in `src/cines/contract.ts` only; test fixtures are exported from that commit.
 
 ## Persona
 

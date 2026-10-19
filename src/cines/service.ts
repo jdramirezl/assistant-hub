@@ -4,10 +4,11 @@
  * Images: a result with `imageUrl` (loopback PNG) is fetched and uploaded with sendPhoto; the
  * model only sees "image sent".
  *
- * Secure input: a result `{status:"needs_input", requestId, kind}` opens ONE pending secure
- * request per chat (LibSQL, no secret stored, ≤ 5 min). The user's next message is taken by
- * the Telegram channel before the agent, deleted from the chat, and sent straight to the
- * hub-only `cines_secure_input`; the agent only sees the (redacted) result.
+ * Secure input: a result `{status:"needs_cvv"|"needs_3ds"|"needs_email_code", challengeId, kind}`
+ * opens ONE pending secure request per chat (LibSQL, no secret stored, ≤ 5 min / the server's
+ * expiresAt). The user's next message is taken by the Telegram channel before the agent,
+ * deleted from the chat, format-checked and sent straight to the hub-only `cines_submit_code`;
+ * the agent only sees the (redacted) result. A late reply after expiry is still swallowed.
  *
  * Purchases:
  *   - cines_hold_seats and cines_purchase are approval-gated; cines_release_hold is not.
@@ -23,6 +24,9 @@ import { fetchLoopbackPng } from './images.js';
 import {
   HARD_CAP_MXN,
   HOLD_TOOL,
+  RELEASE_TOOL,
+  SECURE_FORMAT,
+  normalizeSecret,
   PURCHASE_TOOL,
   SECURE_TOOL,
   holdIdOf,
@@ -59,12 +63,23 @@ export interface CinesHubDeps {
   sendText?: (chatId: string, text: string) => Promise<void>;
   /** Persona wording of the secure prompt for a kind. */
   securePrompt: (kind: SecureKind) => string;
+  /** "⚠️ That doesn't look right (3–4 digits); send it again" for a kind. */
+  secureBadFormat: (kind: SecureKind) => string;
+  /** "⌛ The request expired; I did not use your message" */
+  secureExpired: () => string;
+  /** Force dryRun on every purchase (setup day / tests): nothing is charged. */
+  dryRun?: boolean;
 }
 
-interface PendingSecure {
+/** After expiry, a reply that looks like the secret is still swallowed for this long. */
+export const LATE_GRACE_MS = 10 * 60_000;
+
+export interface PendingSecure {
   requestId: string;
   kind: SecureKind;
   expiresAt: number;
+  /** True after expiresAt (within LATE_GRACE_MS): only swallow a late secret, do not deliver it. */
+  expired?: boolean;
 }
 
 export interface CallContext {
@@ -106,7 +121,9 @@ export class CinesHub {
   async purchaseNeedsApproval(input: Rec): Promise<boolean> {
     if ((await this.successes()) < ALWAYS_CONFIRM) return true;
     const h = await this.hold(holdIdOf(input));
-    return !h || h.totalMxn > HARD_CAP_MXN; // the hold itself was approved (gated): it covers this purchase
+    // the hold itself was approved (gated): it covers this purchase, unless the server still
+    // requires explicit approval (its own ledger) or the total is over the cap
+    return !h || h.serverApprovalRequired === true || h.totalMxn > HARD_CAP_MXN;
   }
 
   /**
@@ -125,7 +142,7 @@ export class CinesHub {
       return { error: sharedError('CINES_PAYMENT_FAILED', 'A payment for this hold was already attempted; payments are never retried. Ask the user to check their e-mail/bank before anything else.') };
     }
     this.log(`[cines] purchase of ${h.holdId}: $${h.totalMxn} MXN`);
-    return { args: purchaseArgs(input, h, true) };
+    return { args: purchaseArgs(input, h, true, { dryRun: this.d.dryRun }) };
   }
 
   /* ---------------------------------------------------------------- results */
@@ -138,6 +155,12 @@ export class CinesHub {
     let out = result;
     const h = holdOf(result);
     if (h && (tool === HOLD_TOOL || tool === SECURE_TOOL)) {
+      h.serverApprovalRequired = (result as Rec).purchaseApprovalRequired === true;
+      // the server's `next` says "show the summary"; the HUB shows it (the purchase card)
+      out = {
+        ...(result as Rec),
+        next: `If the user asked to BUY, call cines_purchase now with holdId "${h.holdId}" and expectedTotal ${h.totalMxn} (the hub shows the confirmation card; do not ask in text). If they only asked to hold, show the total and stop.`,
+      };
       this.holds.set(h.holdId, h);
       await this.d.kv.set(`cines:hold:${h.holdId}`, h, HOLD_TTL_MS);
     }
@@ -171,14 +194,24 @@ export class CinesHub {
 
   /* ---------------------------------------------------------------- secure input */
 
+  /** The pending request (or, shortly after it expired, an `expired` marker); undefined when none. */
   async pending(chatId: string): Promise<PendingSecure | undefined> {
     const p = await this.d.kv.get<PendingSecure>(`cines:secure:${chatId}`);
     if (!p) return undefined;
-    if (p.expiresAt <= this.now()) {
-      await this.d.kv.delete(`cines:secure:${chatId}`);
-      return undefined;
-    }
+    if (p.expiresAt <= this.now()) return { ...p, expired: true };
     return p;
+  }
+
+  /** Is this text shaped like the secret of that kind (to swallow a late reply)? */
+  looksLikeSecret(kind: SecureKind, text: string): boolean {
+    const f = SECURE_FORMAT[kind];
+    return f ? f.re.test(normalizeSecret(text)) : /^\s*[0-9A-Za-z]{3,10}\s*$/.test(text);
+  }
+
+  /** ❌ on a purchase card: release the hold right away (never leaves seats held). */
+  async releaseAfterDeny(holdId: string | undefined): Promise<void> {
+    const r = await this.d.toolbox.execute(RELEASE_TOOL, holdId ? { holdId } : {}, { raw: true }).catch((e: Error) => ({ error: { message: e.message } }));
+    this.log(`[cines] purchase denied: hold ${holdId ?? '(active)'} ${(r as Rec)?.error ? 'NOT released' : 'released'}`);
   }
 
   async cancelSecure(chatId: string): Promise<void> {
@@ -196,7 +229,7 @@ export class CinesHub {
     const server = req.expiresAt ? Date.parse(req.expiresAt) : NaN;
     const expiresAt = Math.min(this.now() + SECURE_TTL_MS, Number.isFinite(server) ? server : Infinity);
     const p: PendingSecure = { requestId: req.requestId, kind: req.kind, expiresAt };
-    await this.d.kv.set(`cines:secure:${chatId}`, p, expiresAt - this.now());
+    await this.d.kv.set(`cines:secure:${chatId}`, p, expiresAt - this.now() + LATE_GRACE_MS);
     if (req.imageUrl) await this.sendImage(req.imageUrl, chatId);
     await this.d.sendText(chatId, this.d.securePrompt(req.kind));
     this.log(`[cines] secure input requested (${req.kind})`);
@@ -213,9 +246,17 @@ export class CinesHub {
    * is nothing to resume (e.g. a bad format: the user is asked again).
    */
   async deliver(chatId: string, value: string, p: PendingSecure): Promise<{ agentText?: string; userText?: string }> {
+    if (p.expired) {
+      // a late reply: never forward it; tell the user, and the agent that the step lapsed
+      await this.d.kv.delete(`cines:secure:${chatId}`);
+      return { userText: this.d.secureExpired(), agentText: `[hub] The private ${p.kind} request expired before the user answered; nothing was sent. The server cancelled that step. Tell the user briefly and offer to start again.` };
+    }
+    const secret = normalizeSecret(value);
+    const fmt = SECURE_FORMAT[p.kind];
+    if (fmt && !fmt.re.test(secret)) return { userText: this.d.secureBadFormat(p.kind) }; // still pending, server not called
     await this.d.kv.delete(`cines:secure:${chatId}`);
-    const raw = await this.d.toolbox.execute(SECURE_TOOL, secureArgs(p, value.trim()), { raw: true });
-    const scrub = (v: unknown) => JSON.parse(JSON.stringify(v ?? null).split(value.trim()).join('•••')) as unknown;
+    const raw = await this.d.toolbox.execute(SECURE_TOOL, secureArgs(p, secret), { raw: true });
+    const scrub = (v: unknown) => JSON.parse(JSON.stringify(v ?? null).split(secret).join('•••')) as unknown;
     const err = (raw as Rec | undefined)?.error as Rec | undefined;
     if (err?.code === 'CINES_BAD_REQUEST' && /formato|format/i.test(String(err.message))) {
       // the server keeps the request open on a bad format: ask again, no model call

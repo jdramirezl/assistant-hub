@@ -1,8 +1,7 @@
 /**
  * Fake cines-mx-mcp for tests and the replay. Serves the EXACT tool definitions exported from
- * cines-mx-mcp (fixtures/cines-tools.json: the read + seat tools, committed upstream) and,
- * optionally, the Phase 3 tools (fixtures/cines-phase3-tools.json: thread 4's DRAFT contract,
- * exported from its working tree; replace both files when it is final).
+ * cines-mx-mcp main 542f827 (fixtures/cines-tools.json: read + seat tools;
+ * fixtures/cines-phase3-tools.json: the final Phase 3 contract v1) and mimics their results.
  *
  * Plain stateless Streamable HTTP (JSON responses) on loopback, like the real server, plus
  * GET /images/<id>.png for seat maps. Default error style: failures are isError with a single
@@ -83,7 +82,13 @@ export interface FakeCinesOptions {
   priceMxn?: number;
   /** cines_purchase fails with CINES_PAYMENT_FAILED. */
   paymentFails?: boolean;
+  /** Successful purchases already in the server's ledger. */
+  successes?: number;
+  /** Like the real server today: a non-dryRun payment fails ("aún no está habilitado"). */
+  realPaymentDisabled?: boolean;
 }
+/** Cinépolis fees per ticket (included in `total`). */
+export const FEE_MXN = 7;
 export interface FakeCines {
   url: string;
   base: string;
@@ -122,14 +127,16 @@ export async function startFakeCines(opts: FakeCinesOptions = {}): Promise<FakeC
     images.set(id, tinyPng());
     return `${state.base}/images/${id}.png`;
   };
-  const holds = new Map<string, Rec & { holdId: string; totalMxn: number; status: string }>();
+  const holds = new Map<string, Rec & { holdId: string; totalMxn: number; status: string; seats: string[] }>();
+  const paid = new Set<string>();
   const pending = new Map<string, { kind: string; next: (value: string) => unknown }>();
   let reqSeq = 0;
-  let successes = 0;
+  let successes = opts.successes ?? 0;
+  const STATUS: Record<string, string> = { email_code: 'needs_email_code', cvv: 'needs_cvv', otp_3ds: 'needs_3ds' };
   const ask = (kind: string, prompt: string, next: (value: string) => unknown) => {
-    const requestId = `sec_${++reqSeq}`;
-    pending.set(requestId, { kind, next });
-    return { status: 'needs_input', requestId, kind, prompt, expiresAt: new Date(Date.now() + 5 * 60_000).toISOString(), secure: true };
+    const challengeId = `sec_${++reqSeq}`;
+    pending.set(challengeId, { kind, next });
+    return { status: STATUS[kind], secure: true, challengeId, kind, prompt, expiresAt: new Date(Date.now() + 5 * 60_000).toISOString() };
   };
 
   const handlers: Record<string, (a: Rec) => unknown> = {
@@ -206,15 +213,16 @@ export async function startFakeCines(opts: FakeCinesOptions = {}): Promise<FakeC
     const finishHold = (a: Rec) => {
       const s = SHOWTIMES.find((x) => x.id === a.showtimeId);
       if (!s) return err('CINES_NOT_FOUND', 'No encontré esa función en tus cines.');
-      const seats = String(a.seats ?? '').split(/[,\s]+/).filter(Boolean).map((x) => x.toUpperCase());
+      const seats = (Array.isArray(a.seats) ? a.seats.map(String) : String(a.seats ?? '').split(/[,\s]+/)).filter(Boolean).map((x) => x.toUpperCase());
+      if (a.tickets !== undefined && Number(a.tickets) !== seats.length) return err('CINES_BAD_REQUEST', `Pediste ${a.tickets} boletos pero ${seats.length} asientos.`);
       const unit = opts.priceMxn ?? s.priceMxn;
+      const subtotal = unit * seats.length;
+      if (subtotal + FEE_MXN * seats.length > 1000) return err('CINES_LIMIT_EXCEEDED', `El total $${subtotal + FEE_MXN * seats.length} supera el límite de $1000.`);
       const holdId = `hold_${holds.size + 1}`;
       const h = {
         holdId,
         status: 'held',
-        createdAt: new Date().toISOString(),
         expiresAt: new Date(Date.now() + 9 * 60_000).toISOString(),
-        cinemaId: s.cinemaId,
         cinemaName: CINEMAS.find((c) => c.id === s.cinemaId)!.name,
         showtimeId: s.id,
         date: '2026-10-19',
@@ -224,24 +232,35 @@ export async function startFakeCines(opts: FakeCinesOptions = {}): Promise<FakeC
         seats,
         ticketType: 'Admision General',
         unitMxn: unit,
-        chargesMxn: 0,
-        subtotalMxn: unit * seats.length,
-        totalMxn: unit * seats.length,
+        chargesMxn: FEE_MXN * seats.length,
+        subtotalMxn: subtotal,
+        totalMxn: subtotal + FEE_MXN * seats.length,
       };
       holds.set(holdId, h);
       state.actions.push({ op: 'hold', detail: `${holdId} ${s.id} ${seats.join(',')} $${h.totalMxn}` });
-      return { ...h, movie: MOVIES.find((m) => m.id === s.movieId)!.title, purchaseApprovalRequired: successes < 3, capMxn: 1000, next: 'Muestra el resumen. Para pagar llama cines_purchase con holdId y expectedTotalMxn = totalMxn; para cancelar, cines_release_hold.' };
+      return {
+        ...h,
+        cinema: h.cinemaName,
+        movie: MOVIES.find((m) => m.id === s.movieId)!.title,
+        startsAt: `2026-10-19T${s.time}:00-06:00`,
+        total: h.totalMxn,
+        currency: 'MXN',
+        purchaseApprovalRequired: successes < 3,
+        capMxn: 1000,
+        next: 'Muestra el resumen. Para pagar llama cines_purchase con holdId y expectedTotal = total; para cancelar, cines_release_hold.',
+      };
     };
     const pay = (h: (typeof holds extends Map<string, infer V> ? V : never), a: Rec) => {
-      if (opts.paymentFails) {
+      if (opts.paymentFails || (opts.realPaymentDisabled && !a.dryRun)) {
         h.status = 'failed';
         state.actions.push({ op: 'purchase-failed', detail: h.holdId });
-        return err('CINES_PAYMENT_FAILED', 'El banco rechazó el pago. No se reintentará el pago.');
+        return err('CINES_PAYMENT_FAILED', opts.paymentFails ? 'El banco rechazó el pago. No se reintentará el pago.' : 'El pago real aún no está habilitado. Usa dryRun. No se reintentará el pago.');
       }
-      h.status = 'purchased';
+      h.status = a.dryRun ? 'held' : 'purchased';
       if (!a.dryRun) successes++;
       state.actions.push({ op: 'purchase', detail: `${h.holdId} $${h.totalMxn}${a.dryRun ? ' dry-run' : ''}` });
-      return { status: 'paid', dryRun: a.dryRun || undefined, bookingNumber: `BK${h.holdId.replace(/\D/g, '').padStart(3, '0')}`, totalMxn: h.totalMxn, seats: h.seats };
+      const n = h.holdId.replace(/\D/g, '').padStart(3, '0');
+      return { status: 'paid', purchaseId: `pur_${n}`, dryRun: a.dryRun || undefined, bookingNumber: a.dryRun ? `DRYRUN-${n}` : `BK${n}`, total: h.totalMxn, currency: 'MXN', totalMxn: h.totalMxn, seats: h.seats };
     };
     Object.assign(handlers, {
       cines_hold_seats: (a: Rec) => (opts.emailCode ? ask('email_code', 'Escribe el código de 6 dígitos que Cinépolis envió a tu correo.', () => finishHold(a)) : finishHold(a)),
@@ -256,11 +275,12 @@ export async function startFakeCines(opts: FakeCinesOptions = {}): Promise<FakeC
       cines_purchase: (a: Rec) => {
         const h = holds.get(String(a.holdId));
         if (!h) return err('CINES_NOT_FOUND', 'Ese apartado no existe.');
-        if (h.status !== 'held') return err('CINES_PAYMENT_FAILED', `Ya se intentó pagar este apartado (${h.status}); nunca reintento un pago.`);
+        if (h.status !== 'held' || (!a.dryRun && paid.has(h.holdId))) return err('CINES_PAYMENT_FAILED', `Ya se intentó pagar este apartado (${h.status}); nunca reintento un pago.`);
         if (h.totalMxn > 1000) return err('CINES_LIMIT_EXCEEDED', `El total $${h.totalMxn} supera el límite de $1000.`);
-        if (Math.abs(h.totalMxn - Number(a.expectedTotalMxn)) > 0.005) return err('CINES_BAD_REQUEST', `El total no coincide: apartado $${h.totalMxn}, esperado $${a.expectedTotalMxn}.`);
+        if (Math.abs(h.totalMxn - Number(a.expectedTotal)) > 0.005) return err('CINES_BAD_REQUEST', `El total no coincide: apartado $${h.totalMxn}, esperado $${a.expectedTotal}.`);
+        if (!a.dryRun) paid.add(h.holdId);
         if (!a.dryRun && successes < 3 && a.userApproved !== true) return err('CINES_BAD_REQUEST', 'Las primeras 3 compras requieren la aprobación explícita del usuario (userApproved: true tras el ✅).');
-        h.status = 'purchasing';
+        if (!a.dryRun) h.status = 'purchasing';
         const steps = [...(opts.purchaseInputs ?? [])];
         const prompts: Record<string, string> = { cvv: 'Escribe el CVV de tu tarjeta.', otp_3ds: 'Escribe el código que te envió tu banco.' };
         const step = (): unknown => {
@@ -269,13 +289,13 @@ export async function startFakeCines(opts: FakeCinesOptions = {}): Promise<FakeC
         };
         return step();
       },
-      cines_secure_input: (a: Rec) => {
-        const p = pending.get(String(a.requestId));
+      cines_submit_code: (a: Rec) => {
+        const p = pending.get(String(a.challengeId));
         if (!p) return err('CINES_NOT_FOUND', 'Esa solicitud ya no está activa.');
-        const v = String(a.value ?? '').replace(/\s+/g, '');
+        const v = String(a.code ?? '').replace(/\s+/g, '');
         const re = p.kind === 'email_code' ? /^\d{6}$/ : p.kind === 'cvv' ? /^\d{3,4}$/ : /^[0-9A-Za-z]{4,10}$/;
         if (!re.test(v)) return err('CINES_BAD_REQUEST', 'Formato inválido.');
-        pending.delete(String(a.requestId));
+        pending.delete(String(a.challengeId));
         state.secrets.push(v);
         return p.next(v);
       },
@@ -311,7 +331,7 @@ export async function startFakeCines(opts: FakeCinesOptions = {}): Promise<FakeC
         return void ok({ tools });
       case 'tools/call': {
         const p = msg.params as { name: string; arguments?: Rec };
-        state.calls.push({ tool: p.name, args: p.name === 'cines_secure_input' ? { requestId: p.arguments?.requestId, value: '<secret>' } : (p.arguments ?? {}) });
+        state.calls.push({ tool: p.name, args: p.name === 'cines_submit_code' ? { challengeId: p.arguments?.challengeId, code: '<secret>' } : (p.arguments ?? {}) });
         const h = handlers[p.name];
         const out = h ? h(p.arguments ?? {}) : err('CINES_BAD_REQUEST', `Unknown tool ${p.name}`);
         const isError = !!out && typeof out === 'object' && 'error' in (out as Rec);

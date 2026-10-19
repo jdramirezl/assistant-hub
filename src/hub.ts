@@ -165,6 +165,9 @@ export function createHub(config: HubConfig, deps: HubDeps = {}): Hub {
     now: deps.now,
     fetch: deps.cinesFetch,
     securePrompt: (kind) => voice.securePrompt(kind),
+    secureBadFormat: (kind) => voice.secureBadFormat(kind),
+    secureExpired: () => voice.secureExpired(),
+    dryRun: config.cinesDryRun,
     ...(tgApi
       ? {
           sendPhoto: async (chatId: string, bytes: Uint8Array) => void (await tgApi.sendPhoto(chatId, bytes)),
@@ -268,6 +271,7 @@ export function createHub(config: HubConfig, deps: HubDeps = {}): Hub {
     secureInput: {
       pending: (chatId) => cinesHub.pending(chatId),
       cancel: (chatId) => cinesHub.cancelSecure(chatId),
+      looksLikeSecret: (kind, text) => cinesHub.looksLikeSecret(kind, text),
       deliver: (chatId, value, p) => cinesHub.deliver(chatId, value, p),
     },
   });

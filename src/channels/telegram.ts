@@ -42,11 +42,15 @@ export interface TelegramDeps {
   secureInput?: SecureInputPort;
 }
 
+type Pending = { requestId: string; kind: string; expiresAt: number; expired?: boolean };
 export interface SecureInputPort {
-  pending(chatId: string): Promise<{ requestId: string; kind: string; expiresAt: number } | undefined>;
+  /** Pending request; `expired` = lapsed recently (only a late secret is swallowed). */
+  pending(chatId: string): Promise<Pending | undefined>;
   cancel(chatId: string): Promise<void>;
+  /** Does this text look like the secret of that kind (a late reply after expiry)? */
+  looksLikeSecret(kind: string, text: string): boolean;
   /** Deliver the value; returns the text the agent gets instead (never the value), and/or a text for the user. */
-  deliver(chatId: string, value: string, p: { requestId: string; kind: string; expiresAt: number }): Promise<{ agentText?: string; userText?: string }>;
+  deliver(chatId: string, value: string, p: Pending): Promise<{ agentText?: string; userText?: string }>;
 }
 
 const CANCEL = /^\s*(cancel|cancelar|cancela|stop|para|no)\s*[.!]?\s*$/i;
@@ -131,13 +135,17 @@ function guarded(
     // Secure input: this message is a secret for a tool. It never reaches the model, memory,
     // logs or llm_calls; it is deleted from the chat and replaced by the (redacted) tool result.
     let resumed: string | undefined;
-    const pendingSecret = secure ? await secure.pending(chatId).catch(() => undefined) : undefined;
+    let pendingSecret = secure ? await secure.pending(chatId).catch(() => undefined) : undefined;
+    if (pendingSecret?.expired && !secure!.looksLikeSecret(pendingSecret.kind, message.text ?? '')) {
+      await secure!.cancel(chatId); // lapsed and this is an ordinary message: handle it normally
+      pendingSecret = undefined;
+    }
     if (pendingSecret) {
       const value = message.text ?? '';
       message.text = '';
       message.formatted = undefined as never;
       await thread.adapter.deleteMessage(thread.id, message.id).catch((e: Error) => log(`[secure] could not delete the message: ${e.message.split('\n')[0]}`));
-      if (CANCEL.test(value)) {
+      if (CANCEL.test(value) && !pendingSecret.expired) {
         await secure!.cancel(chatId);
         log('[secure] cancelled by the user');
         resumed = '[hub] The user cancelled the private code request. Nothing was sent. Ask what they want to do (e.g. release the hold).';

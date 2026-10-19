@@ -98,7 +98,8 @@ async function runScenario(s: Scenario, pacer: ReturnType<typeof pacedFetch>, ap
   };
   const mason = await startMasonReplica(state, today);
   const finance = await startFinanceReplica(state, today, 'replay-token');
-  const cines = await startFakeCines({ phase3: true, ...(s.cines ?? {}) });
+  // like the real server today: real payment disabled; the hub sends dryRun (CINES_PURCHASE_DRY_RUN)
+  const cines = await startFakeCines({ phase3: true, realPaymentDisabled: true, ...(s.cines ?? {}) });
   const tg = await new MockTelegram().start();
   for (const f of ['receipt.png', 'voice-expense.wav', 'voice-meal.wav', 'voice-breakfast.wav', 'voice-snack.wav', 'voice-dinner-en.wav']) {
     tg.addFile(f, { path: `files/${f}`, mime: f.endsWith('.png') ? 'image/png' : 'audio/wav', bytes: readFileSync(join(FIXTURES, f)) });
@@ -113,6 +114,7 @@ async function runScenario(s: Scenario, pacer: ReturnType<typeof pacedFetch>, ap
     FINANCE_MCP_URL: finance.url,
     FINANCE_MCP_TOKEN: 'replay-token',
     CINES_MCP_URL: cines.url,
+    CINES_PURCHASE_DRY_RUN: '1',
     MCP_REGISTRY_PATH: join(process.cwd(), 'mcp-servers.json'),
   };
   const logs: string[] = [];
@@ -171,9 +173,15 @@ async function runScenario(s: Scenario, pacer: ReturnType<typeof pacedFetch>, ap
 
   for (const turn of s.turns) {
     if (typeof turn === 'object' && 'secret' in turn) {
-      // the user types a secret: must go to cines_secure_input, never to the model
+      // the user types a secret ONLY when the hub asked for it privately (🔒); it must go to
+      // cines_submit_code, never to the model
+      if (!/🔒/.test(tg.outgoingText(ME))) {
+        logs.push('SKIPPED: secret turn, but the hub never asked for a secure input');
+        continue;
+      }
       tg.push(textUpdate(ME, turn.secret));
       await settle();
+      await approvePending();
       continue;
     }
     tg.push(toUpdate(turn));

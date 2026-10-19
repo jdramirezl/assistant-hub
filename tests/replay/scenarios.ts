@@ -271,17 +271,19 @@ export const SCENARIOS: Scenario[] = [
   },
   {
     id: 'cines-buy',
-    cines: { purchaseInputs: ['cvv'] },
-    turns: ['aparta y compra F7 y F8 para la función 570-1002 de Dune en el Toreo', { secret: '7391' }],
+    cines: { purchaseInputs: ['otp_3ds'] },
+    turns: ['aparta y compra F7 y F8 para la función 570-1002 de Dune en el Toreo', { secret: 'Q8Z4K2' }],
     ok: ({ cines, cards, outgoing, logs }) =>
       both(
         cines.actions.map((a) => a.op).join(',') === 'hold,purchase' || `cines actions: ${cines.actions.map((a) => a.op).join(',') || 'none'}`,
         cards.length >= 2 || `approval cards pressed: ${cards.length}`,
-        /Confirmar compra[\s\S]*\$184 MXN/.test(outgoing) || 'no purchase summary card',
-        cines.secrets.join() === '7391' || `secrets: ${cines.secrets.length}`,
-        !logs.join('\n').includes('7391') || 'secret in logs',
+        /Confirmar compra[\s\S]*\$198 MXN/.test(outgoing) || 'no purchase summary card',
+        cines.secrets.join() === 'Q8Z4K2' || `secrets: ${cines.secrets.length}`,
+        !logs.join('\n').includes('Q8Z4K2') || 'secret in logs',
         !logs.some((l) => l.startsWith('LEAK')) || 'secret sent to Gemini',
-        (cines.args.find((c) => c.tool === 'cines_purchase')?.args.expectedTotalMxn === 184) || 'purchase total not from the hold',
+        !logs.some((l) => l.startsWith('SKIPPED')) || 'no secure prompt before the secret',
+        (cines.args.find((c) => c.tool === 'cines_purchase')?.args.expectedTotal === 198) || 'purchase total not from the hold',
+        cines.args.find((c) => c.tool === 'cines_purchase')?.args.dryRun === true || 'purchase not sent as dryRun',
       ),
   },
 ];

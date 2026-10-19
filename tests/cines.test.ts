@@ -48,7 +48,10 @@ describe('cines topic router', () => {
 describe('cines contract and guards (unit)', () => {
   it('tool fixtures are the real definitions', () => {
     expect(CINES_TOOLS.map((t) => t.name)).toEqual(['cines_list_cinemas', 'cines_listings', 'cines_find_movie', 'cines_showtimes', 'cines_best_showtime', 'cines_upcoming', 'cines_seat_map', 'cines_validate_seats']);
-    expect(CINES_PHASE3_TOOLS.map((t) => t.name).sort()).toEqual(['cines_hold_seats', 'cines_hold_status', 'cines_purchase', 'cines_release_hold', 'cines_secure_input']);
+    expect(CINES_PHASE3_TOOLS.map((t) => t.name).sort()).toEqual(['cines_hold_seats', 'cines_hold_status', 'cines_purchase', 'cines_release_hold', 'cines_submit_code']);
+    const purchase = CINES_PHASE3_TOOLS.find((t) => t.name === 'cines_purchase') as unknown as { inputSchema: { properties: Record<string, unknown>; required: string[] } };
+    expect(Object.keys(purchase.inputSchema.properties)).not.toContain('cvv'); // no secrets as arguments
+    expect(purchase.inputSchema.required).toEqual(['holdId', 'expectedTotal']);
   });
   it('hold and purchase are gated; release is never gated', () => {
     expect(requiresApproval('cines_hold_seats', undefined)).toBe(true);
@@ -57,11 +60,16 @@ describe('cines contract and guards (unit)', () => {
     expect(requiresApproval('cines_seat_map', { readOnlyHint: true })).toBe(false);
   });
   it('the purchase total and userApproved come from the hub, not the model', () => {
-    const hold = holdOf({ status: 'held', holdId: 'h1', totalMxn: 184, seats: ['F7', 'F8'], cinemaName: 'Toreo', movie: 'Dune', date: '2026-10-19', time: '20:30' })!;
-    expect(hold).toMatchObject({ holdId: 'h1', totalMxn: 184, when: '2026-10-19 20:30' });
-    expect(purchaseArgs({ holdId: 'h1', expectedTotalMxn: 1, userApproved: true, method: 'card' }, hold, false)).toEqual({ holdId: 'h1', expectedTotalMxn: 184, userApproved: false, method: 'card' });
-    expect(secureRequestOf({ status: 'needs_input', requestId: 'r', kind: 'cvv' })).toMatchObject({ requestId: 'r', kind: 'cvv' });
+    const hold = holdOf({ status: 'held', holdId: 'h1', total: 198, currency: 'MXN', seats: ['F7', 'F8'], cinema: 'Toreo', movie: 'Dune', startsAt: '2026-10-19T20:30:00-06:00', ticketType: 'Admision General' })!;
+    expect(hold).toMatchObject({ holdId: 'h1', totalMxn: 198, when: '2026-10-19 20:30', cinema: 'Toreo', ticketType: 'Admision General' });
+    expect(holdOf({ status: 'needs_email_code', challengeId: 'c' })).toBeUndefined();
+    expect(purchaseArgs({ holdId: 'h1', expectedTotal: 1, userApproved: false, method: 'card' }, hold, true)).toEqual({ holdId: 'h1', expectedTotal: 198, userApproved: true, method: 'card' });
+    expect(purchaseArgs({ holdId: 'h1' }, hold, true, { dryRun: true })).toMatchObject({ dryRun: true });
+    for (const status of ['needs_cvv', 'needs_3ds', 'needs_email_code']) {
+      expect(secureRequestOf({ status, secure: true, challengeId: 'sec_1', kind: 'cvv', expiresAt: 'x' })).toMatchObject({ requestId: 'sec_1', kind: 'cvv' });
+    }
     expect(secureRequestOf({ status: 'held' })).toBeUndefined();
+    expect(secureRequestOf({ status: 'in_progress', jobId: 'j' })).toBeUndefined();
   });
   it('images: loopback http(s) only, PNG only', async () => {
     expect(() => assertLoopbackImageUrl('https://evil.example/x.png')).toThrow(ImageRefused);
@@ -95,17 +103,21 @@ describe('CinesHub secure input (unit)', () => {
     const { CinesHub } = await import('../src/cines/service.js');
     const kv = kvMem();
     const sent: string[] = [];
-    const hub = new CinesHub({ kv: kv as never, toolbox: { execute: async () => ({}) }, now: kv.now, securePrompt: (k) => `🔒 ${k}`, sendText: async (_c, t) => void sent.push(t) });
-    const a = await hub.afterResult('cines_purchase', {}, { status: 'needs_input', requestId: 'r1', kind: 'cvv', secure: true }, { chatId: '42' });
+    const hub = new CinesHub({ kv: kv as never, toolbox: { execute: async () => ({}) }, now: kv.now, securePrompt: (k) => `🔒 ${k}`, secureBadFormat: () => 'bad', secureExpired: () => 'expired', sendText: async (_c, t) => void sent.push(t) });
+    const a = await hub.afterResult('cines_purchase', {}, { status: 'needs_cvv', challengeId: 'r1', kind: 'cvv', secure: true }, { chatId: '42' });
     expect(a).toMatchObject({ status: 'waiting_for_secure_input', kind: 'cvv' });
-    const b = await hub.afterResult('cines_purchase', {}, { status: 'needs_input', requestId: 'r2', kind: 'otp_3ds', secure: true }, { chatId: '42' });
+    const b = await hub.afterResult('cines_purchase', {}, { status: 'needs_3ds', challengeId: 'r2', kind: 'otp_3ds', secure: true }, { chatId: '42' });
     expect(b).toMatchObject({ status: 'secure_input_busy' });
     expect(sent).toEqual(['🔒 cvv']);
     expect(await hub.pending('42')).toMatchObject({ requestId: 'r1' });
     kv.advance(5 * 60_000 + 1);
+    expect(await hub.pending('42')).toMatchObject({ expired: true }); // a late reply is still swallowed
+    expect(hub.looksLikeSecret('cvv', ' 123 ')).toBe(true);
+    expect(hub.looksLikeSecret('cvv', 'qué pasó')).toBe(false);
+    kv.advance(10 * 60_000);
     expect(await hub.pending('42')).toBeUndefined();
     // no chat (Studio): nothing is opened
-    expect(await hub.afterResult('cines_purchase', {}, { status: 'needs_input', requestId: 'r3', kind: 'cvv' }, {})).toMatchObject({ status: 'secure_input_unavailable' });
+    expect(await hub.afterResult('cines_purchase', {}, { status: 'needs_cvv', challengeId: 'r3', kind: 'cvv' }, {})).toMatchObject({ status: 'secure_input_unavailable' });
   });
 });
 
@@ -187,7 +199,7 @@ describe('cines through Telegram (fake cines-mx-mcp)', () => {
     tg.push(textUpdate(ME, '¿qué hay en cartelera?'));
     await tg.waitFor(() => sm.calls.length === 1);
     expect(sm.calls[0]!.tools).toEqual(expect.arrayContaining(['cines_hold_seats', 'cines_purchase', 'cines_release_hold']));
-    expect(sm.calls[0]!.tools).not.toContain('cines_secure_input');
+    expect(sm.calls[0]!.tools).not.toContain('cines_submit_code');
   });
 
   /** hold → ✅ card → purchase → ✅ summary card → secure CVV → secure OTP → paid */
@@ -197,7 +209,7 @@ describe('cines through Telegram (fake cines-mx-mcp)', () => {
       (p) => {
         const o = JSON.parse(lastToolResult(p));
         const v = o.value ?? o;
-        return v.holdId ? { tool: 'cines_purchase', args: { holdId: v.holdId, expectedTotalMxn: 1, userApproved: true } } : { text: `hold: ${JSON.stringify(v)}` };
+        return v.holdId ? { tool: 'cines_purchase', args: { holdId: v.holdId, expectedTotal: 1, userApproved: false } } : { text: `hold: ${JSON.stringify(v)}` };
       },
       (p) => ({ text: `resultado: ${lastToolResult(p)}` }),
       (p) => ({ text: `resultado: ${lastToolResult(p)}` }),
@@ -220,11 +232,11 @@ describe('cines through Telegram (fake cines-mx-mcp)', () => {
     expect(card).toMatch(/Parque Toreo/);
     expect(card).toMatch(/20:30/);
     expect(card).toMatch(/F7, F8/);
-    expect(card).toMatch(/\$184 MXN/);
+    expect(card).toMatch(/\$198 MXN/);
     await press('tool_approve:call-1');
     // the server got the hub's total and userApproved, not the model's
     await tg.waitFor(() => /CVV/.test(tg.outgoingText(ME)), 10_000);
-    expect(cines.calls.find((c) => c.tool === 'cines_purchase')!.args).toMatchObject({ expectedTotalMxn: 184, userApproved: true });
+    expect(cines.calls.find((c) => c.tool === 'cines_purchase')!.args).toMatchObject({ expectedTotal: 198, userApproved: true });
     expect(tg.outgoingText(ME)).toMatch(/🔒 Envíe el CVV de su tarjeta, Amo Julián\. No lo verá el modelo/);
     const cvvMsg = textUpdate(ME, CVV);
     tg.push(cvvMsg);
@@ -255,7 +267,7 @@ describe('cines through Telegram (fake cines-mx-mcp)', () => {
     await tg.waitFor(() => /CVV/.test(tg.outgoingText(ME)), 10_000);
     const calls = sm.calls.length;
     tg.push(textUpdate(ME, '12'));
-    await tg.waitFor(() => /Formato inválido/.test(tg.outgoingText(ME)));
+    await tg.waitFor(() => /no parece correcto/.test(tg.outgoingText(ME)));
     expect(sm.calls.length).toBe(calls); // no model call
     expect(await hub.cines.pending(String(ME))).toBeDefined();
     tg.push(textUpdate(ME, 'cancelar'));
@@ -266,18 +278,46 @@ describe('cines through Telegram (fake cines-mx-mcp)', () => {
   }, 30_000);
 
   it('over $1,000 MXN is refused by the hub before the server is called', async () => {
-    await buyFlow({ priceMxn: 600 }); // 2 × 600
-    await tg.waitFor(() => /supera el límite/.test(tg.outgoingText(ME)), 10_000);
-    await press('tool_approve:call-1');
-    await tg.waitFor(() => /CINES_LIMIT_EXCEEDED/.test(tg.outgoingText(ME)), 10_000);
+    const { hub } = await boot([], { phase3: true });
+    // a hold the hub saw with a total over the cap (the real server also refuses such holds)
+    await hub.cines.afterResult('cines_hold_seats', {}, { status: 'held', holdId: 'big', total: 1210, currency: 'MXN', seats: ['A1'] });
+    expect(await hub.cines.purchaseNeedsApproval({ holdId: 'big' })).toBe(true);
+    expect(await hub.toolbox.execute('cines_purchase', { holdId: 'big', expectedTotal: 1210, userApproved: true })).toMatchObject({ error: { code: 'CINES_LIMIT_EXCEEDED' } });
+    expect(await hub.toolbox.execute('cines_purchase', { holdId: 'unknown', expectedTotal: 10 })).toMatchObject({ error: { code: 'CINES_BAD_REQUEST' } });
     expect(cines.calls.map((c) => c.tool)).not.toContain('cines_purchase');
+  });
+
+  it('❌ on the purchase card releases the hold', async () => {
+    await buyFlow();
+    await tg.waitFor(() => /Confirmar compra/.test(tg.outgoingText(ME)), 10_000);
+    await press('tool_deny:call-1');
+    await tg.waitFor(() => cines.actions.some((a) => a.op === 'release'), 10_000);
+    expect(cines.actions.map((a) => a.op)).toEqual(['hold', 'release']);
+  }, 30_000);
+
+  it('a bad format is checked by the hub (the server is not called); a late reply after expiry is swallowed', async () => {
+    const { sm, hub } = await buyFlow({ purchaseInputs: ['cvv'] });
+    await press('tool_approve:call-1');
+    await tg.waitFor(() => /CVV/.test(tg.outgoingText(ME)), 10_000);
+    tg.push(textUpdate(ME, '12ab'));
+    await tg.waitFor(() => /no parece correcto/.test(tg.outgoingText(ME)));
+    expect(cines.calls.map((c) => c.tool)).not.toContain('cines_submit_code');
+    // expire it, then the user sends the CVV late: deleted, not forwarded, not shown to the model
+    const p = (await hub.cines.pending(String(ME)))!;
+    await hub.kv.set(`cines:secure:${ME}`, { ...p, expiresAt: Date.now() - 1 }, 60_000);
+    const late = textUpdate(ME, '4821');
+    tg.push(late);
+    await tg.waitFor(() => /expiró/.test(tg.outgoingText(ME)));
+    expect(tg.sent('deleteMessage').map((c) => Number(c.body.message_id))).toContain(late.message.message_id);
+    expect(cines.calls.map((c) => c.tool)).not.toContain('cines_submit_code');
+    expect(JSON.stringify(sm.calls.map((c) => c.prompt))).not.toContain('4821');
   }, 30_000);
 
   it('a failed payment is never retried, even if the model calls it again', async () => {
     const script: Turn[] = [
       { tool: 'cines_hold_seats', args: { showtimeId: '570-1002', seats: 'F7' } },
-      (p) => ({ tool: 'cines_purchase', args: { holdId: (JSON.parse(lastToolResult(p)).value ?? JSON.parse(lastToolResult(p))).holdId, expectedTotalMxn: 92 } }),
-      { tool: 'cines_purchase', args: { holdId: 'hold_1', expectedTotalMxn: 92 } },
+      (p) => ({ tool: 'cines_purchase', args: { holdId: (JSON.parse(lastToolResult(p)).value ?? JSON.parse(lastToolResult(p))).holdId, expectedTotal: 99 } }),
+      { tool: 'cines_purchase', args: { holdId: 'hold_1', expectedTotal: 99 } },
       (p) => ({ text: `final: ${lastToolResult(p)}` }),
     ];
     await boot(script, { phase3: true, paymentFails: true });
@@ -295,17 +335,49 @@ describe('cines through Telegram (fake cines-mx-mcp)', () => {
     const { tmpdir } = await import('node:os');
     const dataDir = mkdtempSync(join(tmpdir(), 'hub-cines-'));
     const first = await boot([], { phase3: true }, { dataDir });
-    await first.hub.cines.afterResult('cines_purchase', {}, { status: 'paid', bookingNumber: 'X1' });
-    await first.hub.cines.afterResult('cines_purchase', {}, { status: 'paid', bookingNumber: 'X2' });
+    await first.hub.cines.afterResult('cines_purchase', {}, { status: 'paid', purchaseId: 'p1', bookingNumber: 'X1', total: 99 });
+    await first.hub.cines.afterResult('cines_purchase', {}, { status: 'paid', purchaseId: 'p2', bookingNumber: 'X2', total: 99 });
     await first.hub.cines.afterResult('cines_purchase', {}, { status: 'paid', dryRun: true, bookingNumber: 'D' }); // dry runs do not count
-    await first.hub.cines.afterResult('cines_purchase', {}, { status: 'paid', bookingNumber: 'X3' });
+    await first.hub.cines.afterResult('cines_purchase', {}, { status: 'paid', purchaseId: 'p3', bookingNumber: 'X3', total: 99 });
     expect(await first.hub.cines.successes()).toBe(3);
     for (const c of cleanups.splice(0).reverse()) await c();
 
-    await buyFlow({}, dataDir); // restart on the same data dir; hold card pressed
+    await buyFlow({ successes: 3 }, dataDir); // restart on the same data dir; hold card pressed
     await tg.waitFor(() => /BK001/.test(tg.outgoingText(ME)), 10_000); // paid without a purchase card
     expect(tg.outgoingText(ME)).not.toMatch(/Confirmar compra/);
     expect(cines.actions.map((a) => a.op)).toEqual(['hold', 'purchase']);
+  }, 30_000);
+
+  it('the server\'s own first-3 rule wins: hub at 3, server below 3 → the card is still shown', async () => {
+    const { mkdtempSync } = await import('node:fs');
+    const { tmpdir } = await import('node:os');
+    const dataDir = mkdtempSync(join(tmpdir(), 'hub-cines-'));
+    const first = await boot([], { phase3: true }, { dataDir });
+    for (const id of ['a', 'b', 'c']) await first.hub.cines.afterResult('cines_purchase', {}, { status: 'paid', purchaseId: id, total: 1 });
+    for (const c of cleanups.splice(0).reverse()) await c();
+    await buyFlow({ successes: 1 }, dataDir);
+    await tg.waitFor(() => /Confirmar compra/.test(tg.outgoingText(ME)), 10_000);
+  }, 30_000);
+
+  it('CINES_PURCHASE_DRY_RUN=1 sends every purchase as dryRun and does not count it', async () => {
+    tg = await new MockTelegram().start();
+    cleanups.push(() => tg.stop());
+    cines = await startFakeCines({ phase3: true, realPaymentDisabled: true });
+    cleanups.push(cines.close);
+    const sm = scriptedModel([
+      { tool: 'cines_hold_seats', args: { showtimeId: '570-1002', seats: ['F7'] } },
+      { tool: 'cines_purchase', args: { holdId: 'hold_1', expectedTotal: 99 } },
+      (p) => ({ text: `resultado: ${lastToolResult(p)}` }),
+    ]);
+    const hub = createHub(testConfig({ TELEGRAM_BOT_TOKEN: '1:abc', TELEGRAM_ALLOWED_USER_IDS: String(ME), CINES_PURCHASE_DRY_RUN: '1' }), { model: sm.model as never, registry: CINES_REGISTRY(cines.url), telegram: { apiBaseUrl: tg.url, longPolling: FAST, log: () => {} } });
+    cleanups.push(() => hub.stop());
+    await hub.start();
+    tg.push(textUpdate(ME, 'compra F7 para la de las 20:30'));
+    await press('tool_approve:call-0');
+    await press('tool_approve:call-1');
+    await tg.waitFor(() => /DRYRUN-001/.test(tg.outgoingText(ME)), 10_000);
+    expect(cines.calls.find((c) => c.tool === 'cines_purchase')!.args).toMatchObject({ dryRun: true, expectedTotal: 99, userApproved: true });
+    expect(await hub.cines.successes()).toBe(0);
   }, 30_000);
 
   it('money tools cannot be put in a batch plan; release is ungated', async () => {

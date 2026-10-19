@@ -57,6 +57,7 @@ const EnvSchema = z.object({
     (v) => v === undefined || v.startsWith('https://'),
     'HEALTHCHECK_URL must be an https URL',
   ),
+  CINES_PURCHASE_DRY_RUN: optionalValue,
   DAILY_TOKEN_CAP: positiveNumber('DAILY_TOKEN_CAP'),
   DAILY_COST_CAP_USD: positiveNumber('DAILY_COST_CAP_USD'),
   MCP_REGISTRY_PATH: optionalValue.refine((v) => v === undefined || isAbsolute(v), 'MCP_REGISTRY_PATH must be an absolute path'),
@@ -76,6 +77,8 @@ export interface HubConfig {
     | { enabled: true; botToken: string; allowedUserIds: string[] }
     | { enabled: false; disabledReason: string; allowedUserIds: string[] };
   healthcheckUrl?: string;
+  /** CINES_PURCHASE_DRY_RUN=1: every cines purchase is sent with dryRun (nothing is charged). */
+  cinesDryRun: boolean;
   budget: { dailyTokenCap: number; dailyCostCapUsd: number };
   mcpRegistryPath: string;
 }
@@ -140,6 +143,7 @@ export function loadConfig(env: Record<string, string | undefined> = process.env
     resourceId: allowedUserIds[0] ? `telegram:${allowedUserIds[0]}` : 'dev:local',
     telegram,
     healthcheckUrl: e.HEALTHCHECK_URL,
+    cinesDryRun: /^(1|true|yes)$/i.test(e.CINES_PURCHASE_DRY_RUN ?? ''),
     budget: {
       dailyTokenCap: e.DAILY_TOKEN_CAP ?? 2_000_000,
       dailyCostCapUsd: e.DAILY_COST_CAP_USD ?? 1,

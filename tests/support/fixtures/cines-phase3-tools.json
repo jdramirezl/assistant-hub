@@ -2,7 +2,7 @@
  {
   "name": "cines_hold_seats",
   "title": "Hold seats (approval required)",
-  "description": "Reserve (apartar) the chosen seats for a showtime under the user's Cinépolis account for ~9 minutes, without paying. Requires the user's approval. Validates the seats first. Default ticket type 'Admision General'. Returns holdId, seats, ticket type and the exact total with fees, plus `purchaseApprovalRequired`. May return status 'needs_input' (kind 'email_code') if Cinépolis asks for a login code: the hub must collect it via secure input and call cines_secure_input.",
+  "description": "Reserve (apartar) the chosen seats for a showtime under the user's Cinépolis account for ~9 minutes, without paying. Requires the user's approval. Validates the seats first. Default ticket type 'Admision General'. Returns holdId, seats, ticket type and the exact total with fees, plus `purchaseApprovalRequired`. May return status 'needs_email_code' with a challengeId if Cinépolis asks for a login code: the hub collects it via secure input and calls cines_submit_code.",
   "inputSchema": {
    "type": "object",
    "properties": {
@@ -10,8 +10,24 @@
      "type": "string"
     },
     "seats": {
-     "type": "string",
-     "description": "e.g. 'F7,F8' (validated with the same rules as cines_validate_seats)"
+     "anyOf": [
+      {
+       "type": "string"
+      },
+      {
+       "type": "array",
+       "items": {
+        "type": "string"
+       }
+      }
+     ],
+     "description": "['F7','F8'] or 'F7,F8' (validated with the same rules as cines_validate_seats)"
+    },
+    "tickets": {
+     "description": "Party size; must equal the number of seats",
+     "type": "integer",
+     "minimum": 1,
+     "maximum": 10
     },
     "ticketType": {
      "description": "Only if the user asked for a specific type (e.g. 'Que Oferton 2026')",
@@ -82,16 +98,17 @@
  {
   "name": "cines_purchase",
   "title": "Pay for held seats (approval required)",
-  "description": "Pay for a hold. Hard cap $1,000 MXN. `expectedTotalMxn` must equal the hold's totalMxn shown to the user. While fewer than 3 purchases have succeeded, `userApproved: true` is required (only after the user tapped ✅). Never retried. May return status 'needs_input' (kind 'cvv' or 'otp_3ds') — the hub collects it via secure input and calls cines_secure_input. `dryRun: true` simulates without paying.",
+  "description": "Pay for a hold. Hard cap $1,000 MXN. `expectedTotal` must equal the hold's `total` shown to the user. Never pass card data or codes here. While fewer than 3 purchases have succeeded, `userApproved: true` is required (only after the user tapped ✅). Never retried. May return status 'needs_cvv', 'needs_3ds' or 'needs_email_code' with a challengeId — the hub collects the secret via secure input and calls cines_submit_code. `dryRun: true` simulates without paying.",
   "inputSchema": {
    "type": "object",
    "properties": {
     "holdId": {
      "type": "string"
     },
-    "expectedTotalMxn": {
+    "expectedTotal": {
      "type": "number",
-     "exclusiveMinimum": 0
+     "exclusiveMinimum": 0,
+     "description": "MXN; must equal the hold's `total` shown to the user"
     },
     "method": {
      "description": "Default paypal; card = card saved in the Cinépolis/DEUNA wallet",
@@ -110,7 +127,7 @@
    },
    "required": [
     "holdId",
-    "expectedTotalMxn"
+    "expectedTotal"
    ],
    "$schema": "http://json-schema.org/draft-07/schema#"
   },
@@ -125,24 +142,24 @@
   }
  },
  {
-  "name": "cines_secure_input",
+  "name": "cines_submit_code",
   "title": "Deliver a secret the user typed (hub only)",
-  "description": "HUB ONLY — must not be exposed to the language model. Delivers the user's reply to a pending secure-input request (requestId from a 'needs_input' result) and continues the paused operation, returning its next result (final, or another needs_input). The value is never logged or returned.",
+  "description": "HUB ONLY — must not be exposed to the language model. Delivers the user's secure-input reply (6-digit e-mail code, 3DS/OTP code or CVV) for a challengeId from a needs_* result, and continues the paused operation, returning its next result (held / paid / another needs_* / error). The value is never logged or returned.",
   "inputSchema": {
    "type": "object",
    "properties": {
-    "requestId": {
+    "challengeId": {
      "type": "string"
     },
-    "value": {
+    "code": {
      "type": "string",
      "minLength": 1,
      "maxLength": 32
     }
    },
    "required": [
-    "requestId",
-    "value"
+    "challengeId",
+    "code"
    ],
    "$schema": "http://json-schema.org/draft-07/schema#"
   },

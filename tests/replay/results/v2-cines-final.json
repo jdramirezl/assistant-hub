@@ -1,0 +1,173 @@
+{
+ "label": "v2-cines-final",
+ "at": "2026-10-19T23:33:59.367Z",
+ "results": [
+  {
+   "id": "expense-nequi",
+   "calls": 2,
+   "rateLimited": 0,
+   "inputTokens": 8403,
+   "cachedTokens": 0,
+   "outputTokens": 442,
+   "toolsSentAvg": 15,
+   "systemCharsAvg": 4192,
+   "actions": [
+    "finance.create EgresoNormal 25000 COP Nequi/Disponible 2026-10-19"
+   ],
+   "cards": [],
+   "ok": true,
+   "reply": "Muy bien, Amo Julián. Espero que al menos haya sido un banquete digno de la mansión.\n\nRegistrado: 25.000 COP en Almuerzo (Nequi).",
+   "ms": 9409
+  },
+  {
+   "id": "voice-meal",
+   "calls": 3,
+   "rateLimited": 0,
+   "inputTokens": 11929,
+   "cachedTokens": 4009,
+   "outputTokens": 377,
+   "toolsSentAvg": 14,
+   "systemCharsAvg": 2653,
+   "actions": [
+    "mfp.log Dinner: Rice, white, cooked × 1 [1 cup] = 205 kcal",
+    "mfp.log Dinner: Chicken breast, grilled × 1 [1 breast (172 g)] = 284 kcal"
+   ],
+   "cards": [],
+   "ok": true,
+   "reply": "Muy bien, Amo Julián, enseguida preparo el registro de su cena.\n\nCena: 2 items, 489 kcal\n- Rice, white, cooked (1 cup): 205 kcal\n- Chicken breast, grilled (1 breast): 284 kcal",
+   "ms": 8873
+  },
+  {
+   "id": "chat",
+   "calls": 1,
+   "rateLimited": 0,
+   "inputTokens": 8407,
+   "cachedTokens": 0,
+   "outputTokens": 22,
+   "toolsSentAvg": 34,
+   "systemCharsAvg": 5335,
+   "actions": [],
+   "cards": [],
+   "ok": true,
+   "reply": "Muy bien, gracias por preguntar, Amo Julián. ¿En qué le puedo servir el día de hoy?",
+   "ms": 6626
+  },
+  {
+   "id": "cines-listings",
+   "calls": 2,
+   "rateLimited": 0,
+   "inputTokens": 7751,
+   "cachedTokens": 0,
+   "outputTokens": 259,
+   "toolsSentAvg": 14,
+   "systemCharsAvg": 4531,
+   "actions": [],
+   "cards": [],
+   "ok": true,
+   "reply": "Amo Julián, las funciones disponibles para hoy en Cinépolis Parque Toreo son:\n\n- **Dune: Mesías** (B): 17:10 SUB 2D, 20:30 SUB 2D, 21:15 ESP 2D.\n- **Coco 2** (A): 16:00 ESP 2D, 19:40 ESP 2D.",
+   "ms": 20942
+  },
+  {
+   "id": "cines-where",
+   "calls": 2,
+   "rateLimited": 0,
+   "inputTokens": 7703,
+   "cachedTokens": 0,
+   "outputTokens": 214,
+   "toolsSentAvg": 14,
+   "systemCharsAvg": 4531,
+   "actions": [],
+   "cards": [],
+   "ok": true,
+   "reply": "Enseguida, Amo Julián. \n\nDune: Mesías se proyecta hoy y mañana en los siguientes complejos:\n- **Cinépolis Parque Toreo**\n- **Cinépolis Plaza Carso**\n- **Cinépolis VIP Miyana Polanco**",
+   "ms": 13661
+  },
+  {
+   "id": "cines-tonight",
+   "calls": 2,
+   "rateLimited": 0,
+   "inputTokens": 7944,
+   "cachedTokens": 0,
+   "outputTokens": 290,
+   "toolsSentAvg": 14,
+   "systemCharsAvg": 4531,
+   "actions": [],
+   "cards": [],
+   "ok": true,
+   "reply": "Amo Julián, aquí tiene las mejores funciones para *Dune: Mesías* esta noche:\n\n1. **Principal:** Cinépolis Parque Toreo — 20:30, 2D, Subtitulada. $92 MXN.\n2. Cinépolis Plaza Carso — 21:00, IMAX, Subtitulada. $165 MXN.\n3. Cinépolis VIP Miyana Polanco — 20:00, VIP, Subtitulada. $260 MXN *(Precio VIP)*.\n\n¿Desea que reserve alguna de estas opciones?",
+   "ms": 7861
+  },
+  {
+   "id": "cines-seats",
+   "calls": 4,
+   "rateLimited": 0,
+   "inputTokens": 16066,
+   "cachedTokens": 0,
+   "outputTokens": 471,
+   "toolsSentAvg": 14,
+   "systemCharsAvg": 4531,
+   "actions": [],
+   "cards": [],
+   "ok": true,
+   "reply": "Amo Julián, he consultado la sala. Le propongo los asientos **F7 y F8**, que están juntos en el centro de la sala. \n\n¿Le parecen bien o prefiere otros?",
+   "ms": 15906
+  },
+  {
+   "id": "eggs-toast",
+   "calls": 2,
+   "rateLimited": 0,
+   "inputTokens": 11662,
+   "cachedTokens": 4008,
+   "outputTokens": 301,
+   "toolsSentAvg": 21,
+   "systemCharsAvg": 3922,
+   "actions": [
+    "mfp.log Breakfast: Egg, whole, large × 2 [1 large egg] = 144 kcal",
+    "mfp.log Breakfast: Toast, white bread × 1 [1 slice] = 75 kcal"
+   ],
+   "cards": [],
+   "ok": true,
+   "reply": "Desayuno registrado, Amo Julián:\n- 2 huevos (288 kcal)\n- 1 tostada (75 kcal)\nTotal del desayuno: 2 items, 363 kcal.",
+   "ms": 8654
+  },
+  {
+   "id": "mixed",
+   "calls": 2,
+   "rateLimited": 0,
+   "inputTokens": 17707,
+   "cachedTokens": 12040,
+   "outputTokens": 642,
+   "toolsSentAvg": 34,
+   "systemCharsAvg": 5335,
+   "actions": [
+    "mfp.log Lunch: Arepa, white corn × 1 [1 arepa (100 g)] = 220 kcal",
+    "finance.create EgresoNormal 18000 COP Nequi/Disponible 2026-10-19"
+   ],
+   "cards": [],
+   "ok": true,
+   "reply": "Enseguida, amo Julián.\n\n- Almuerzo: Arepa, white corn (1 arepa, 220 kcal)\n- Gasto: $18.000 COP (Nequi - Disponible)",
+   "ms": 10634
+  },
+  {
+   "id": "cines-buy",
+   "calls": 4,
+   "rateLimited": 0,
+   "inputTokens": 16600,
+   "cachedTokens": 3998,
+   "outputTokens": 575,
+   "toolsSentAvg": 14,
+   "systemCharsAvg": 4531,
+   "actions": [
+    "cines.hold hold_1 570-1002 F7,F8 $198",
+    "cines.purchase hold_1 $198 dry-run"
+   ],
+   "cards": [
+    "tool:?",
+    "tool:?"
+   ],
+   "ok": true,
+   "reply": "Amo Julián, la transacción ha sido simulada y completada con éxito (Modo de prueba). Sus asientos F7 y F8 para Dune en el Toreo han sido adquiridos. Disfrute de la función.",
+   "ms": 24948
+  }
+ ]
+}
