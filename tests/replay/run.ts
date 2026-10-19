@@ -46,6 +46,8 @@ function pacedFetch() {
   let inflight = 0;
   let lastActivity = Date.now();
   const f = (async (input: Parameters<typeof fetch>[0], init?: Parameters<typeof fetch>[1]) => {
+    inflight++; // waiting for a slot counts as busy
+    lastActivity = Date.now();
     for (;;) {
       const now = Date.now();
       while (starts.length && now - starts[0]! >= 60_000) starts.shift();
@@ -53,7 +55,6 @@ function pacedFetch() {
       await new Promise((r) => setTimeout(r, 60_000 - (now - starts[0]!) + 50));
     }
     starts.push(Date.now());
-    inflight++;
     lastActivity = Date.now();
     try {
       return await fetch(input, init);
@@ -138,7 +139,7 @@ async function runScenario(s: Scenario, pacer: ReturnType<typeof pacedFetch>, ap
           pressed.add(data);
           const msgId = Number(call.body.message_id ?? (call.result as { message_id?: number } | undefined)?.message_id ?? 0);
           const text = String(call.body.text ?? (call.body.rich_message as { markdown?: string } | undefined)?.markdown ?? '');
-          cards.push(data.includes('plan:a:') ? `plan(${(text.match(/(\d+) (acciones|actions)/) ?? [])[1] ?? '?'})` : `tool:${(text.match(/fitness\\?_\w+|finance\\?_\w+|\w+_\w+/) ?? ['?'])[0]!.replace(/\\/g, '')}`);
+          cards.push(data.includes('plan:a:') ? `plan(${(text.match(/(\d+) (acciones|actions)/) ?? [])[1] ?? '?'})` : `tool:${(text.replace(/\\/g, '').match(/(?:fitness|finance)_\w+|\w+_\w+/) ?? ['?'])[0]}`);
           tg.push(callbackUpdate(ME, { message_id: msgId, text }, data));
           found = true;
           await settle();

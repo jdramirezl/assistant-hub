@@ -256,7 +256,7 @@ export async function startMasonReplica(state: ReplicaState, today: string) {
       }
       state.diary.splice(state.diary.indexOf(entry), 1);
       const replaced = a.draft_id ? (handlers.fitness_log_food!({ draft_id: a.draft_id, option: a.option, serving: a.serving, quantity: a.quantity, meal: a.meal }) as Rec) : null;
-      record('modify', `${meal}: ${entry.name} → ${replaced ? replaced.logged : String(a.new_query)}`);
+      record('modify', `${meal}: ${entry.name} → ${replaced ? `${replaced.logged} × ${replaced.quantity}` : String(a.new_query)}`);
       return { removed: entry.name, ...(replaced ?? { logged: a.new_query }) };
     },
     fitness_log_weight: (a) => (record('weight', `${a.weight} ${a.unit ?? 'kg'}`), { day: a.date ?? today, weight: a.weight, unit: a.unit ?? 'kg' }),
