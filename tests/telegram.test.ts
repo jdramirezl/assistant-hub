@@ -184,3 +184,16 @@ describe('isAllowed', () => {
     expect(isAllowed([], { author: { userId: '42' } } as never)).toBe(false);
   });
 });
+
+describe('toolDisplay', () => {
+  it('shows only approval cards and failures; hides successes and working memory', async () => {
+    const { toolDisplay } = await import('../src/channels/telegram.js');
+    const base = { toolCallId: 'c', displayName: 'echo_say', argsSummary: '', args: {} };
+    const ctx = { mode: 'static' as const, platform: 'telegram' };
+    expect(toolDisplay({ ...base, kind: 'approval', toolName: 'echo_delete' }, ctx)).toBeUndefined();
+    expect(toolDisplay({ ...base, kind: 'running', toolName: 'echo_say' }, ctx)).toBeUndefined();
+    expect(toolDisplay({ ...base, kind: 'result', toolName: 'updateWorkingMemory', result: {}, resultText: '{}', durationMs: 1, isError: false }, ctx)).toBeUndefined();
+    expect(toolDisplay({ ...base, kind: 'error', toolName: 'updateWorkingMemory', error: 'x', errorText: 'x', durationMs: 1 }, ctx)).toBeUndefined();
+    expect(toolDisplay({ ...base, kind: 'error', toolName: 'echo_say', error: 'x', errorText: 'boom\nstack', durationMs: 1 }, ctx)).toEqual({ kind: 'post', message: '⚠️ echo_say failed: boom' });
+  });
+});

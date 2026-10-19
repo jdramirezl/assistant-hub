@@ -31,6 +31,8 @@ export function buildInstructions(timezone: string, now: Date = new Date()): str
     'Reply in the language the user writes in (Spanish or English; mixed is fine). Keep answers short and concise: a few lines, no filler.',
     `Current local time: ${weekday} ${stamp} (${timezone}). Resolve relative dates ("ayer", "last Friday") against it.`,
     'Use tools to act on the user\'s apps. Tools are prefixed by app (finance_*, fitness_*). When the user asks for a write, do it and then confirm briefly what changed.',
+    'NEVER say you recorded, saved, logged, updated or deleted something unless an app tool call in this turn returned success. If no tool exists for that app, say plainly that the app is not connected yet and show what you would record (amount, currency, account, category, date) so the user can check it.',
+    'Working memory is ONLY for durable preferences (name, default currency, accounts, goals). Never store transactions, meals or other records there.',
     'Never invent data a tool did not return. If a tool returns {"error":{code,message,retryable}}, say what failed in one line and whether retrying may help.',
     'Photos are usually receipts or meals; voice notes are requests. Extract amounts, dates and items carefully and state any assumption you made.',
   ].join('\n');

@@ -1,6 +1,6 @@
 import type { Message, Thread } from 'chat';
 import { TelegramProvider } from '@mastra/telegram';
-import type { ChannelHandler, ChannelHandlers } from '@mastra/core/channels';
+import type { ChannelHandler, ChannelHandlers, ToolDisplayFn } from '@mastra/core/channels';
 import type { HubConfig } from '../config.js';
 import type { KvStore } from '../kv.js';
 
@@ -24,6 +24,20 @@ export interface TelegramDeps {
    */
   gate?: () => Promise<string | undefined>;
 }
+
+/**
+ * Keep the chat clean: only approval cards (built-in Approve/Deny buttons) and short failure
+ * notes are shown. Successful calls and internal tools (working memory) stay invisible; the
+ * agent's reply already says what happened.
+ */
+export const toolDisplay: ToolDisplayFn = (event) => {
+  if (event.kind === 'approval') return undefined; // undefined → built-in card with buttons
+  if (event.kind === 'error' && !/workingmemory/i.test(event.toolName)) {
+    const reason = event.errorText.split('\n')[0]!.slice(0, 160);
+    return { kind: 'post', message: `⚠️ ${event.displayName} failed${reason ? `: ${reason}` : ''}` };
+  }
+  return undefined;
+};
 
 /** Defense in depth: the adapter also filters by TELEGRAM_ALLOWED_USER_IDS. */
 export function isAllowed(allowed: readonly string[], message: Pick<Message, 'author'>): boolean {
@@ -93,9 +107,9 @@ export function createTelegramChannel(config: HubConfig, deps: TelegramDeps = {}
     ],
     resolveResourceId: ({ defaultResourceId }) => defaultResourceId, // telegram:<userId>
     tools: false, // no reaction tools; keep the tool list for app MCPs
-    // 'cards' is what enables Approve/Deny inline-keyboard buttons for tools that need approval
-    // (with the default 'text', approval-gated tools would stay suspended with no way to answer).
-    toolDisplay: 'cards',
+    // A display function enables Approve/Deny inline-keyboard buttons for approval-gated tools
+    // (with the default 'text' they would stay suspended with no way to answer).
+    toolDisplay,
   });
 }
 

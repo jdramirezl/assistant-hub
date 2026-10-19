@@ -23,3 +23,12 @@ describe('assistant agent', () => {
     expect(res.text).toBe('hola!');
   });
 });
+
+describe('honesty rules', () => {
+  it('forbids claiming writes without a successful tool call, and records in working memory', () => {
+    const text = buildInstructions('America/Bogota');
+    expect(text).toMatch(/NEVER say you recorded/);
+    expect(text).toMatch(/not connected yet/);
+    expect(text).toMatch(/Never store transactions/);
+  });
+});
