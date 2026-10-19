@@ -244,20 +244,32 @@ export async function startMasonReplica(state: ReplicaState, today: string) {
       return { removed: entry.name, meal: entry.meal.toLowerCase() };
     },
     fitness_modify_food: (a) => {
+      // mirrors mfp-mcp 0.4.1 food_logging.modify_food
       const meal = mealOf(a.meal);
       const entry = state.diary.find((e) => e.meal === meal && e.name.toLowerCase().includes(String(a.query).toLowerCase()));
       if (!entry) throw new Error(`No entry matching '${a.query}' in ${meal}`);
-      if (a.quantity !== undefined && a.quantity !== null && !a.new_query && !a.draft_id) {
-        const per = Object.values(FOODS).flat().find((f) => f.name === entry.name)?.servings[0]?.kcal ?? entry.calories;
-        const pin = state.pins.find((p) => p.name === entry.name);
-        entry.calories = Math.round((pin?.kcalPerServing ?? per) * Number(a.quantity));
-        record('modify', `${meal}: ${entry.name} → × ${a.quantity} = ${entry.calories} kcal`);
-        return { ok: true, modified: entry.name, quantity: a.quantity, meal: meal.toLowerCase(), date: today, day: dayRecord() };
+      if (a.draft_id) {
+        state.diary.splice(state.diary.indexOf(entry), 1);
+        const added = handlers.fitness_log_food!({ draft_id: a.draft_id, option: a.option, serving: a.serving, quantity: a.quantity, meal: a.meal }) as Rec;
+        state.actions.pop();
+        record('modify', `${meal}: ${entry.name} → ${added.logged} × ${added.quantity} = ${state.diary.at(-1)!.calories} kcal`);
+        return { removed: entry.name, ...added };
+      }
+      const q = String(a.new_query ?? a.query);
+      const quantity = a.quantity === undefined || a.quantity === null ? 1 : Number(a.quantity);
+      const pin = state.pins.find((p) => p.query.toLowerCase() === q.toLowerCase());
+      const exact = Object.values(FOODS).flat().filter((f) => f.name.toLowerCase() === q.toLowerCase());
+      const food = pin ? { name: pin.name, label: pin.serving, kcal: pin.kcalPerServing } : exact.length === 1 ? { name: exact[0]!.name, label: exact[0]!.servings[0]!.label, kcal: exact[0]!.servings[0]!.kcal } : undefined;
+      if (!food) {
+        const id = `d${drafts.size + 1}`;
+        const d = { query: q, quantity, meal, day: today, options: lookup(q) };
+        drafts.set(id, d);
+        return { removed: null, logged: null, needs_choice: true, next_step: 'call fitness_modify_food again with draft_id + option', ...draftView(id, d) };
       }
       state.diary.splice(state.diary.indexOf(entry), 1);
-      const replaced = a.draft_id ? (handlers.fitness_log_food!({ draft_id: a.draft_id, option: a.option, serving: a.serving, quantity: a.quantity, meal: a.meal }) as Rec) : null;
-      record('modify', `${meal}: ${entry.name} → ${replaced ? `${replaced.logged} × ${replaced.quantity}` : String(a.new_query)}`);
-      return { removed: entry.name, ...(replaced ?? { logged: a.new_query }) };
+      state.diary.push({ meal, name: food.name, calories: Math.round(food.kcal * quantity) });
+      record('modify', `${meal}: ${entry.name} → ${food.name} × ${quantity} = ${Math.round(food.kcal * quantity)} kcal`);
+      return { removed: entry.name, logged: food.name, serving: food.label, quantity, meal: meal.toLowerCase(), date: today, day: dayRecord() };
     },
     fitness_log_weight: (a) => (record('weight', `${a.weight} ${a.unit ?? 'kg'}`), { day: a.date ?? today, weight: a.weight, unit: a.unit ?? 'kg' }),
     fitness_log_water: (a) => (record('water', `${a.amount ?? a.ml} ${a.unit ?? 'ml'}${a.replace ? ' (replace)' : ''}`), { day: a.date ?? today, ok: true }),
