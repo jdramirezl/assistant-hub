@@ -18,11 +18,16 @@ import { bogotaDay } from '../../src/budget.js';
 import { MockTelegram, photoUpdate, textUpdate, callbackUpdate, voiceUpdate } from '../support/mock-telegram.js';
 import { startFinanceReplica, startMasonReplica, type ReplicaState } from './replica.js';
 import { SCENARIOS, type Msg, type Scenario } from './scenarios.js';
+import { devGeminiKey } from '../support/dev-key.js';
 
 const RESULTS = join(import.meta.dirname, 'results');
 const FIXTURES = join(import.meta.dirname, '..', 'support', 'fixtures');
 const ME = 42;
 const RPM = Number(process.env.REPLAY_RPM ?? 12);
+/** Hard stop: the run ends once this many Gemini HTTP calls were made (429s included). */
+const MAX_CALLS = Number(process.env.REPLAY_MAX_CALLS ?? 120);
+
+class BudgetExceeded extends Error {}
 
 export interface ScenarioResult {
   id: string;
@@ -44,6 +49,7 @@ export interface ScenarioResult {
 function pacedFetch() {
   const starts: number[] = [];
   let inflight = 0;
+  let total = 0;
   let lastActivity = Date.now();
   const f = (async (input: Parameters<typeof fetch>[0], init?: Parameters<typeof fetch>[1]) => {
     inflight++; // waiting for a slot counts as busy
@@ -54,6 +60,11 @@ function pacedFetch() {
       if (starts.length < RPM) break;
       await new Promise((r) => setTimeout(r, 60_000 - (now - starts[0]!) + 50));
     }
+    if (total >= MAX_CALLS) {
+      inflight--;
+      throw new BudgetExceeded(`replay call budget reached (${MAX_CALLS} calls; REPLAY_MAX_CALLS)`);
+    }
+    total++;
     starts.push(Date.now());
     lastActivity = Date.now();
     try {
@@ -63,7 +74,7 @@ function pacedFetch() {
       lastActivity = Date.now();
     }
   }) as typeof fetch;
-  return { fetch: f, busy: () => inflight > 0, lastActivity: () => lastActivity };
+  return { fetch: f, busy: () => inflight > 0, lastActivity: () => lastActivity, total: () => total };
 }
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
@@ -225,8 +236,8 @@ async function main() {
   if (args.includes('--compare')) return console.log(table(get('--compare')!.split(',')));
   const label = get('--label') ?? 'run';
   const only = args.includes('--only') ? new Set(get('--only')!.split(',')) : undefined;
-  const apiKey = process.env.GOOGLE_API_KEY;
-  if (!apiKey) throw new Error('GOOGLE_API_KEY is required (npm run replay loads .env)');
+  const { key: apiKey, reason } = devGeminiKey();
+  if (!apiKey) throw new Error(`refusing to run: ${reason}`);
   mkdirSync(RESULTS, { recursive: true });
   const out = join(RESULTS, `${label}.json`);
   const prev = existsSync(out) && args.includes('--resume') ? (JSON.parse(readFileSync(out, 'utf8')).results as ScenarioResult[]) : [];
@@ -235,6 +246,10 @@ async function main() {
   for (const s of SCENARIOS) {
     if (only && !only.has(s.id)) continue;
     if (results.some((r) => r.id === s.id)) continue;
+    if (pacer.total() >= MAX_CALLS) {
+      console.log(`STOPPED: call budget of ${MAX_CALLS} reached before ${s.id}; resume later with --resume`);
+      break;
+    }
     const r = await runScenario(s, pacer, apiKey);
     results.push(r);
     writeFileSync(out, JSON.stringify({ label, at: new Date().toISOString(), results }, null, 1) + '\n');

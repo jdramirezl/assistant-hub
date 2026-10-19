@@ -1,15 +1,18 @@
 // Opt-in: real Gemini driving a fake Mason (no real diary). `npm run test:live`
+import { devGeminiKey } from '../support/dev-key.js';
+
+const DEV_KEY = devGeminiKey().key; // never the production key
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { createHub, type Hub } from '../../src/hub.js';
 import { testConfig } from '../helpers.js';
 import { MFP_REGISTRY, startFakeMason, type FakeMason } from '../support/fake-mason.js';
 
-describe.skipIf(!process.env.GOOGLE_API_KEY)('live Gemini + fake Mason', () => {
+describe.skipIf(!DEV_KEY)('live Gemini + fake Mason', () => {
   let mason: FakeMason;
   let hub: Hub;
   beforeAll(async () => {
     mason = await startFakeMason();
-    hub = createHub(testConfig({ GOOGLE_API_KEY: process.env.GOOGLE_API_KEY! }), { registry: MFP_REGISTRY(mason.url) });
+    hub = createHub(testConfig({ GOOGLE_API_KEY: DEV_KEY! }), { registry: MFP_REGISTRY(mason.url) });
   });
   afterAll(async () => {
     await hub.stop();

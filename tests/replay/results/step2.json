@@ -1,0 +1,157 @@
+{
+ "label": "step2",
+ "at": "2026-10-19T20:35:45.780Z",
+ "results": [
+  {
+   "id": "eggs-toast",
+   "calls": 3,
+   "rateLimited": 0,
+   "inputTokens": 24663,
+   "cachedTokens": 16018,
+   "outputTokens": 917,
+   "toolsSentAvg": 33,
+   "systemCharsAvg": 4887,
+   "actions": [
+    "mfp.log Breakfast: Egg, whole, large × 2 [1 large egg] = 144 kcal",
+    "mfp.log Breakfast: Toast, white bread × 1 [1 slice] = 75 kcal"
+   ],
+   "cards": [],
+   "ok": true,
+   "reply": "Muy bien, Amo Julián. Queda registrado en su desayuno:\n\n- Desayuno: 2 items, 219 kcal (Huevos y tostada).",
+   "ms": 11422
+  },
+  {
+   "id": "meal-3",
+   "calls": 3,
+   "rateLimited": 0,
+   "inputTokens": 25206,
+   "cachedTokens": 16010,
+   "outputTokens": 1200,
+   "toolsSentAvg": 33,
+   "systemCharsAvg": 4887,
+   "actions": [
+    "mfp.log Lunch: Rice, white, cooked × 1 [1 cup] = 205 kcal",
+    "mfp.log Lunch: Chicken breast, grilled × 1 [1 breast (172 g)] = 284 kcal",
+    "mfp.log Lunch: Green salad × 1 [1 bowl] = 35 kcal"
+   ],
+   "cards": [],
+   "ok": true,
+   "reply": "Muy bien, Amo Julián. Una selección sumamente equilibrada para el almuerzo.\n\nAlmuerzo registrado: 3 ítems, 524 kcal.",
+   "ms": 16210
+  },
+  {
+   "id": "plan-delete-breakfast",
+   "calls": 4,
+   "rateLimited": 0,
+   "inputTokens": 31709,
+   "cachedTokens": 14022,
+   "outputTokens": 930,
+   "toolsSentAvg": 33,
+   "systemCharsAvg": 4824,
+   "actions": [
+    "mfp.delete Breakfast: Coffee with milk",
+    "mfp.delete Breakfast: Egg, whole, large",
+    "mfp.delete Breakfast: Toast, white bread",
+    "mfp.delete Breakfast: Orange juice"
+   ],
+   "cards": [
+    "plan(4)"
+   ],
+   "ok": true,
+   "reply": "Amo Julián, las 4 entradas de su desayuno han sido retiradas sin novedad.",
+   "ms": 17154
+  },
+  {
+   "id": "expense-nequi",
+   "calls": 4,
+   "rateLimited": 0,
+   "inputTokens": 32309,
+   "cachedTokens": 20021,
+   "outputTokens": 702,
+   "toolsSentAvg": 33,
+   "systemCharsAvg": 4887,
+   "actions": [
+    "finance.create EgresoNormal 25000 COP Nequi/Disponible 2026-10-19"
+   ],
+   "cards": [],
+   "ok": true,
+   "reply": "Muy bien, Amo Julián, me encargo de que sus gastos no superen las previsiones.\n\n- Gasto registrado: $25.000 COP\n- Cuenta: Nequi (Disponible)\n- Categoría: Almuerzo\n- Fecha: 2026-10-19",
+   "ms": 23646
+  },
+  {
+   "id": "correction",
+   "calls": 5,
+   "rateLimited": 0,
+   "inputTokens": 39291,
+   "cachedTokens": 24018,
+   "outputTokens": 889,
+   "toolsSentAvg": 33,
+   "systemCharsAvg": 4887,
+   "actions": [
+    "mfp.log Breakfast: Arepa, white corn × 1 [1 arepa (100 g)] = 220 kcal",
+    "mfp.modify Breakfast: Arepa, white corn → × 2 = 440 kcal"
+   ],
+   "cards": [
+    "tool:_fitness_modify_food_"
+   ],
+   "ok": true,
+   "reply": "Muy bien, Amo Julián, he ajustado su porción.\n\nDesayuno actualizado: 2 ítems, 440 kcal.",
+   "ms": 26168
+  },
+  {
+   "id": "receipt-photo",
+   "calls": 4,
+   "rateLimited": 0,
+   "inputTokens": 36395,
+   "cachedTokens": 24082,
+   "outputTokens": 532,
+   "toolsSentAvg": 33,
+   "systemCharsAvg": 4887,
+   "actions": [
+    "finance.create EgresoNormal 70730 COP Nequi/Disponible 2026-10-19"
+   ],
+   "cards": [],
+   "ok": true,
+   "reply": "Como ordene, Amo Julián. He registrado el gasto en Crepes & Waffles por $70.730 COP con cargo a Nequi.",
+   "ms": 18416
+  },
+  {
+   "id": "over-800",
+   "calls": 3,
+   "rateLimited": 0,
+   "inputTokens": 23818,
+   "cachedTokens": 14019,
+   "outputTokens": 742,
+   "toolsSentAvg": 33,
+   "systemCharsAvg": 4887,
+   "actions": [
+    "mfp.log Dinner: Lasagna, family tray × 1 [1 tray] = 1700 kcal"
+   ],
+   "cards": [
+    "tool:_fitness_log_food_"
+   ],
+   "ok": true,
+   "reply": "Muy valiente por su parte, Amo Julián, aunque su cardiólogo podría tener objeciones.\n\nCena registrada: 1 ítem, 1700 kcal.",
+   "ms": 20632
+  },
+  {
+   "id": "mixed",
+   "calls": 4,
+   "rateLimited": 0,
+   "inputTokens": 34677,
+   "cachedTokens": 22008,
+   "outputTokens": 1155,
+   "toolsSentAvg": 33,
+   "systemCharsAvg": 4887,
+   "actions": [
+    "mfp.log Lunch: Arepa, white corn × 1 [1 arepa (100 g)] = 220 kcal",
+    "mfp.log Lunch: Cheese, mozzarella × 1 [1 slice (28 g)] = 85 kcal",
+    "finance.create EgresoNormal 18000 COP Nequi/Disponible 2026-10-19"
+   ],
+   "cards": [],
+   "ok": true,
+   "reply": "Enseguida, Amo Julián. \n\n- **Almuerzo registrado:** 2 ítems, 305 kcal.\n- **Gasto registrado:** $18.000 COP en Nequi (Comida).",
+   "ms": 13413
+  }
+ ]
+}

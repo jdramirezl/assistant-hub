@@ -1,16 +1,19 @@
 // Opt-in: real Gemini driving a fake finance MCP (no real money/data). `npm run test:live`
+import { devGeminiKey } from '../support/dev-key.js';
+
+const DEV_KEY = devGeminiKey().key; // never the production key
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { createHub, type Hub } from '../../src/hub.js';
 import { bogotaDay } from '../../src/budget.js';
 import { testConfig } from '../helpers.js';
 import { startFakeFinance, type FakeFinance } from '../support/fake-finance.js';
 
-describe.skipIf(!process.env.GOOGLE_API_KEY)('live Gemini + fake finance', () => {
+describe.skipIf(!DEV_KEY)('live Gemini + fake finance', () => {
   let fin: FakeFinance;
   let hub: Hub;
   beforeAll(async () => {
     fin = await startFakeFinance('live-token');
-    hub = createHub(testConfig({ GOOGLE_API_KEY: process.env.GOOGLE_API_KEY! }), {
+    hub = createHub(testConfig({ GOOGLE_API_KEY: DEV_KEY! }), {
       registry: { servers: { finance: { url: '${FINANCE_MCP_URL}', headers: { Authorization: { env: 'FINANCE_MCP_TOKEN', prefix: 'Bearer ' } } } } },
       env: { FINANCE_MCP_URL: fin.url, FINANCE_MCP_TOKEN: 'live-token' },
     });

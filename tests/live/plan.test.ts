@@ -1,4 +1,7 @@
 // Opt-in: real Gemini must batch a whole-day delete into ONE propose_plan. `npm run test:live`
+import { devGeminiKey } from '../support/dev-key.js';
+
+const DEV_KEY = devGeminiKey().key; // never the production key
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { createHub, type Hub } from '../../src/hub.js';
 import { testConfig } from '../helpers.js';
@@ -11,12 +14,12 @@ const DAY: DiaryEntry[] = [
   ...['Pasta', 'Tomato sauce', 'Parmesan', 'Red wine'].map((name, i) => ({ meal: 'Dinner', name, calories: 200 + i })),
 ];
 
-describe.skipIf(!process.env.GOOGLE_API_KEY)('live Gemini: batch approval', () => {
+describe.skipIf(!DEV_KEY)('live Gemini: batch approval', () => {
   let mason: FakeMason;
   let hub: Hub;
   beforeAll(async () => {
     mason = await startFakeMason(DAY);
-    hub = createHub(testConfig({ GOOGLE_API_KEY: process.env.GOOGLE_API_KEY! }), { registry: MFP_REGISTRY(mason.url) });
+    hub = createHub(testConfig({ GOOGLE_API_KEY: DEV_KEY! }), { registry: MFP_REGISTRY(mason.url) });
   });
   afterAll(async () => {
     await hub.stop();
