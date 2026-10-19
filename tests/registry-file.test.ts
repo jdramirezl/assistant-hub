@@ -5,9 +5,11 @@ import { loadRegistry } from '../src/mcp/registry.js';
 describe('repo mcp-servers.json', () => {
   const reg = loadRegistry(join(process.cwd(), 'mcp-servers.json'));
 
-  it('lists echo, mfp and finance, all disabled until go-live', () => {
+  it('lists echo, mfp and finance; echo and mfp off, finance gated by env', () => {
     expect(Object.keys(reg.servers).sort()).toEqual(['echo', 'finance', 'mfp']);
-    expect(Object.values(reg.servers).every((s) => s.enabled === false)).toBe(true);
+    expect(reg.servers.echo!.enabled).toBe(false);
+    expect(reg.servers.mfp!.enabled).toBe(false);
+    expect(reg.servers.finance!.enabled).toBe(true);
   });
 
   it('mfp: Mason on loopback, no auth, fitness_* tools, Mason error mapping', () => {
@@ -22,5 +24,6 @@ describe('repo mcp-servers.json', () => {
   it('finance: url and bearer token come only from env', () => {
     expect(reg.servers.finance!.url).toBe('${FINANCE_MCP_URL}');
     expect(reg.servers.finance!.headers.Authorization).toEqual({ env: 'FINANCE_MCP_TOKEN', prefix: 'Bearer ' });
+    expect(reg.servers.finance!.headers['x-vercel-protection-bypass']).toEqual({ env: 'FINANCE_MCP_BYPASS', optional: true });
   });
 });

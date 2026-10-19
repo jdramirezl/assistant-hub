@@ -13,10 +13,19 @@
       "enabled": false
     },
     "finance": {
-      "description": "finance-app /mcp on Vercel. Needs FINANCE_MCP_URL and FINANCE_MCP_TOKEN in .env.",
+      "description": "finance-app /mcp (Vercel, stateless Streamable HTTP). Enabled per machine by FINANCE_MCP_URL + FINANCE_MCP_TOKEN in .env; unset = skipped. FINANCE_MCP_BYPASS only for preview deployments.",
       "url": "${FINANCE_MCP_URL}",
-      "headers": { "Authorization": { "env": "FINANCE_MCP_TOKEN", "prefix": "Bearer " } },
-      "enabled": false
+      "headers": {
+        "Authorization": {
+          "env": "FINANCE_MCP_TOKEN",
+          "prefix": "Bearer "
+        },
+        "x-vercel-protection-bypass": {
+          "env": "FINANCE_MCP_BYPASS",
+          "optional": true
+        }
+      },
+      "enabled": true
     }
   }
 }

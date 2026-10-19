@@ -49,8 +49,11 @@ referenced by env var name, never written in the file:
 - `errorStyle: "mason"` maps Mason's plain-text `isError` failures to `MFP_UNAVAILABLE` (retryable), `MFP_SESSION_EXPIRED`, `MFP_BLOCKED`, `MFP_BAD_REQUEST`, `MFP_ERROR`.
 - Approval by name, in addition to `destructiveHint`/delete-like verbs: `fitness_delete_food`, `fitness_delete_exercise`, `fitness_modify_food`, `fitness_clear_food_pin`.
 
-Going live on the server Mac: set `"enabled": true` for `mfp` once Mason runs there; for `finance`, add
-`FINANCE_MCP_URL` and `FINANCE_MCP_TOKEN` to `.env` and set `"enabled": true`.
+Going live on the server Mac: set `"enabled": true` for `mfp` once Mason runs there.
+`finance` is enabled in the registry but **gated per machine by `.env`**: with `FINANCE_MCP_URL`/`FINANCE_MCP_TOKEN`
+set (server Mac, prod token) it connects; left as `CHANGEME` (dev laptop) it is skipped. Never put the prod token on
+the dev laptop: it writes to real finances. To test finance in dev, point it at a Vercel **preview** deployment with
+`preview.token` and `FINANCE_MCP_BYPASS` (sent as `x-vercel-protection-bypass`; optional headers are omitted when unset).
 
 ## Approvals and budget
 

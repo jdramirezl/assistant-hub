@@ -25,7 +25,14 @@ export class RegistryError extends Error {
 const LOOPBACK_HOSTS = new Set(['127.0.0.1', 'localhost', '[::1]']);
 const ENV_REF = /^\$\{([A-Z0-9_]+)\}$/;
 
-const HeaderSpec = z.object({ env: z.string().regex(/^[A-Z0-9_]+$/), prefix: z.string().optional() }).strict();
+const HeaderSpec = z
+  .object({
+    env: z.string().regex(/^[A-Z0-9_]+$/),
+    prefix: z.string().optional(),
+    /** Optional headers are sent when their env var is set and omitted otherwise (e.g. a preview bypass). */
+    optional: z.boolean().optional(),
+  })
+  .strict();
 
 const UrlSpec = z.string().refine((v) => {
   if (ENV_REF.test(v)) return true;
@@ -103,15 +110,18 @@ export function loadRegistry(path: string): Registry {
 }
 
 export function resolveHeaders(
-  spec: Record<string, { env: string; prefix?: string }>,
+  spec: Record<string, { env: string; prefix?: string; optional?: boolean }>,
   env: Record<string, string | undefined>,
 ): { headers: Record<string, string>; missing: string[] } {
   const headers: Record<string, string> = {};
   const missing: string[] = [];
-  for (const [name, { env: key, prefix = '' }] of Object.entries(spec)) {
+  for (const [name, { env: key, prefix = '', optional = false }] of Object.entries(spec)) {
     const value = env[key];
-    if (isPlaceholder(value)) missing.push(key);
-    else headers[name] = `${prefix}${value!.trim()}`;
+    if (isPlaceholder(value)) {
+      if (!optional) missing.push(key);
+      continue;
+    }
+    headers[name] = `${prefix}${value!.trim()}`;
   }
   return { headers, missing };
 }
