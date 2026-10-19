@@ -1,10 +1,15 @@
 import { AsyncLocalStorage } from 'node:async_hooks';
+import type { Voice } from '../persona.js';
 
 /**
  * Per-request context so a model call deep inside an agent run can tell the chat it is
  * waiting ("⏳ rate limit, retrying in 12s"). Set by the Telegram handler around each turn.
  */
-export const rateLimitContext = new AsyncLocalStorage<{ notify: (text: string) => Promise<void> }>();
+export const rateLimitContext = new AsyncLocalStorage<{
+  notify: (text: string) => Promise<void>;
+  /** Wording for the waiting notice (persona); default "⏳ rate limit, retrying in Ns". */
+  format?: (seconds: number) => string;
+}>();
 
 export const MAX_WAIT_MS = 60_000;
 
@@ -68,7 +73,8 @@ export function createRateLimitedFetch(opts: RateLimitedFetchOptions = {}): type
         const ctx = rateLimitContext.getStore();
         if (ctx && !notified) {
           notified = true;
-          await ctx.notify(`⏳ rate limit, retrying in ${Math.round(delay / 1000)}s`).catch(() => {});
+          const s = Math.round(delay / 1000);
+          await ctx.notify(ctx.format?.(s) ?? `⏳ rate limit, retrying in ${s}s`).catch(() => {});
         }
       } else {
         waitMs = Math.min(1_000 * 2 ** attempt, 8_000);
@@ -81,12 +87,14 @@ export function createRateLimitedFetch(opts: RateLimitedFetchOptions = {}): type
 }
 
 /** Chat-facing text for a model/run error (Telegram formatError). */
-export function describeModelError(err: unknown): string {
+export function describeModelError(err: unknown, voice?: Pick<Voice, 'rateLimitGiveUp'>): string {
   const e = err as { statusCode?: number; message?: string; cause?: { statusCode?: number } };
   const status = e?.statusCode ?? e?.cause?.statusCode;
   const msg = String(e?.message ?? err);
   if (status === 429 || /RESOURCE_EXHAUSTED|exceeded your current quota|\b429\b/i.test(msg)) {
-    return /PerDay/i.test(msg)
+    const daily = /PerDay/i.test(msg);
+    if (voice) return voice.rateLimitGiveUp(daily);
+    return daily
       ? '⏳ Gemini daily free-tier limit reached; I will be able to answer again tomorrow.'
       : '⏳ Gemini rate limit; give me a minute and send it again.';
   }

@@ -248,7 +248,7 @@ describe('rate limits in Telegram', () => {
     await hub.start();
     tg.push(textUpdate(ME, 'hola'));
     await tg.waitFor(() => /⏳|❌|⚠️/.test(tg.outgoingText(ME)));
-    expect(tg.outgoingText(ME)).toMatch(/⏳ Gemini rate limit/);
+    expect(tg.outgoingText(ME)).toMatch(/⏳ Gemini nos pide paciencia, Amo Julián/);
     expect(tg.outgoingText(ME)).not.toMatch(/❌|⚠️/);
   });
 });

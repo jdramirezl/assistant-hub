@@ -140,7 +140,7 @@ describe('weekly-digest workflow in the hub', () => {
     const hub = createHub(testConfig(), { registry: { servers: {} }, telegram: { log: (m) => logs.push(m) } });
     hubs.push(hub);
     await hub.runDigest({ force: true, trigger: 'manual' });
-    expect(logs.join('\n')).toMatch(/\[notify\].*no apps/i);
+    expect(logs.join('\n')).toMatch(/\[notify\].*Resumen semanal.*Amo Julián: ninguna app/);
   });
 });
 

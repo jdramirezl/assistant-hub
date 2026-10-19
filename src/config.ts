@@ -2,6 +2,7 @@ import { existsSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { dirname, isAbsolute, join } from 'node:path';
 import { z } from 'zod';
+import type { PersonaConfig } from './persona.js';
 
 /** Values that mean "not configured yet" (used while the bot/apps don't exist). */
 const PLACEHOLDERS = new Set(['', 'changeme', 'todo', 'placeholder', 'xxx']);
@@ -44,6 +45,9 @@ const EnvSchema = z.object({
   ),
   HUB_PORT: optionalValue.refine((v) => v === undefined || /^\d+$/.test(v), 'HUB_PORT must be an integer'),
   HUB_TIMEZONE: optionalValue,
+  HUB_PERSONA: optionalValue.refine((v) => v === undefined || v === 'alfred' || v === 'plain', 'HUB_PERSONA must be alfred or plain'),
+  HUB_LANGUAGE: optionalValue.refine((v) => v === undefined || v === 'es' || v === 'en', 'HUB_LANGUAGE must be es or en'),
+  OWNER_NAME: optionalValue,
   TELEGRAM_BOT_TOKEN: optionalValue,
   TELEGRAM_ALLOWED_USER_IDS: optionalValue.refine(
     (v) => v === undefined || v.split(',').every((id) => /^\d+$/.test(id.trim())),
@@ -65,6 +69,7 @@ export interface HubConfig {
   dbPath: string;
   server: { host: string; port: number };
   timezone: string;
+  persona: PersonaConfig;
   /** Memory owner: `telegram:<first allowed id>` once known, `dev:local` before that. */
   resourceId: string;
   telegram:
@@ -127,6 +132,11 @@ export function loadConfig(env: Record<string, string | undefined> = process.env
     dbPath: join(dataDir, 'mastra.db'),
     server: { host: e.HUB_HOST ?? '127.0.0.1', port: e.HUB_PORT ? Number(e.HUB_PORT) : 4111 },
     timezone: e.HUB_TIMEZONE ?? 'America/Bogota',
+    persona: {
+      persona: (e.HUB_PERSONA as PersonaConfig['persona'] | undefined) ?? 'alfred',
+      language: (e.HUB_LANGUAGE as PersonaConfig['language'] | undefined) ?? 'es',
+      ownerName: e.OWNER_NAME ?? 'Julián',
+    },
     resourceId: allowedUserIds[0] ? `telegram:${allowedUserIds[0]}` : 'dev:local',
     telegram,
     healthcheckUrl: e.HEALTHCHECK_URL,

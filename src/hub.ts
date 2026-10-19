@@ -14,15 +14,16 @@ import { withMalformedFallback } from './llm/escalate.js';
 import { createNotifier, type Notify } from './notify.js';
 import { Digest, type DigestResult, type DigestSection } from './digest.js';
 import { createDigestWorkflow } from './workflows/weekly-digest.js';
-import { sendStartupPing, startHeartbeat, startupMessage } from './ops.js';
+import { sendStartupPing, startHeartbeat } from './ops.js';
 import { hostname } from 'node:os';
+import { createVoice, personaPrompt } from './persona.js';
 
 export interface HubDeps {
   /** Test seam: model used by the assistant and reporter instead of Gemini. */
   model?: AssistantOptions['model'];
   /** Test seam: stronger model used when a response is malformed (defaults to `model`). */
   escalationModel?: unknown;
-  telegram?: Omit<TelegramDeps, 'kv' | 'gate'>;
+  telegram?: Omit<TelegramDeps, 'kv' | 'gate' | 'voice'>;
   /** Inline registry (tests); default: load config.mcpRegistryPath. */
   registry?: unknown;
   env?: Record<string, string | undefined>;
@@ -64,6 +65,7 @@ const REPORTER_INSTRUCTIONS =
  */
 export function createHub(config: HubConfig, deps: HubDeps = {}): Hub {
   const log = deps.telegram?.log ?? ((m: string) => console.warn(m));
+  const voice = createVoice(config.persona);
   const client = createDbClient(config);
   const storage = createStorage(config, client);
   const kv = createKv(client);
@@ -77,7 +79,7 @@ export function createHub(config: HubConfig, deps: HubDeps = {}): Hub {
     now: deps.now,
     onRecovered: (name, downForMs) => {
       log(`[mcp] ${name} is back after ${Math.round(downForMs / 60_000)} min`);
-      if (downForMs > RECOVERY_NOTICE_MS) void notify(`✅ ${name} is back (it was unreachable for ${Math.round(downForMs / 60_000)} min).`);
+      if (downForMs > RECOVERY_NOTICE_MS) void notify(voice.back(name, Math.round(downForMs / 60_000)));
     },
   });
 
@@ -87,6 +89,7 @@ export function createHub(config: HubConfig, deps: HubDeps = {}): Hub {
     timezone: config.timezone,
     model: deps.model ? withMalformedFallback(deps.model, deps.escalationModel, log) : modelChain('default', gemini!),
     memory,
+    persona: config.persona,
     tools: () => toolbox.getTools(),
     extraInstructions: () => toolbox.statusNote(),
     guards: [guard],
@@ -95,7 +98,7 @@ export function createHub(config: HubConfig, deps: HubDeps = {}): Hub {
     id: 'reporter',
     name: 'Reporter',
     description: 'Writes the weekly digest on the stronger model',
-    instructions: REPORTER_INSTRUCTIONS,
+    instructions: [REPORTER_INSTRUCTIONS, personaPrompt(config.persona)].filter(Boolean).join('\n\n'),
     model: (deps.model ?? modelChain('report', gemini!)) as never,
     inputProcessors: [guard],
     outputProcessors: [guard],
@@ -106,6 +109,7 @@ export function createHub(config: HubConfig, deps: HubDeps = {}): Hub {
     sections: deps.digestSections ?? [],
     compose: async (prompt) => (await reporter.generate(prompt)).text,
     notify,
+    emptyText: voice.digestEmpty,
     timezone: config.timezone,
     now: deps.now,
     log,
@@ -115,6 +119,7 @@ export function createHub(config: HubConfig, deps: HubDeps = {}): Hub {
   const telegram = createTelegramChannel(config, {
     ...deps.telegram,
     kv,
+    voice,
     gate: async () => ((await budget.check()).ok ? undefined : BUDGET_MESSAGE),
   });
 
@@ -163,7 +168,7 @@ export function createHub(config: HubConfig, deps: HubDeps = {}): Hub {
         log(`[digest] catch-up failed: ${(err as Error).message}`);
       }
       if (opts.ops) {
-        await sendStartupPing({ kv, notify, text: startupMessage({ host: hostname(), apps: toolbox.status() }) }).catch((err) =>
+        await sendStartupPing({ kv, notify, text: voice.startup(hostname(), toolbox.status()) }).catch((err) =>
           log(`[ops] startup ping failed: ${(err as Error).message}`),
         );
         heartbeat = startHeartbeat({

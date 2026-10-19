@@ -25,6 +25,8 @@ export interface DigestOptions {
   /** Turns the collected sections into the message (runs on the report model). */
   compose: (prompt: string) => Promise<string>;
   notify: (text: string) => Promise<void>;
+  /** Message sent when no app has data (persona wording). */
+  emptyText?: (period: string) => string;
   timezone: string;
   now?: () => number;
   log?: (m: string) => void;
@@ -134,7 +136,8 @@ export class Digest {
 
     const text =
       withData === 0
-        ? `🗓️ Weekly digest (${period}): no apps reported data yet. Connect finance or fitness to get a real summary.`
+        ? (this.opts.emptyText?.(period) ??
+          `🗓️ Weekly digest (${period}): no apps reported data yet. Connect finance or fitness to get a real summary.`)
         : await this.opts.compose(REPORT_PROMPT(period, parts.join('\n\n')));
     await this.opts.notify(text);
     this.log(`[digest] ${period} sent (${trigger})`);

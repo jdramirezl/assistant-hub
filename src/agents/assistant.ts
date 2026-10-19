@@ -2,6 +2,7 @@ import { Agent } from '@mastra/core/agent';
 import type { ToolsInput } from '@mastra/core/agent';
 import type { MastraMemory } from '@mastra/core/memory';
 import type { InputProcessor, OutputProcessor } from '@mastra/core/processors';
+import { personaPrompt, type PersonaConfig } from '../persona.js';
 
 export const ASSISTANT_ID = 'assistant';
 
@@ -23,8 +24,9 @@ function localTime(timezone: string, now: Date): { stamp: string; weekday: strin
   return { stamp: `${parts.year}-${parts.month}-${parts.day} ${parts.hour}:${parts.minute}`, weekday: parts.weekday! };
 }
 
-export function buildInstructions(timezone: string, now: Date = new Date()): string {
+export function buildInstructions(timezone: string, now: Date = new Date(), opts: { persona?: PersonaConfig } = {}): string {
   const { stamp, weekday } = localTime(timezone, now);
+  const persona = opts.persona ? personaPrompt(opts.persona) : '';
   return [
     "You are the user's personal assistant, reached through Telegram on their phone.",
     'Reply in the language the user writes in (Spanish or English; mixed is fine). Keep answers short and concise: a few lines, no filler.',
@@ -35,6 +37,7 @@ export function buildInstructions(timezone: string, now: Date = new Date()): str
     'Working memory is ONLY for durable preferences (name, default currency, accounts, goals). Never store transactions, meals or other records there.',
     'Never invent data a tool did not return. If a tool returns {"error":{code,message,retryable}}, say what failed in one line and whether retrying may help.',
     'Photos are usually receipts or meals; voice notes are requests. Extract amounts, dates and items carefully and state any assumption you made.',
+    ...(persona ? ['', persona] : []),
   ].join('\n');
 }
 
@@ -48,6 +51,8 @@ export interface AssistantOptions {
   extraInstructions?: () => string;
   /** Processors that run in both the input and output phases (e.g. the budget guard). */
   guards?: (InputProcessor & OutputProcessor)[];
+  /** Persona section of the prompt (omit or `plain` to switch off). */
+  persona?: PersonaConfig;
 }
 
 export function createAssistantAgent(opts: AssistantOptions): Agent {
@@ -55,7 +60,7 @@ export function createAssistantAgent(opts: AssistantOptions): Agent {
     id: ASSISTANT_ID,
     name: 'Assistant',
     description: 'Personal assistant for finance, fitness and future apps',
-    instructions: () => [buildInstructions(opts.timezone), opts.extraInstructions?.()].filter(Boolean).join('\n'),
+    instructions: () => [buildInstructions(opts.timezone, new Date(), { persona: opts.persona }), opts.extraInstructions?.()].filter(Boolean).join('\n'),
     model: opts.model as never,
     tools: (opts.tools ?? {}) as never,
     ...(opts.memory ? { memory: opts.memory } : {}),

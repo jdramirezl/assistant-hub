@@ -4,6 +4,7 @@ import type { ChannelHandler, ChannelHandlers, ToolDisplayFn } from '@mastra/cor
 import type { HubConfig } from '../config.js';
 import type { KvStore } from '../kv.js';
 import { describeModelError, rateLimitContext } from '../llm/rate-limit.js';
+import type { Voice } from '../persona.js';
 
 /** Media sent to Gemini as file parts: receipts/meal photos and voice notes. */
 export const INLINE_MEDIA = ['image/*', 'audio/*', 'application/pdf'];
@@ -24,6 +25,8 @@ export interface TelegramDeps {
    * agent (e.g. the daily budget is used up); undefined to proceed.
    */
   gate?: () => Promise<string | undefined>;
+  /** Persona wording for rate-limit notices. */
+  voice?: Voice;
 }
 
 /**
@@ -58,6 +61,7 @@ function guarded(
   kv: KvStore | undefined,
   log: (m: string) => void,
   gate?: () => Promise<string | undefined>,
+  voice?: Voice,
 ): ChannelHandler {
   return async (thread: Thread, message: Message, defaultHandler) => {
     if (!thread.isDM) return log(`[telegram] ignoring non-DM message in ${thread.id}`);
@@ -72,7 +76,7 @@ function guarded(
     }
     // Lets the model layer post "⏳ rate limit, retrying in Ns" into this chat while it waits.
     const notify = async (text: string) => void (await thread.post(text));
-    await rateLimitContext.run({ notify }, () => defaultHandler(thread, message));
+    await rateLimitContext.run({ notify, format: voice?.rateLimit }, () => defaultHandler(thread, message));
   };
 }
 
@@ -89,7 +93,7 @@ export function createTelegramChannel(config: HubConfig, deps: TelegramDeps = {}
   // The adapter reads its allowlist from this env var; make it match config exactly.
   process.env.TELEGRAM_ALLOWED_USER_IDS = config.telegram.allowedUserIds.join(',');
 
-  const handler = guarded(config.telegram.allowedUserIds, deps.kv, log, deps.gate);
+  const handler = guarded(config.telegram.allowedUserIds, deps.kv, log, deps.gate, deps.voice);
   const handlers: ChannelHandlers = {
     onDirectMessage: handler,
     onSubscribedMessage: handler,
@@ -113,7 +117,7 @@ export function createTelegramChannel(config: HubConfig, deps: TelegramDeps = {}
     // A display function enables Approve/Deny inline-keyboard buttons for approval-gated tools
     // (with the default 'text' they would stay suspended with no way to answer).
     toolDisplay,
-    formatError: (err: Error) => describeModelError(err),
+    formatError: (err: Error) => describeModelError(err, deps.voice),
   });
 }
 
