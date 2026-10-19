@@ -84,8 +84,11 @@ Telegram shows ONE message: the plan grouped by section (meal / account), with
 
 ## MyFitnessPal logging quality
 
-- The agent searches and drafts in English, picks the serving that matches the user's unit
-  (1 egg, 1 slice, 100 g) and estimates kcal before logging (rejecting > 2× mismatches).
+- Meals go through the hub-side **`log_meal`** tool: one call with every item (English name, the
+  user's quantity and unit, the model's kcal estimate). In code, per item: Mason draft → first
+  serving matching the unit (quantity converted to servings) → must be within 2× of the estimate →
+  log (pinned in Mason, so a confirmed food/serving is preferred next time) → meal totals. Items it
+  is not sure about are **not guessed**: they come back as `ambiguous` and Alfred asks.
 - **Hard guard:** any single `fitness_log_food` entry estimated above **800 kcal** needs approval,
   whatever the model decided. The estimate comes from Mason's draft (calories per serving for the
   whole entry, scaled by a quantity override) or search results; for pinned foods (no estimate up
@@ -100,6 +103,34 @@ Spanish and "Master Julian" in English, one short line and then plain facts. It 
 startup ping, weekly digest, "app is back" and rate-limit notices. Switch off with
 `HUB_PERSONA=plain`; `HUB_LANGUAGE` (es/en) sets the language of notices and plan buttons, and
 `OWNER_NAME` the name.
+
+## Usage, cost and the replay harness
+
+- Every Gemini HTTP call (including 429 attempts) is logged in the `llm_calls` table: request id,
+  step, kind (chat/resume/plan/digest), keyword intent (meal, mfp-other, expense, finance-read,
+  plan, mixed, chat), media, model, tokens (input/cached/output/thinking), tools sent, system
+  prompt size, tools called.
+- **`/usage`** in Telegram (allowlisted user, no model call): today and the last 7 days — requests
+  and calls per intent, calls and input tokens per request, cached %, peak RPM, and the estimated
+  cost at paid prices (flash-lite $0.30 in / $0.03 cached / $2.50 out per 1M; thinking billed as output).
+- **Replay** (`npm run replay -- --label <name> [--only id,id]`, opt-in, uses real Gemini and the
+  free-tier quota, paced at 12 RPM): 25 typical requests through the real Telegram channel against
+  replicas of Mason and finance-app that serve their exact production tool definitions
+  (`tests/support/fixtures/*-tools.json`). It records the writes each request caused plus calls and
+  tokens; `npm run replay -- --compare baseline,final` prints the before/after table.
+
+## How calls and tokens are kept low
+
+- **Stable prefix:** static rules first; the clock (hour precision), app status and the cached
+  finance accounts go in a `## Now` tail, so Gemini's implicit cache can reuse the prefix.
+- **Short working memory:** updated only when the user states a durable preference.
+- **Trimmed results:** drafts keep 3 options and the servings that match the unit; log results drop
+  the day dump; finance lists keep essential fields. Older turns keep their text, not their tool calls.
+- **Tools by topic:** a keyword router sends only fitness or finance tools (plus `propose_plan`);
+  unclear messages and voice notes get all of them.
+- **`log_meal`:** a whole meal in one model step (see above); **finance accounts/pockets** are cached
+  by the hub and put in the prompt, so an expense is one tool call.
+- **Pacing:** calls wait for a slot below 14 RPM (flash-lite) / 4 RPM (3.8-flash) instead of hitting 429.
 
 ## Weekly digest
 
