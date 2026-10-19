@@ -12,7 +12,7 @@ Telegram ⇄ (long polling) ⇄ assistant-hub [Mastra · 127.0.0.1:4111 · LibSQ
 
 ## Requirements
 
-- macOS, Node 24 (`mise install` or `brew install node@24`; Node ≥ 22.13 works)
+- macOS, Node ≥ 22.13 (Node 24 recommended). On Intel Macs prefer the nodejs.org LTS `.pkg` over Homebrew, which builds Node from source there.
 - A Gemini API key on the paid (prepaid) tier
 
 ## Development (dev Mac)
@@ -89,7 +89,7 @@ scripts/deploy.sh              # anytime later: pull → ci → test → build �
 
 `setup-mac.sh`:
 - detects Apple Silicon or Intel and the macOS version
-- installs Homebrew `node@24`, which has a stable path for launchd
+- picks a Node ≥ 22.13 on a stable path for launchd: `NODE_BIN` in `.env`, else Homebrew `node@24`/`node`, `/usr/local/bin/node` (nodejs.org pkg) or `node` on PATH; it only offers `brew install node@24` if none is found
 - creates `~/Library/Application Support/assistant-hub` (mode 700) and `~/Library/Logs/assistant-hub`
 - sets `.env` to mode 600
 - offers `sudo pmset -c sleep 0 disksleep 0 displaysleep 10 womp 1 autorestart 1`
@@ -121,6 +121,40 @@ launchctl bootout gui/$(id -u)/com.jdrami.assistant-hub            # stop (until
 
 Restore a backup: stop the service, then copy a snapshot over
 `~/Library/Application Support/assistant-hub/mastra.db` (delete any `mastra.db-wal`/`-shm` first), then kickstart.
+
+
+### Per-machine `.env` (server Mac)
+
+Apps are switched on by their URL in `.env`, not by editing `mcp-servers.json`:
+
+```bash
+MFP_MCP_URL=http://127.0.0.1:8484/mcp               # Mason on this Mac
+FINANCE_MCP_URL=https://finance-app-backend-ten.vercel.app/mcp
+FINANCE_MCP_TOKEN=<contents of ~/.config/finance-mcp/prod.token>
+HEALTHCHECK_URL=https://hc-ping.com/<uuid>          # optional, healthchecks.io check (period 5 min, grace 10 min)
+# NODE_BIN=/usr/local/bin/node                      # only if auto-detection picks the wrong Node
+```
+
+Keep the checkout clean: `deploy.sh` refuses to run with local edits.
+
+### Keeping a MacBook server alive
+
+- **Closed lid:** `pmset` sleep settings don't stop clamshell sleep without an external display.
+  Run `sudo pmset -a disablesleep 1` to keep it awake with the lid closed (undo with
+  `sudo pmset -a disablesleep 0`). It runs warmer closed; leave it on a hard, ventilated surface.
+- **Login required:** LaunchAgents start only after you log in. After a reboot or power cut the
+  bot stays down until someone logs in. Automatic login fixes that but **requires turning FileVault
+  off** (System Settings → Users & Groups → Automatically log in as…). The tradeoff: with
+  FileVault off, anyone with the laptop can read the disk, including `.env`. With FileVault on,
+  plan to log in by hand after reboots; `autorestart 1` brings the Mac back after power loss,
+  but not past the login screen.
+- **macOS updates:** turn off automatic install (System Settings → General → Software Update →
+  Automatic Updates: keep "Download" and "Security Responses" if you like, turn off "Install macOS
+  updates"). Otherwise an overnight update reboots the Mac to the login screen and the bot is
+  down until you notice. Update by hand, then check that the bot says "✅ I'm up".
+- **Know when it's down:** set `HEALTHCHECK_URL` and turn on email/Telegram alerts in
+  healthchecks.io. The hub pings every 5 minutes; a sleeping Mac, a crash loop or a dead network
+  all show up as missed pings.
 
 ## Security notes
 
