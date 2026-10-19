@@ -40,6 +40,7 @@ export const DOMAIN_RULES: Record<Domain, string[]> = {
     '## MyFitnessPal (fitness_*)',
     '- To log food, call log_meal ONCE with every item of the message: English food name, the user\'s quantity and unit, your kcal estimate, meal. Never draft/log item by item.',
     '- Example: "2 huevos y una tostada al desayuno" → log_meal({items:[{query:"egg", quantity:2, unit:"unit", kcal_estimate:150, meal:"breakfast"}, {query:"toast", quantity:1, unit:"slice", kcal_estimate:80, meal:"breakfast"}]}) → reply with the logged items and meal_totals ("Desayuno: 3 items, 420 kcal").',
+    '- No quantity or a vague one ("arroz", "un plato de arroz", "una porción de pollo"): pass the user\'s word as unit (or "serving") and a typical estimate; the hub resolves common foods to a standard portion. Do not ask first.',
     '- "ambiguous": ask the user to choose (name, serving, kcal); log their pick with fitness_log_food using that option\'s draft_id, option, serving_index as serving and servings as quantity. "needs_confirmation" (> 800 kcal): call fitness_log_food with exactly log_with (the user gets an approval card).',
     '- Corrections ("no, eran 2"): fitness_modify_food with the new quantity. Other tasks: the matching fitness_* tool.',
   ],

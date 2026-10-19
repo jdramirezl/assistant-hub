@@ -130,6 +130,29 @@ describe('log_meal through the agent (fake Mason)', () => {
     expect(seen.logged?.[0]).toMatchObject({ name: 'Arepa, corn', servings: 2, kcal: 440 });
   });
 
+  it.each([
+    [{ quantity: 1, unit: 'plate', kcal_estimate: 300 }, 1.5, 308],
+    [{ quantity: 1, unit: 'plato', kcal_estimate: 300 }, 1.5, 308],
+    [{ quantity: 1, unit: 'taza', kcal_estimate: 200 }, 1, 205],
+    [{ quantity: 1, unit: 'serving', kcal_estimate: 200 }, 1, 205],
+    [{ quantity: 1, unit: 'unit', kcal_estimate: 200 }, 1, 205],
+  ])('common food: rice %j is logged without asking (%s cups)', async (o, servings, kcal) => {
+    const { seen } = await run({ items: [{ query: 'rice', meal: 'dinner', ...o }] });
+    expect(seen.ambiguous).toBeUndefined();
+    expect(seen.logged?.[0]).toMatchObject({ name: 'Rice, white, cooked', serving: '1 cup', servings, kcal });
+  });
+
+  it('common foods keep the 2× check: a wild estimate still asks', async () => {
+    const { seen } = await run({ items: [{ query: 'rice', quantity: 1, unit: 'plate', kcal_estimate: 1200, meal: 'dinner' }] });
+    expect(seen.logged).toBeUndefined();
+    expect(seen.ambiguous?.[0]).toMatchObject({ query: 'rice' });
+  });
+
+  it('a sandwich (no standard portion) is still ambiguous', async () => {
+    const { seen } = await run({ items: [{ query: 'sandwich', quantity: 1, unit: 'serving', kcal_estimate: 400, meal: 'lunch' }] });
+    expect(seen.ambiguous?.[0]).toMatchObject({ query: 'sandwich' });
+  });
+
   it('unknown food → failed with the MFP error code, others unaffected', async () => {
     const { seen } = await run({ items: [{ query: 'unicorn', quantity: 1, unit: 'unit', kcal_estimate: 100, meal: 'breakfast' }, item()] });
     expect(seen.failed[0]).toMatchObject({ query: 'unicorn', error: { code: 'MFP_BAD_REQUEST' } });

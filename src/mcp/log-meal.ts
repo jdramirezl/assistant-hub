@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import { createTool } from '@mastra/core/tools';
 import { KCAL_CONFIRM_THRESHOLD } from './nutrition.js';
+import { normalizeUnit, standardPortion } from './common-foods.js';
 
 /**
  * Hub-side composite tool: log a whole meal in ONE model step. For each item, in code:
@@ -151,8 +152,24 @@ export function createLogMeal(toolbox: MealToolbox, log: (m: string) => void = (
     const d = (await toolbox.execute('fitness_draft_food', { query: item.query, quantity: 1, meal, ...(date ? { date } : {}) }, { raw: true })) as Rec;
     if (errOf(d)) return void out.failed.push({ query: item.query, error: errOf(d) });
     const options = (d.options as Option[] | undefined) ?? [];
-    const cands = candidates(item, options, Number(d.quantity ?? 1));
-    const pick = choose(item, cands);
+    const draftQty = Number(d.quantity ?? 1);
+    const asked = { ...item, unit: normalizeUnit(item.unit) }; // "taza" → cup, "rebanada" → slice
+    const std = standardPortion(item.query, item.quantity, asked.unit);
+    const stdItem = std ? { ...asked, quantity: std.quantity, unit: std.unit } : undefined;
+    // a common food's own size for a vague unit ("un plato de arroz" = 1.5 cups) comes first;
+    // otherwise MFP's servings first and the standard portion before asking ("arroz" → 1 cup)
+    const tries = std?.specific ? [stdItem!, asked] : stdItem ? [asked, stdItem] : [asked];
+    let cands: Candidate[] = [];
+    let pick: Candidate | undefined;
+    for (const t of tries) {
+      const c = candidates(t, options, draftQty);
+      if (!cands.length) cands = c;
+      pick = choose(t, c);
+      if (pick) {
+        if (t === stdItem) log(`[log_meal] ${item.quantity} ${item.unit} of a common food → ${std!.quantity} ${std!.unit}`);
+        break;
+      }
+    }
     if (!pick) {
       const shown = (cands.length ? cands : options.flatMap((o) => o.servings.slice(0, 1).map((s) => ({ option: o.option, name: o.name, serving: s.serving, label: s.label, servings: 1, kcal: Math.round(Number(s.calories ?? 0)), pinned: false }))))
         .sort((a, b) => Math.abs(Math.log(a.kcal / item.kcal_estimate)) - Math.abs(Math.log(b.kcal / item.kcal_estimate)))
