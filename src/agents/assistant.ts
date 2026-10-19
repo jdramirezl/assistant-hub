@@ -24,13 +24,11 @@ function localTime(timezone: string, now: Date): { stamp: string; weekday: strin
   return { stamp: `${parts.year}-${parts.month}-${parts.day} ${parts.hour}:${parts.minute}`, weekday: parts.weekday! };
 }
 
-export function buildInstructions(timezone: string, now: Date = new Date(), opts: { persona?: PersonaConfig } = {}): string {
-  const { stamp, weekday } = localTime(timezone, now);
+export function buildInstructions(_timezone: string, _now: Date = new Date(), opts: { persona?: PersonaConfig } = {}): string {
   const persona = opts.persona ? personaPrompt(opts.persona) : '';
   return [
     "You are the user's personal assistant, reached through Telegram on their phone.",
     'Always reply in the language of the user\'s latest message (Spanish → Spanish, English → English), including plan titles and summaries, even when tools return English data. Keep answers short and concise: a few lines, no filler.',
-    `Current local time: ${weekday} ${stamp} (${timezone}). Resolve relative dates ("ayer", "last Friday") against it.`,
     'Use tools to act on the user\'s apps. Tools are prefixed by app (finance_*, fitness_*). When the user asks for a write, do it and then confirm briefly what changed.',
     'NEVER say you recorded, saved, logged, updated or deleted something unless an app tool call in this turn returned success. If no tool exists for that app, say plainly that the app is not connected yet and show what you would record (amount, currency, account, category, date) so the user can check it.',
     'Finance (finance_*): first call finance_list_accounts (and finance_list_pockets when a pocket matters) to resolve names like "Nequi" or "Nu México" to their ids; never guess ids. Movement types: EgresoNormal (one-off expense), IngresoNormal (one-off income), EgresoFijo / IngresoFijo (recurring fixed expense / income). Amounts are always positive numbers in the account\'s currency ("25k" = 25000); the type gives the direction. Dates are YYYY-MM-DD in local time; default to today. If a tool returns VALIDATION_ERROR or NOT_FOUND, tell the user what is wrong and ask; do not say it was saved.',
@@ -45,6 +43,19 @@ export function buildInstructions(timezone: string, now: Date = new Date(), opts
   ].join('\n');
 }
 
+/**
+ * The parts of the prompt that change: kept at the END so everything before them (and the
+ * tool list) is a byte-identical prefix that Gemini's implicit cache can reuse. Hour precision.
+ */
+export function dynamicContext(timezone: string, now: Date = new Date(), statusNote = ''): string {
+  const { stamp, weekday } = localTime(timezone, now);
+  return [
+    '## Now',
+    `Local time: ${weekday} ${stamp.slice(0, 13)}h (${timezone}). Resolve relative dates ("ayer", "last Friday") and the likely meal from it.`,
+    statusNote,
+  ].filter(Boolean).join('\n');
+}
+
 export interface AssistantOptions {
   timezone: string;
   tools?: ToolsInput | (() => ToolsInput | Promise<ToolsInput>);
@@ -57,8 +68,12 @@ export interface AssistantOptions {
   guards?: (InputProcessor & OutputProcessor)[];
   /** Output-only processors (e.g. the batch-approval guard). */
   outputGuards?: OutputProcessor[];
+  /** Input-only processors (e.g. the short working-memory prompt). */
+  inputGuards?: InputProcessor[];
   /** Persona section of the prompt (omit or `plain` to switch off). */
   persona?: PersonaConfig;
+  /** Clock (tests). */
+  now?: () => number;
 }
 
 export function createAssistantAgent(opts: AssistantOptions): Agent {
@@ -66,11 +81,16 @@ export function createAssistantAgent(opts: AssistantOptions): Agent {
     id: ASSISTANT_ID,
     name: 'Assistant',
     description: 'Personal assistant for finance, fitness and future apps',
-    instructions: () => [buildInstructions(opts.timezone, new Date(), { persona: opts.persona }), opts.extraInstructions?.()].filter(Boolean).join('\n'),
+    instructions: () =>
+      [
+        buildInstructions(opts.timezone, new Date(), { persona: opts.persona }),
+        '',
+        dynamicContext(opts.timezone, new Date(opts.now?.() ?? Date.now()), opts.extraInstructions?.() ?? ''),
+      ].join('\n'),
     model: opts.model as never,
     tools: (opts.tools ?? {}) as never,
     ...(opts.memory ? { memory: opts.memory } : {}),
-    ...(opts.guards?.length ? { inputProcessors: opts.guards } : {}),
+    inputProcessors: [...(opts.inputGuards ?? []), ...(opts.guards ?? [])],
     outputProcessors: [...(opts.guards ?? []), ...(opts.outputGuards ?? [])],
     maxProcessorRetries: 2,
   });

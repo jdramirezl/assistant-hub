@@ -25,8 +25,8 @@ describe('memory', () => {
   });
 
   it('uses a resource-scoped working memory template with preferences', () => {
-    expect(WORKING_MEMORY_TEMPLATE).toMatch(/Default currency/);
-    expect(WORKING_MEMORY_TEMPLATE).toMatch(/Pockets/);
+    expect(WORKING_MEMORY_TEMPLATE).toMatch(/Default currency \/ accounts/);
+    expect(WORKING_MEMORY_TEMPLATE.split('\n').length).toBeLessThan(8);
   });
 
   it('persists conversation and working memory across a full re-instantiation', async () => {

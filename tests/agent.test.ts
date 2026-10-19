@@ -1,16 +1,17 @@
 import { describe, expect, it } from 'vitest';
 import { createMockModel } from '@mastra/core/test-utils/llm-mock';
-import { buildInstructions, createAssistantAgent } from '../src/agents/assistant.js';
+import { buildInstructions, createAssistantAgent, dynamicContext } from '../src/agents/assistant.js';
 
 describe('assistant agent', () => {
-  it('instructions are bilingual, concise and carry the current Bogota time', () => {
+  it('instructions are bilingual and concise; the time lives in a separate, hour-precision tail', () => {
     const text = buildInstructions('America/Bogota', new Date('2026-10-18T22:00:00Z'));
     expect(text).toMatch(/Spanish/);
     expect(text).toMatch(/English/);
     expect(text).toMatch(/concise|short/i);
-    expect(text).toContain('America/Bogota');
-    expect(text).toContain('2026-10-18 17:00'); // UTC-5
-    expect(text).toContain('Sunday');
+    expect(text).not.toMatch(/2026-10-18/);
+    const tail = dynamicContext('America/Bogota', new Date('2026-10-18T22:07:00Z'), 'mfp is down');
+    expect(tail).toContain('Sunday 2026-10-18 17h (America/Bogota)'); // UTC-5, no minutes
+    expect(tail).toContain('mfp is down');
   });
 
   it('answers through the injected model', async () => {

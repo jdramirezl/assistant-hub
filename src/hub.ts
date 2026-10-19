@@ -3,7 +3,7 @@ import { Mastra } from '@mastra/core/mastra';
 import type { TelegramProvider } from '@mastra/telegram';
 import type { HubConfig } from './config.js';
 import { createAssistantAgent, ASSISTANT_ID, type AssistantOptions } from './agents/assistant.js';
-import { createDbClient, createKv, createMemory, createStorage } from './memory.js';
+import { WorkingMemoryPrompt, createDbClient, createKv, createMemory, createStorage } from './memory.js';
 import { createTelegramChannel, connectTelegram, type TelegramDeps } from './channels/telegram.js';
 import type { KvStore } from './kv.js';
 import { loadRegistry, parseRegistry } from './mcp/registry.js';
@@ -148,9 +148,11 @@ export function createHub(config: HubConfig, deps: HubDeps = {}): Hub {
     model: deps.model ? withMalformedFallback(deps.model, deps.escalationModel, log) : modelChain('default', gemini!),
     memory,
     persona: config.persona,
+    now: deps.now,
     tools: async () => ({ ...(await toolbox.getTools()), propose_plan: proposePlan }),
     extraInstructions: () => toolbox.statusNote(),
     guards: [guard],
+    inputGuards: [new WorkingMemoryPrompt(memory)],
     outputGuards: [new PlanGuard((t) => toolbox.isGated(t), log)],
   });
   summarizePlan = async (prompt, memory) => {
