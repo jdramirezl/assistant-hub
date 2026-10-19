@@ -44,7 +44,13 @@ referenced by env var name, never written in the file:
 - A server that is down is skipped (the agent is told which app is unavailable) and retried every minute.
 - Plain `http://` is only accepted for loopback hosts; remote servers must use `https://`.
 - Tool errors use the shared shape `{"error":{"code","message","retryable"}}`.
-- Local stub for development: `npm run stub:echo` (serves `echo_say`, `echo_delete`, `echo_fail` on `127.0.0.1:8585`).
+- Local stub for development: `npm run stub:echo` (serves `echo_say`, `echo_delete`, `echo_fail` on `127.0.0.1:8585`); set its `enabled` to `true` locally.
+- `toolPrefix` keeps a server's own tool prefix when it differs from the server name (`mfp` serves `fitness_*`).
+- `errorStyle: "mason"` maps Mason's plain-text `isError` failures to `MFP_UNAVAILABLE` (retryable), `MFP_SESSION_EXPIRED`, `MFP_BLOCKED`, `MFP_BAD_REQUEST`, `MFP_ERROR`.
+- Approval by name, in addition to `destructiveHint`/delete-like verbs: `fitness_delete_food`, `fitness_delete_exercise`, `fitness_modify_food`, `fitness_clear_food_pin`.
+
+Going live on the server Mac: set `"enabled": true` for `mfp` once Mason runs there; for `finance`, add
+`FINANCE_MCP_URL` and `FINANCE_MCP_TOKEN` to `.env` and set `"enabled": true`.
 
 ## Approvals and budget
 

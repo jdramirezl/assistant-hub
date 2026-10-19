@@ -3,6 +3,7 @@ import { createTool, type Tool } from '@mastra/core/tools';
 import { noopLogger } from '@mastra/core/logger';
 import { resolveHeaders, resolveUrl, type Registry } from './registry.js';
 import { requiresApproval } from '../approvals.js';
+import { mapToolErrorText, sharedError, unavailableError, type ErrorStyle } from './errors.js';
 
 export type ServerStatus =
   | { state: 'up'; tools: number }
@@ -21,17 +22,14 @@ export interface ToolboxOptions {
 type AnyTool = Tool<any, any, any, any, any, any, any>;
 export type ToolAnnotations = { readOnlyHint?: boolean; destructiveHint?: boolean; title?: string };
 
-/** Cross-track error shape. */
-export function sharedError(code: string, message: string, retryable: boolean) {
-  return { error: { code, message, retryable } };
-}
+export { sharedError };
 
 /**
  * Unwrap an MCP CallToolResult into the plain value the tool produced:
  * structuredContent, else a single JSON text block parsed, else the text.
  * `isError` results are mapped to the shared error shape.
  */
-export function normalizeResult(result: unknown): unknown {
+export function normalizeResult(result: unknown, style: ErrorStyle = 'default'): unknown {
   if (!result || typeof result !== 'object' || !('content' in result || 'structuredContent' in result)) return result;
   const r = result as { content?: { type: string; text?: string }[]; structuredContent?: unknown; isError?: boolean };
   let value: unknown = r.structuredContent;
@@ -46,14 +44,17 @@ export function normalizeResult(result: unknown): unknown {
   }
   if (r.isError) {
     const already = value && typeof value === 'object' && 'error' in value;
-    return already ? value : sharedError('TOOL_ERROR', typeof value === 'string' ? value : JSON.stringify(value), false);
+    return already ? value : mapToolErrorText(style, typeof value === 'string' ? value : JSON.stringify(value));
   }
   return value;
 }
 
-/** `finance_create_movement` stays as is on server "finance"; `say` on "echo" becomes `echo_say`. */
-export function publicToolName(server: string, toolName: string): string {
-  return toolName.startsWith(`${server}_`) ? toolName : `${server}_${toolName}`;
+/**
+ * `finance_create_movement` stays as is on server "finance"; `say` on "echo" becomes `echo_say`.
+ * `prefix` overrides the server name (Mason is registered as "mfp" but its tools are fitness_*).
+ */
+export function publicToolName(server: string, toolName: string, prefix: string = server): string {
+  return toolName.startsWith(`${prefix}_`) ? toolName : `${prefix}_${toolName}`;
 }
 
 /**
@@ -157,8 +158,9 @@ export class McpToolbox {
       for (const [key, tool] of Object.entries(raw as Record<string, AnyTool>)) {
         const server = Object.keys(servers).find((s) => key.startsWith(`${s}_`));
         if (!server) continue;
-        const name = publicToolName(server, key.slice(server.length + 1));
-        tools[name] = this.wrap(name, server, tool);
+        const entry = this.registry.servers[server]!;
+        const name = publicToolName(server, key.slice(server.length + 1), entry.toolPrefix);
+        tools[name] = this.wrap(name, server, tool, entry.errorStyle);
         annotations[name] = (tool as { mcp?: { annotations?: ToolAnnotations } }).mcp?.annotations;
         counts[server] = (counts[server] ?? 0) + 1;
       }
@@ -177,7 +179,7 @@ export class McpToolbox {
     this.statuses = statuses;
   }
 
-  private wrap(name: string, server: string, tool: AnyTool): AnyTool {
+  private wrap(name: string, server: string, tool: AnyTool, style: ErrorStyle): AnyTool {
     const t = tool as AnyTool & { mcp?: { annotations?: ToolAnnotations } };
     return createTool({
       id: name,
@@ -187,10 +189,10 @@ export class McpToolbox {
       requireApproval: requiresApproval(name, t.mcp?.annotations),
       execute: async (input: unknown, ctx: unknown) => {
         try {
-          return normalizeResult(await (t.execute as (i: unknown, c: unknown) => Promise<unknown>)(input, ctx));
+          return normalizeResult(await (t.execute as (i: unknown, c: unknown) => Promise<unknown>)(input, ctx), style);
         } catch (err) {
           this.statuses[server] = { state: 'down', reason: firstLine((err as Error).message) };
-          return sharedError('MCP_UNAVAILABLE', `${server} is unreachable: ${firstLine((err as Error).message)}`, true);
+          return unavailableError(style, server, firstLine((err as Error).message));
         }
       },
     }) as unknown as AnyTool;

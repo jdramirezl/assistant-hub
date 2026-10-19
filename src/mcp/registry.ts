@@ -50,6 +50,10 @@ const ServerSpec = z
     enabled: z.boolean().default(true),
     description: z.string().optional(),
     timeoutMs: z.number().int().positive().default(15_000),
+    /** Prefix for this server's tools when it differs from the server name (Mason: "fitness"). */
+    toolPrefix: z.string().regex(/^[a-z][a-z0-9_]*$/, 'toolPrefix must be lowercase snake_case').optional(),
+    /** How the server reports failures; "mason" maps its isError text to MFP_* codes. */
+    errorStyle: z.enum(['default', 'mason']).default('default'),
   })
   .strict();
 
