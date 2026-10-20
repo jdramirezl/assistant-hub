@@ -335,6 +335,11 @@ export class McpToolbox {
     return dynamic ? (input: unknown) => dynamic((input ?? {}) as Record<string, unknown>) : false;
   }
 
+  /** A tool some connected server actually serves (the model sometimes invents names). */
+  knownTool(name: string): boolean {
+    return Object.values(this.slots).some((s) => name in s.tools);
+  }
+
   /** True when the static policy gates this tool (destructive / delete-like / named). */
   isGated(name: string): boolean {
     return requiresApproval(name, this.annotationsFor(name));

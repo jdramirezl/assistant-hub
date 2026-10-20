@@ -19,13 +19,14 @@ import { createGeminiModels, modelChain, PROVIDER_OPTIONS } from './models.js';
 import { createTranscriber } from './voice/transcribe.js';
 import { mealHint } from './meal.js';
 import { StatusMessages, toPlain } from './status/messages.js';
+import { appName, appOfTool, errorOf, explain } from './status/errors.js';
 import { StatusRunEnd, StatusTracker } from './status/tracker.js';
 import { formatEstado, recentFailures, recordFailure } from './status/estado.js';
 import { hubVersion } from './version.js';
 import { CinesHub } from './cines/service.js';
 import { cinesApprovalCard } from './cines/card.js';
 import { genericApprovalCard } from './status/approval-card.js';
-import { HUB_ONLY_TOOLS, MONEY_TOOLS, PURCHASE_TOOL } from './cines/contract.js';
+import { HOLD_TOOL, HUB_ONLY_TOOLS, MONEY_TOOLS, PURCHASE_TOOL } from './cines/contract.js';
 import { withMalformedFallback } from './llm/escalate.js';
 import { createNotifier, type Notify } from './notify.js';
 import { Digest, type DigestResult, type DigestSection } from './digest.js';
@@ -115,6 +116,17 @@ export function toolsForDomains<T>(tools: Record<string, T>, domains: readonly D
 /** Tools that only read (no "✅ done" for them). Everything else from an app is a write. */
 const READ_TOOLS = /^(updateWorkingMemory$|propose_plan$|clear_day$|fitness_(get|search|draft|list|bulk)_|finance_(list|spending|convert|get)_|cines_(list_|listings|find|showtimes|best|upcoming|seat_map|validate|hold_status))/;
 
+/** Tools the hub itself provides to the agent. */
+const LOCAL_TOOLS: ReadonlySet<string> = new Set(['log_meal', 'clear_day', 'propose_plan', 'updateWorkingMemory', 'request_secure_input']);
+
+/** An argument the model left as a placeholder ("...", "<showtimeId>", "xxx"): the field name, or undefined. */
+export function placeholderArg(args: Record<string, unknown>): string | undefined {
+  for (const [k, v] of Object.entries(args ?? {})) {
+    if (typeof v === 'string' && /^\s*(?:\.{2,}|…|<[^>]*>|\{[^}]*\}|x{3,}|placeholder|id_here|tbd|todo)\s*$/i.test(v)) return `${k}="${v}"`;
+  }
+  return undefined;
+}
+
 /** Finance tools that take accountId + pocketId: the hub fills accountId from the pocket. */
 const POCKET_TOOLS: ReadonlySet<string> = new Set(['finance_create_movement']);
 
@@ -167,8 +179,19 @@ export function createHub(config: HubConfig, deps: HubDeps = {}): Hub {
     now: deps.now,
     hooks: {
       approval: (tool) => (tool === 'fitness_log_food' ? (input) => nutrition.needsConfirmation(input) : undefined),
-      approvalOverride: (tool) => (tool === PURCHASE_TOOL ? (input) => cines!.purchaseNeedsApproval(input) : undefined),
-      beforeCall: (tool, input) => (MONEY_TOOLS.has(tool) ? cines!.beforeCall(tool, input) : POCKET_TOOLS.has(tool) ? withOwningAccount(input) : undefined),
+      approvalOverride: (tool) =>
+        tool === PURCHASE_TOOL
+          ? (input) => cines!.purchaseNeedsApproval(input)
+          : tool === HOLD_TOOL
+            ? // seats checked (and the showtime fixed) BEFORE the card; a hold that cannot work gets no card
+              async (input) => !('error' in (await cines!.prepareHold(usageContext.getStore()?.chatId ?? 'local', input)))
+            : undefined,
+      beforeCall: (tool, input) => {
+        const ph = placeholderArg(input);
+        if (ph) return Promise.resolve({ error: { error: { code: 'VALIDATION_ERROR', message: `${ph} is a placeholder, not a real value. Copy the real value verbatim from the latest tool result (never invent ids).`, retryable: false } } });
+        if (MONEY_TOOLS.has(tool) || tool === 'cines_validate_seats' || tool === 'cines_seat_map') return cines!.beforeCall(tool, input, { chatId: usageContext.getStore()?.chatId });
+        return POCKET_TOOLS.has(tool) ? withOwningAccount(input) : undefined;
+      },
       // the hub fills accountId from the pocket, so the model may omit it
       schema: (tool, s) => (POCKET_TOOLS.has(tool) ? optionalAccountId(s) : s),
       afterResult: (tool, input, result, { raw }) => {
@@ -180,8 +203,17 @@ export function createHub(config: HubConfig, deps: HubDeps = {}): Hub {
           if (tool === 'fitness_log_food') out = nutrition.annotateLog(input, result);
         }
         if (FINANCE_WRITES.has(tool)) financeDir.invalidate();
-        if (tool.startsWith('cines_') && !raw) return cines!.afterResult(tool, input, out, { chatId: usageContext.getStore()?.chatId });
-        return raw ? out : trimForModel(tool, out);
+        if (raw) return out;
+        // a failure carries the cause the user will see in the status line: the model must use
+        // it, not invent another ("la función ya no está disponible" for a wrong id)
+        const withCause = (v: unknown) => {
+          const e = errorOf(v);
+          if (!e) return v;
+          const x = explain(e.code, e.message, config.persona.language, appName(appOfTool(tool), config.persona.language));
+          return { ...(v as object), user_message: `${x.cause}. ${x.action}`, note: 'Tell the user exactly this cause (user_message), briefly. Do not guess another reason.' };
+        };
+        if (tool.startsWith('cines_')) return Promise.resolve(cines!.afterResult(tool, input, out, { chatId: usageContext.getStore()?.chatId })).then(withCause);
+        return withCause(trimForModel(tool, out));
       },
     },
     onRecovered: (name, downForMs) => {
@@ -207,7 +239,7 @@ export function createHub(config: HubConfig, deps: HubDeps = {}): Hub {
     dryRun: config.cinesDryRun,
     ...(tgApi
       ? {
-          sendPhoto: async (chatId: string, bytes: Uint8Array) => void (await tgApi.sendPhoto(chatId, bytes)),
+          sendPhoto: (chatId: string, bytes: Uint8Array) => tgApi.sendPhoto(chatId, bytes),
           sendText: async (chatId: string, text: string) => void (await tgApi.send(chatId, text)),
         }
       : {}),
@@ -332,6 +364,7 @@ export function createHub(config: HubConfig, deps: HubDeps = {}): Hub {
             requestId,
             msgs,
             isWrite,
+            isKnown: (t) => LOCAL_TOOLS.has(t) || toolbox.knownTool(t),
             log,
             now: deps.now,
             onFailure: (f) => recordFailure(kv, f),

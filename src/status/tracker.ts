@@ -34,6 +34,8 @@ export interface TrackerDeps {
   requestId: string;
   msgs: StatusMessages;
   isWrite: (tool: string) => boolean;
+  /** Tools that exist (hub-local or served). A call to an invented tool is the model's own slip: never a ❌. */
+  isKnown?: (tool: string) => boolean;
   log?: (m: string) => void;
   onFailure?: (f: FailureRecord) => void | Promise<void>;
   now?: () => number;
@@ -104,6 +106,10 @@ export class StatusTracker {
   /** Channel tool events (running / result / error / approval). */
   onToolEvent(ev: ToolDisplayEvent): void {
     if (this.finished || /workingmemory/i.test(ev.toolName)) return;
+    if (this.d.isKnown && !this.d.isKnown(ev.toolName)) {
+      this.d.log?.(`[status] ignored a call to an unknown tool (${ev.toolName}); the model retries`);
+      return;
+    }
     if (ev.kind === 'running') {
       const n = (this.starts.get(ev.toolName) ?? 0) + 1;
       this.starts.set(ev.toolName, n);
@@ -133,6 +139,7 @@ export class StatusTracker {
     let code: string | undefined;
     if (this.runError !== undefined) {
       const e = explain(codeOfModelError(this.runError), String((this.runError as Error)?.message ?? ''), this.msgs.lang);
+      this.d.log?.(`[status] run failed: ${String((this.runError as Error)?.message ?? this.runError).split('\n')[0]!.slice(0, 300)}`);
       final = this.msgs.runError(e, this.d.requestId);
       code = e.code;
     } else {

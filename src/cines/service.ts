@@ -58,7 +58,7 @@ export interface CinesHubDeps {
   now?: () => number;
   fetch?: typeof fetch;
   /** Upload a photo to a chat (Telegram); omitted in Studio-only mode. */
-  sendPhoto?: (chatId: string, bytes: Uint8Array) => Promise<void>;
+  sendPhoto?: (chatId: string, bytes: Uint8Array) => Promise<number | void>;
   /** Send a plain message to a chat (the secure-input prompt). */
   sendText?: (chatId: string, text: string) => Promise<void>;
   /** Persona wording of the secure prompt for a kind. */
@@ -87,13 +87,121 @@ export interface CallContext {
   chatId?: string;
 }
 
+/** How long a showtime the user was shown stays "in play" (holds must use one of them). */
+export const SHOWN_TTL_MS = 30 * 60_000;
+export interface ShownShowtime {
+  id: string;
+  /** "Dune · Cinépolis Parque Toreo · 20:30 SUB 2D" */
+  label: string;
+  at: number;
+}
+type Shown = { ids: Map<string, ShownShowtime>; lastMap?: { id: string; at: number } };
+const showtimesIn = (r: Rec): Rec[] => {
+  const out: Rec[] = [];
+  for (const k of ['best', 'showtime']) if (r[k] && typeof r[k] === 'object') out.push(r[k] as Rec);
+  for (const k of ['alternatives', 'showtimes']) if (Array.isArray(r[k])) out.push(...(r[k] as Rec[]));
+  return out.filter((x) => typeof x.showtimeId === 'string');
+};
+const movieOf = (r: Rec) => String((r.movie as Rec | undefined)?.title ?? (typeof r.movie === 'string' ? r.movie : '') ?? '');
+
 export class CinesHub {
   private readonly holds = new Map<string, HoldSummary>();
+  /** Showtimes the user was shown, per chat (the ids a hold may use). */
+  private readonly shown = new Map<string, Shown>();
+  /** Hold checks by args: run before the approval card, reused when the call executes. */
+  private readonly prepared = new Map<string, Promise<{ args: Rec; preview?: string } | { error: ReturnType<typeof sharedError> }>>();
   private readonly log: (m: string) => void;
   private readonly now: () => number;
   constructor(private readonly d: CinesHubDeps) {
     this.log = d.log ?? (() => {});
     this.now = d.now ?? Date.now;
+  }
+
+  /* ---------------------------------------------------------------- showtimes in play */
+
+  private shownFor(chat: string): Shown {
+    let s = this.shown.get(chat);
+    if (!s) this.shown.set(chat, (s = { ids: new Map() }));
+    const now = this.now();
+    for (const [id, x] of s.ids) if (now - x.at > SHOWN_TTL_MS) s.ids.delete(id);
+    if (s.lastMap && now - s.lastMap.at > SHOWN_TTL_MS) s.lastMap = undefined;
+    return s;
+  }
+
+  private remember(chat: string, tool: string, result: unknown): void {
+    const r = (result ?? {}) as Rec;
+    if (r.error) return;
+    const s = this.shownFor(chat);
+    const now = this.now();
+    const movie = movieOf(r);
+    for (const x of showtimesIn(r)) {
+      const label = [movie, x.cinema, [x.date, x.time].filter(Boolean).join(' '), x.lang ?? x.language, x.format].filter(Boolean).join(' · ');
+      s.ids.set(String(x.showtimeId), { id: String(x.showtimeId), label, at: now });
+    }
+    if ((tool === 'cines_seat_map' || tool === 'cines_validate_seats') && typeof r.showtimeId === 'string') {
+      const prev = s.ids.get(r.showtimeId);
+      s.ids.set(r.showtimeId, { id: r.showtimeId, label: prev?.label ?? r.showtimeId, at: now });
+      s.lastMap = { id: r.showtimeId, at: now };
+    }
+  }
+
+  /**
+   * The showtime a seat tool must use: the one given if the user was shown it; otherwise the
+   * one whose seat map the user saw last (or the only one shown); otherwise an error listing
+   * the real ids. Models sometimes invent ids ("588-105001") or pass placeholders.
+   */
+  resolveShowtime(chat: string, given: unknown): { id: string; substituted?: boolean } | { error: ReturnType<typeof sharedError> } {
+    const id = typeof given === 'string' ? given.trim() : '';
+    const s = this.shownFor(chat);
+    if (!s.ids.size || s.ids.has(id)) return id ? { id } : { error: sharedError('CINES_BAD_REQUEST', 'showtimeId is required (copy it from the latest cines_best_showtime / cines_seat_map result).') };
+    const pick = s.lastMap?.id ?? (s.ids.size === 1 ? [...s.ids.keys()][0] : undefined);
+    if (pick) {
+      this.log(`[cines] showtimeId ${id || '(none)'} was never shown to the user; using ${pick} (the one in play)`);
+      return { id: pick, substituted: true };
+    }
+    const list = [...s.ids.values()].map((x) => `${x.id} (${x.label})`).join('; ');
+    return { error: sharedError('CINES_BAD_REQUEST', `showtimeId ${id || '(none)'} is not one the user was shown. Copy it verbatim from the results: ${list}.`) };
+  }
+
+  /** What the hold card shows for these args (sync; after prepareHold). */
+  holdPreview(input: Rec): string | undefined {
+    return this.previews.get(JSON.stringify(input));
+  }
+  private readonly previews = new Map<string, string>();
+
+  /**
+   * Before the hold's approval card: fix the showtime (see resolveShowtime) and check the seats
+   * with cines_validate_seats, so the user never approves a hold that cannot work. Memoized per
+   * args: the approval check and the execution share one result.
+   */
+  prepareHold(chat: string, input: Rec): Promise<{ args: Rec; preview?: string } | { error: ReturnType<typeof sharedError> }> {
+    const key = JSON.stringify(input);
+    let p = this.prepared.get(key);
+    if (!p) {
+      p = (async () => {
+        const st = this.resolveShowtime(chat, input.showtimeId);
+        if ('error' in st) return st;
+        const args = { ...input, showtimeId: st.id };
+        const seats = Array.isArray(input.seats) ? input.seats.join(',') : String(input.seats ?? '');
+        const v = (await this.d.toolbox.execute('cines_validate_seats', { showtimeId: st.id, seats, ...(typeof input.tickets === 'number' ? { tickets: input.tickets } : {}) }, { raw: true })) as Rec;
+        const verr = (v as Rec)?.error as Rec | undefined;
+        if (verr) return { error: sharedError(String(verr.code ?? 'CINES_BAD_REQUEST'), String(verr.message ?? 'seat check failed')) };
+        if (v.ok === false) return { error: sharedError('CINES_BAD_REQUEST', `Those seats cannot be held: ${[(v.errors as string[] | undefined) ?? []].flat().join(' ')}`.trim()) };
+        const label = this.shownFor(chat).ids.get(st.id)?.label;
+        const preview = [label ?? st.id, seats.toUpperCase()].join(' · ');
+        this.previews.set(key, preview);
+        return { args, preview };
+      })();
+      this.prepared.set(key, p);
+      setTimeout(() => (this.prepared.delete(key), this.previews.delete(key)), 15 * 60_000).unref?.();
+    }
+    return p;
+  }
+
+  /** Seat tools (validate/seat map) use a showtime the user was shown. */
+  fixSeatTool(chat: string, input: Rec): { args: Rec } | { error: ReturnType<typeof sharedError> } {
+    const st = this.resolveShowtime(chat, input.showtimeId);
+    return 'error' in st ? st : { args: { ...input, showtimeId: st.id } };
   }
 
   /* ---------------------------------------------------------------- purchases */
@@ -130,7 +238,13 @@ export class CinesHub {
    * Checks before a money tool reaches the server. Returns the args to send, or a
    * shared-shape error (the server is not called). Runs after the approval (if any).
    */
-  async beforeCall(tool: string, input: Rec): Promise<{ args: Rec } | { error: ReturnType<typeof sharedError> }> {
+  async beforeCall(tool: string, input: Rec, ctx: CallContext = {}): Promise<{ args: Rec } | { error: ReturnType<typeof sharedError> }> {
+    const chat = ctx.chatId ?? 'local';
+    if (tool === HOLD_TOOL) {
+      const r = await this.prepareHold(chat, input);
+      return 'error' in r ? r : { args: r.args };
+    }
+    if (tool === 'cines_validate_seats' || tool === 'cines_seat_map') return this.fixSeatTool(chat, input);
     if (tool !== PURCHASE_TOOL) return { args: input };
     const h = await this.hold(holdIdOf(input));
     if (!h) return { error: sharedError('CINES_BAD_REQUEST', 'Unknown hold: hold the seats with cines_hold_seats first (the hub only pays holds it has seen).') };
@@ -153,6 +267,7 @@ export class CinesHub {
    */
   async afterResult(tool: string, input: Rec, result: unknown, ctx: CallContext = {}): Promise<unknown> {
     let out = result;
+    this.remember(ctx.chatId ?? 'local', tool, result);
     const h = holdOf(result);
     if (h && (tool === HOLD_TOOL || tool === SECURE_TOOL)) {
       h.serverApprovalRequired = (result as Rec).purchaseApprovalRequired === true;
@@ -181,13 +296,17 @@ export class CinesHub {
   }
 
   private async sendImage(url: string, chatId: string | undefined): Promise<string> {
-    if (!chatId || !this.d.sendPhoto) return 'not shown (no chat); describe the proposal in words';
+    if (!chatId || !this.d.sendPhoto) {
+      this.log(`[photo] not sent: ${chatId ? 'Telegram is off' : 'no chat for this request'}`);
+      return 'not shown (no chat); describe the proposal in words';
+    }
     try {
       const bytes = await fetchLoopbackPng(url, { fetch: this.d.fetch });
-      await this.d.sendPhoto(chatId, bytes);
+      const messageId = await this.d.sendPhoto(chatId, bytes);
+      this.log(`[photo] sent ${bytes.byteLength} bytes${messageId !== undefined ? ` (message ${messageId})` : ''}`);
       return 'sent to the user in the chat (do not describe or link it)';
     } catch (err) {
-      this.log(`[cines] image not sent: ${(err as Error).message}`);
+      this.log(`[photo] failed: ${(err as Error).message.split('\n')[0]}`);
       return `could NOT be shown (${(err as Error).message}); tell the user the map could not be shown and list the proposed seats`;
     }
   }

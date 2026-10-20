@@ -170,7 +170,11 @@ describe('cines through Telegram (fake cines-mx-mcp)', () => {
 
   it('errors keep the shared shape with the cines code', async () => {
     const { hub } = await boot([]);
-    expect(await hub.toolbox.execute('cines_listings', { cinema: 'Narnia' })).toEqual({ error: { code: 'CINES_NOT_FOUND', message: expect.stringContaining('Narnia'), retryable: false } });
+    expect(await hub.toolbox.execute('cines_listings', { cinema: 'Narnia' })).toEqual({
+      error: { code: 'CINES_NOT_FOUND', message: expect.stringContaining('Narnia'), retryable: false },
+      user_message: 'no encontré esa película, cine o función. Revise el nombre o elija otra función.',
+      note: expect.stringMatching(/Do not guess another reason/),
+    });
   });
 
   it('a seat map is sent as a photo; the model sees neither the image nor its URL', async () => {

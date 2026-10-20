@@ -167,6 +167,14 @@ Telegram shows ONE message: the plan grouped by section (meal / account), with
 - **Seat maps:** when a result carries `imageUrl`, the hub fetches it (loopback http only, PNG
   checked, ≤ 5 MB, 5 s) and uploads it with `sendPhoto` before the reply. The model only sees
   "image sent"; if it fails, it is told to say so and list the seats.
+- **Showtime ids are checked in code:** the hub remembers the showtimes the user was shown
+  (best_showtime / showtimes / seat map, 30 min). A hold or seat check with an id the user never
+  saw uses the seat map's showtime (or the only one shown), else goes back to the model with the
+  real ids. Seats are validated (`cines_validate_seats`) BEFORE the hold card, which shows the
+  real function. Placeholder args ("...") are rejected; calls to tools that don't exist and
+  failures the model recovered from in the same run never show a ❌. Error results carry the
+  real cause (`user_message`) so the model does not invent another. Photo delivery is logged
+  (`[photo] sent N bytes` / `[photo] failed: …`).
 - **Secure input** (CVV, bank 3DS/OTP, Cinépolis e-mail code): a result
   `{status:"needs_cvv"|"needs_3ds"|"needs_email_code", challengeId, kind, expiresAt}` opens ONE
   pending request per chat (LibSQL, no secret stored, ≤ 5 min or the server's `expiresAt`) and

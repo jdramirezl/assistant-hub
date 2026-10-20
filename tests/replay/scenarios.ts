@@ -354,6 +354,22 @@ export const SCENARIOS: Scenario[] = [
       ),
   },
   {
+    id: 'cines-pick-seat',
+    // the first live run: "la primera" → seat map photo → "elige el asiento c7" → hold on THAT showtime
+    turns: ['quiero ver Dune hoy en la noche', 'muéstrame los asientos de la primera', 'elige el asiento c7'],
+    ok: ({ cines, photos, status, outgoing, logs }) => {
+      const map = cines.args.filter((c) => c.tool === 'cines_seat_map').at(-1)?.args.showtimeId;
+      const hold = cines.actions.find((a) => a.op === 'hold');
+      return both(
+        photos >= 1 || 'no seat photo sent',
+        logs.some((l) => /\[photo\] sent \d+ bytes/.test(l)) || 'no [photo] log line',
+        !!map || 'no seat map',
+        (!!hold && hold.detail.includes(` ${map} `) && /C7/.test(hold.detail)) || `hold: ${hold?.detail ?? 'none'} (map ${map})`,
+        !/CINES_NOT_FOUND|TOOL_ERROR/.test(outgoing) || `error shown: ${status}`,
+      );
+    },
+  },
+  {
     id: 'cines-buy',
     cines: { purchaseInputs: ['otp_3ds'] },
     turns: ['aparta y compra F7 y F8 para la función 570-1002 de Dune en el Toreo', { secret: 'Q8Z4K2' }],

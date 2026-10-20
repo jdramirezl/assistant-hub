@@ -88,8 +88,9 @@ export function summarizeOutcome(events: ToolOutcome[], isWrite: (tool: string) 
     if (err) {
       // a validation error the model fixed (same tool succeeded later) is not a failure
       const label = labelOf(e, lang);
-      const sameItem = (x: ToolOutcome) => x.tool === e.tool && (labelOf(x, lang) === label || (typeof e.args.amount === 'number' && x.args.amount === e.args.amount));
-      const fixed = err.code === 'VALIDATION_ERROR' && writes.slice(i + 1).some((x) => sameItem(x) && !x.thrown && !errorOf(x.result));
+      const sameItem = (x: ToolOutcome) => x.tool === e.tool && (labelOf(x, lang) === label || (typeof e.args.amount === 'number' && x.args.amount === e.args.amount) || x.tool.startsWith('cines_'));
+      // only the run's FINAL outcome counts: a later success of the same item means it recovered
+      const fixed = writes.slice(i + 1).some((x) => sameItem(x) && !x.thrown && !errorOf(x.result));
       if (fixed) return;
       // several entries match: a question for the user, not a failure
       if (err.code === 'MFP_AMBIGUOUS' || (err.code === 'MFP_NOT_FOUND' && /delete|modify/.test(e.tool))) {
@@ -159,10 +160,14 @@ export function summarizeOutcome(events: ToolOutcome[], isWrite: (tool: string) 
     const n = NOUN[k]![lang];
     done.push(`${plural(v.ok, n[0], n[1])}${v.sum ? `, ${money(v.sum, v.currency)}` : ''}`);
   }
-  // read errors (nothing to save, but the user should know why there is no answer)
+  // read errors (nothing to save, but the user should know why there is no answer), unless a
+  // later call to the same app succeeded (the model recovered)
+  const ok = (x: ToolOutcome) => !x.thrown && !errorOf(x.result);
   for (const e of reads) {
     const err = e.thrown ? { code: 'TOOL_ERROR', message: e.thrown } : errorOf(e.result);
     if (!err || err.code === 'VALIDATION_ERROR') continue;
+    const app = appOfTool(e.tool);
+    if (events.slice(events.indexOf(e) + 1).some((x) => appOfTool(x.tool) === app && ok(x))) continue;
     if (failures.some((f) => f.why.code === err.code)) continue;
     failures.push({ tool: e.tool, label: '', why: explain(err.code, err.message, lang, appName(appOfTool(e.tool), lang)) });
   }

@@ -12,7 +12,7 @@ import type { CinesHub } from './service.js';
 type Rec = Record<string, unknown>;
 const mxn = (n: number) => `$${n.toLocaleString('es-MX', { minimumFractionDigits: 0, maximumFractionDigits: 2 })} MXN`;
 
-export function cinesApprovalCard(event: ToolDisplayEvent, cines: Pick<CinesHub, 'holdSummary' | 'releaseAfterDeny'>, lang: Language): ToolDisplayResult | undefined {
+export function cinesApprovalCard(event: ToolDisplayEvent, cines: Pick<CinesHub, 'holdSummary' | 'releaseAfterDeny' | 'holdPreview'>, lang: Language): ToolDisplayResult | undefined {
   if (event.toolName !== HOLD_TOOL && event.toolName !== PURCHASE_TOOL) return undefined;
   const es = lang === 'es';
   const hold = event.toolName === HOLD_TOOL;
@@ -31,11 +31,15 @@ export function cinesApprovalCard(event: ToolDisplayEvent, cines: Pick<CinesHub,
       Button({ id: `tool_deny:${event.toolCallId}`, label: no, style: 'danger' }),
     ]);
   if (event.toolName === HOLD_TOOL) {
-    const lines = [
-      es ? '🎟️ *Apartar asientos* (sin pagar, ~9 min)' : '🎟️ *Hold seats* (no payment, ~9 min)',
-      `${es ? 'Función' : 'Showtime'}: ${String(args.showtimeId ?? '?')}`,
-      `${es ? 'Asientos' : 'Seats'}: ${String(args.seats ?? '?')}`,
-    ];
+    // the checked preview (real showtime, seats validated) when the hub prepared the hold
+    const preview = cines.holdPreview(args);
+    const lines = preview
+      ? [es ? '🎟️ *Apartar asientos* (sin pagar, ~9 min)' : '🎟️ *Hold seats* (no payment, ~9 min)', `🎬 ${preview}`]
+      : [
+          es ? '🎟️ *Apartar asientos* (sin pagar, ~9 min)' : '🎟️ *Hold seats* (no payment, ~9 min)',
+          `${es ? 'Función' : 'Showtime'}: ${String(args.showtimeId ?? '?')}`,
+          `${es ? 'Asientos' : 'Seats'}: ${[args.seats ?? '?'].flat().join(',')}`,
+        ];
     return { kind: 'post', message: Card({ children: [CardText(lines.join('\n')), buttons(es ? '✅ Apartar' : '✅ Hold', es ? '❌ Cancelar' : '❌ Cancel')] }) };
   }
   const h = cines.holdSummary(typeof args.holdId === 'string' ? args.holdId : undefined);
