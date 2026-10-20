@@ -415,7 +415,7 @@ export const SCENARIOS: Scenario[] = [
         cines.calls.filter((t) => t === 'cines_hold_status').length >= 3 || 'did not poll hold_status',
         photos >= 1 || 'no confirmation photo',
         /Esperando que apruebe el pago en PayPal en el Mac/.test(outgoing) || 'no PayPal waiting status',
-        /^✅ 🎟️ Compra confirmada: reserva DRYRUN-001 · \$99 MXN/.test(status) || `status: ${status || 'none'}`,
+        /^✅ 🎟️ Compra confirmada: .*\$99 MXN · reserva DRYRUN-001/.test(status) || `status: ${status || 'none'}`,
       ),
   },
   {
@@ -482,7 +482,7 @@ export const SCENARIOS: Scenario[] = [
         !logs.some((l) => l.startsWith('SKIPPED')) || 'no secure prompt before the CVV',
         cines.calls.filter((t) => t === 'cines_purchase').length === 1 || 'purchase re-called',
         photos === 0 || `photos: ${photos}`,
-        /^✅ 🎟️ Compra confirmada: reserva DRYRUN-001 · \$99 MXN/.test(status) || `status: ${status || 'none'}`,
+        /^✅ 🎟️ Compra confirmada: .*\$99 MXN · reserva DRYRUN-001/.test(status) || `status: ${status || 'none'}`,
       ),
   },
   {
@@ -500,7 +500,7 @@ export const SCENARIOS: Scenario[] = [
         !logs.join('\n').includes('246810') && !logs.join('\n').includes('4729') || 'secret in logs',
         !logs.some((l) => l.startsWith('LEAK') || l.startsWith('SKIPPED')) || logs.find((l) => l.startsWith('LEAK') || l.startsWith('SKIPPED'))!,
         cines.calls.filter((t) => t === 'cines_purchase').length === 1 || 'purchase re-called',
-        /^✅ 🎟️ Compra confirmada: reserva BK001 · \$99 MXN/.test(status) || `status: ${status || 'none'}`,
+        /^✅ 🎟️ Compra confirmada: .*\$99 MXN · reserva BK001/.test(status) || `status: ${status || 'none'}`,
       ),
   },
   {
@@ -517,7 +517,7 @@ export const SCENARIOS: Scenario[] = [
         cines.secrets.join() === '4729' || `secrets: ${cines.secrets.length}`,
         !logs.some((l) => l.startsWith('LEAK') || l.startsWith('SKIPPED')) || logs.find((l) => l.startsWith('LEAK') || l.startsWith('SKIPPED'))!,
         !/PayPal/.test(outgoing) || 'PayPal wording for a card purchase',
-        /^✅ 🎟️ Compra confirmada: reserva DRYRUN-001 · \$99 MXN/.test(status) || `status: ${status || 'none'}`,
+        /^✅ 🎟️ Compra confirmada: .*\$99 MXN · reserva DRYRUN-001/.test(status) || `status: ${status || 'none'}`,
       ),
   },
 ];

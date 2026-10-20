@@ -71,7 +71,7 @@ export function planShownThisTurn(prompt: Msg[]): boolean {
     (m) =>
       m.role === 'tool' &&
       Array.isArray(m.content) &&
-      (m.content as { type?: string; output?: { value?: unknown } }[]).some((r) => r.type === 'tool-result' && /"status"\s*:\s*"shown_to_user"/.test(JSON.stringify(r.output?.value ?? ''))),
+      (m.content as { type?: string; output?: { value?: unknown } }[]).some((r) => r.type === 'tool-result' && /"(status|card)"\s*:\s*"shown_to_user"/.test(JSON.stringify(r.output?.value ?? ''))),
   );
 }
 

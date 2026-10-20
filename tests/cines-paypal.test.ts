@@ -101,7 +101,7 @@ describe("PayPal at the Mac: in_progress → the hub polls cines_hold_status", (
       "⏳ Esperando que apruebe el pago en PayPal en el Mac, Amo Julián…",
     );
     expect(status().at(-1)).toBe(
-      "✅ 🎟️ Compra confirmada: reserva BK001 · $99 MXN",
+      "✅ 🎟️ Compra confirmada: Dune: Mesías · Cinépolis Parque Toreo · lun 19 20:30 · F7 · $99 MXN · reserva BK001 (revise su correo)",
     );
     expect(cines.calls.filter((c) => c.tool === "cines_purchase")).toHaveLength(
       1,

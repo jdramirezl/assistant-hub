@@ -61,6 +61,22 @@ async function sendSecret(asked: RegExp, value: string) {
   return u;
 }
 const purchases = () => cines.calls.filter((c) => c.tool === 'cines_purchase');
+const FINAL = '✅ 🎟️ Compra confirmada: Dune: Mesías · Cinépolis Parque Toreo · lun 19 20:30 · F7 · $99 MXN · reserva BK001 (revise su correo)';
+/** Status messages (HTML) still showing ⏳ at the end (not edited to a result, not deleted). */
+function leftoverWorking(): string[] {
+  const last = new Map<number, string>();
+  for (const c of tg.calls) {
+    if (c.method === 'sendMessage' && c.body.parse_mode === 'HTML') last.set(Number((c.result as { message_id?: number })?.message_id), String(c.body.text));
+    if (c.method === 'editMessageText' && c.body.parse_mode === 'HTML') last.set(Number(c.body.message_id), String(c.body.text));
+    if (c.method === 'deleteMessage') last.delete(Number(c.body.message_id));
+  }
+  return [...last.values()].filter((t) => t.startsWith('⏳'));
+}
+/** The final confirmation is a NEW message (sent last among status messages), not an edit above the prompts. */
+const finalIsNewMessage = () => {
+  const sends = tg.sent('sendMessage').filter((c) => c.body.parse_mode === 'HTML');
+  return String(sends.at(-1)?.body.text ?? '').startsWith('✅ 🎟️ Compra confirmada:');
+};
 
 describe('saved card: Comprar → CVV via secure input → paid', () => {
   it('the card says how it is paid; CVV asked privately, deleted, never seen by the model; ✅ booking line with no photo', async () => {
@@ -70,7 +86,9 @@ describe('saved card: Comprar → CVV via secure input → paid', () => {
     expect(out()).toMatch(/💳 Tarjeta guardada \(predeterminada\); le pediré el CVV en privado/);
     const msg = await sendSecret(/🔒 Envíe el CVV de su tarjeta \*1234 \(\$99 MXN\), Amo Julián\. No lo verá el modelo/, CVV);
     await tg.waitFor(() => status().some((s) => /^✅ 🎟️ Compra confirmada/.test(s)), 10_000);
-    expect(status().at(-1)).toBe('✅ 🎟️ Compra confirmada: reserva BK001 · $99 MXN');
+    expect(status().at(-1)).toBe(FINAL);
+    expect(finalIsNewMessage()).toBe(true);
+    expect(leftoverWorking()).toEqual([]);
     expect(purchases()).toHaveLength(1);
     // the hub's total; method left to the server default (the saved card); no secret argument
     expect(purchases()[0]!.args).toEqual({ holdId: 'hold_1', expectedTotal: 99, userApproved: true });
@@ -81,6 +99,8 @@ describe('saved card: Comprar → CVV via secure input → paid', () => {
     expect(sm.calls).toHaveLength(3);
     for (const blob of [JSON.stringify(sm.calls.map((c) => c.prompt)), logs.join('\n')]) expect(blob).not.toContain(CVV);
     expect(await hub.cines.successes()).toBe(1);
+    // the hold's purchase card is the message: the model's own text after it is dropped
+    expect(out()).not.toMatch(/Listo, le mostré la compra/);
     // the purchase card itself is closed with the outcome
     expect(tg.sent('editMessageText').map((c) => String(c.body.text)).join('\n')).toMatch(/✅ Pagado: reserva BK001/);
   }, 30_000);
@@ -89,7 +109,9 @@ describe('saved card: Comprar → CVV via secure input → paid', () => {
     const { sm } = await buy({ slow: true, cvvAfterPolls: 2 });
     await sendSecret(/🔒 Envíe el CVV de su tarjeta \*1234/, '321');
     await tg.waitFor(() => status().some((s) => /^✅ 🎟️ Compra confirmada/.test(s)), 10_000);
-    expect(status().at(-1)).toBe('✅ 🎟️ Compra confirmada: reserva BK001 · $99 MXN');
+    expect(status().at(-1)).toBe(FINAL);
+    expect(finalIsNewMessage()).toBe(true);
+    expect(leftoverWorking()).toEqual([]);
     expect(purchases()).toHaveLength(1); // never re-called
     expect(cines.secrets).toEqual(['321']);
     expect(status().join('\n')).not.toMatch(/PayPal/);
@@ -138,6 +160,11 @@ describe('PIN arming from Telegram (needs_arm_pin → needs_cvv)', () => {
     await sendSecret(/🔒 Envíe el CVV de su tarjeta \*1234/, '987');
     await tg.waitFor(() => status().some((s) => /^✅ 🎟️ Compra confirmada/.test(s)), 10_000);
     expect(cines.secrets).toEqual(['246810', '987']);
+    expect(status()).toContain('✅ PIN correcto');
+    expect(status().join('\n')).not.toMatch(/esperando su código/);
+    expect(status().at(-1)).toBe(FINAL);
+    expect(finalIsNewMessage()).toBe(true);
+    expect(leftoverWorking()).toEqual([]);
     expect(tg.sent('deleteMessage').map((c) => Number(c.body.message_id))).toContain(pinMsg.message.message_id);
     const blob = JSON.stringify(sm.calls.map((c) => c.prompt)) + logs.join('\n');
     expect(blob).not.toContain('246810');
@@ -159,7 +186,7 @@ describe('PIN arming from Telegram (needs_arm_pin → needs_cvv)', () => {
     await tg.waitFor(() => status().some((s) => /PIN incorrecto/.test(s)), 10_000);
     expect(status().at(-1)).toMatch(/^🔒 PIN incorrecto \(te quedan 2 intentos; espera 30 s\)\. No se cobró nada\. Puede volver a tocar Comprar\./);
     expect(await hub.kv.get('cines:attempt:hold_1')).toBeNull(); // nothing recorded: a retry is allowed
-    const edits = tg.sent('editMessageText');
+    const edits = tg.sent('editMessageText').filter((c) => c.body.parse_mode !== 'HTML');
     expect(JSON.stringify(edits.at(-1)!.body.reply_markup)).toMatch(/cines:b:hold_1/);
   }, 30_000);
 });
@@ -183,14 +210,14 @@ describe('PIN refused before the prompt (PinArm.usable)', () => {
     expect(status().at(-1)).toMatch(/^🔒 El armado por PIN está desactivado tras 3 PIN incorrectos\. No se cobró nada y el apartado sigue\. En el Mac corra: bin\/cinesctl set-arm-pin/);
     expect(out()).not.toMatch(/🔒 Envíe/);
     expect(await hub.kv.get('cines:attempt:hold_1')).toBeNull();
-    expect(JSON.stringify(tg.sent('editMessageText').at(-1)!.body.reply_markup)).toMatch(/cines:b:hold_1/);
+    expect(JSON.stringify(tg.sent('editMessageText').filter((c) => c.body.parse_mode !== 'HTML').at(-1)!.body.reply_markup)).toMatch(/cines:b:hold_1/);
   }, 30_000);
 
   it('"Espera N s": the server text, the card stays (Comprar again)', async () => {
     await buy({ pin: 'wait' });
     await tg.waitFor(() => status().some((s) => /Espera 22 s/.test(s)), 10_000);
     expect(status().at(-1)).toMatch(/^🔒 Espera 22 s antes de intentar el PIN otra vez\. Puede volver a tocar Comprar\./);
-    expect(JSON.stringify(tg.sent('editMessageText').at(-1)!.body.reply_markup)).toMatch(/cines:b:hold_1/);
+    expect(JSON.stringify(tg.sent('editMessageText').filter((c) => c.body.parse_mode !== 'HTML').at(-1)!.body.reply_markup)).toMatch(/cines:b:hold_1/);
   }, 30_000);
 });
 

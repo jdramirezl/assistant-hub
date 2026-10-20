@@ -491,10 +491,16 @@ export function createHub(config: HubConfig, deps: HubDeps = {}): Hub {
     return withUsageScope({ requestId, intent: 'cines', media: 'text', kind: 'resume', chatId, domains: ['cines'], status: tracker }, async () => {
       tracker?.start();
       log(`[req ${requestId}] [cines] secure ${p.kind} for ${p.holdId ?? 'a purchase'}`);
+      const es = config.persona.language === 'es';
+      // say what is happening right away (the charge / PIN check can take a while); always closed below
+      tracker?.setActivity(p.kind === 'arm_pin' ? (es ? '⏳ Verificando su PIN…' : '⏳ Checking your PIN…') : p.kind === 'cvv' ? (es ? '⏳ Pagando con su tarjeta en Cinépolis…' : '⏳ Paying with your card at Cinépolis…') : es ? '⏳ Enviando el código…' : '⏳ Sending the code…');
       const r = await cinesHub.deliver(chatId, value, p);
       const res = r.payment?.result as Record<string, unknown> | undefined;
       // only a settled purchase is reported here; a next secret / a background job reports itself
       const settled = !!res && (res.status === 'paid' || !!res.error);
+      if (!settled && res && p.kind === 'arm_pin' && /^(waiting_for_secure_input|needs_)/.test(String(res.status ?? ''))) {
+        tracker?.setNote(es ? '✅ PIN correcto' : '✅ PIN accepted');
+      }
       if (settled) tracker?.onToolEvent({ kind: 'result', toolCallId: `secure-${requestId}`, toolName: PURCHASE_TOOL, displayName: PURCHASE_TOOL, argsSummary: '', args: { holdId: p.holdId }, result: res, resultText: '', durationMs: 0, isError: false });
       await tracker?.finish();
       return { userText: r.userText, agentText: r.payment ? undefined : r.agentText };

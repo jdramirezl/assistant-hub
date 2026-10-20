@@ -249,7 +249,7 @@ describe('cines through Telegram (fake cines-mx-mcp)', () => {
     tg.push(otpMsg);
     // a payment secret is settled by the hub itself: its status line, no model call after the codes
     const before = sm.calls.length;
-    await tg.waitFor(() => /✅ 🎟️ Compra confirmada: reserva BK001 · \$198 MXN/.test(tg.outgoingText(ME)), 10_000);
+    await tg.waitFor(() => /✅ 🎟️ Compra confirmada: Dune: Mesías · .* · F7, F8 · \$198 MXN · reserva BK001 \(revise su correo\)/.test(tg.outgoingText(ME)), 10_000);
     expect(sm.calls.length).toBe(before);
     expect(cines.secrets).toEqual([CVV, OTP]);
     expect(cines.actions.map((a) => a.op)).toEqual(['hold', 'purchase']);

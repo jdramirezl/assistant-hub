@@ -122,6 +122,9 @@ export function summarizeOutcome(events: ToolOutcome[], isWrite: (tool: string) 
     const r = (e.result ?? {}) as Rec;
     // not an outcome yet: waiting for a code, still running, or nothing to do
     if (typeof r.status === 'string' && /^(needs_|waiting|in_progress|secure_input|none$|shown_to_user$|nothing_to_delete$|card_shown$)/.test(r.status)) {
+      // a payment secret (CVV / PIN / bank code): the 🔒 prompt is the message, no extra ❓ line
+      const paymentSecret = /^(waiting_for_secure_input|needs_cvv|needs_arm_pin|needs_3ds)$/.test(r.status) && /^(cvv|arm_pin|otp_3ds)$/.test(String(r.kind ?? ''));
+      if (paymentSecret) return;
       if (/needs_|waiting|secure_input_busy/.test(r.status)) needInfo.push(lang === 'es' ? '🔒 esperando su código' : '🔒 waiting for your code');
       else if (r.status === 'in_progress') needInfo.push(lang === 'es' ? 'sigue en curso' : 'still running');
       return;
@@ -138,7 +141,15 @@ export function summarizeOutcome(events: ToolOutcome[], isWrite: (tool: string) 
     }
     if (e.tool === 'cines_purchase' && r.status === 'paid') {
       const es = lang === 'es';
-      done.unshift(`🎟️ ${es ? 'Compra confirmada' : 'Purchase confirmed'}${r.bookingNumber ? `: ${es ? 'reserva' : 'booking'} ${r.bookingNumber}` : ''}${typeof r.total === 'number' ? ` · $${r.total} ${r.currency ?? 'MXN'}` : ''}${r.dryRun ? (es ? ' (simulada)' : ' (simulated)') : ''}`);
+      const price = typeof r.total === 'number' ? `$${r.total} ${r.currency ?? 'MXN'}` : '';
+      const booking = r.bookingNumber ? `${es ? 'reserva' : 'booking'} ${r.bookingNumber}` : '';
+      const sim = r.dryRun ? (es ? ' (simulada)' : ' (simulated)') : '';
+      // with the hold's summary (movie · cinema · day time · seats) the line stands on its own
+      done.unshift(
+        typeof r.summary === 'string' && r.summary
+          ? `🎟️ ${es ? 'Compra confirmada' : 'Purchase confirmed'}: ${[r.summary, price, booking].filter(Boolean).join(' · ')}${sim}${r.dryRun ? '' : es ? ' (revise su correo)' : ' (check your e-mail)'}`
+          : `🎟️ ${es ? 'Compra confirmada' : 'Purchase confirmed'}${booking ? `: ${booking}` : ''}${price ? ` · ${price}` : ''}${sim}`,
+      );
       g(key).ok++;
       g(key).total++;
       return;

@@ -719,6 +719,8 @@ export class CinesHub {
       const offered = ctx.chatId ? await this.offerPurchase(h, ctx.chatId) : undefined;
       out = {
         ...(result as Rec),
+        // the purchase card is the message: the model's text after it is dropped (leak guard)
+        ...(offered === 'card' ? { card: 'shown_to_user' } : {}),
         next:
           offered === 'card'
             ? 'The hub has shown the user the purchase card (summary + Comprar / Cancelar). Reply ONE short line; do NOT call cines_purchase.'
@@ -728,6 +730,10 @@ export class CinesHub {
       };
     }
     const outcome = purchaseOutcome(result);
+    if (outcome && (tool === PURCHASE_TOOL || tool === SECURE_TOOL)) {
+      const ph = await this.hold(payHold);
+      if (ph) out = { ...(out as Rec), summary: this.summaryOf(ph) };
+    }
     if (outcome === 'paid' && (tool === PURCHASE_TOOL || tool === SECURE_TOOL)) {
       const n = await this.d.kv.incr(COUNTER, 1);
       this.log(`[cines] purchase paid (${n} so far)`);
@@ -783,6 +789,19 @@ export class CinesHub {
 
   async cancelSecure(chatId: string): Promise<void> {
     await this.d.kv.delete(`cines:secure:${chatId}`);
+  }
+
+  /** "Street Fighter · Cinépolis Parque Toreo · mié 21 19:00 · B7" for the confirmation line. */
+  private summaryOf(h: HoldSummary): string {
+    const es = (this.d.lang ?? 'es') === 'es';
+    const m = h.when.match(/^(\d{4}-\d{2}-\d{2}) (\d{2}:\d{2})$/);
+    let when = h.when;
+    if (m) {
+      const d = new Date(`${m[1]}T12:00:00Z`);
+      const wd = new Intl.DateTimeFormat(es ? 'es-MX' : 'en-US', { weekday: 'short', timeZone: 'UTC' }).format(d).replace('.', '');
+      when = `${wd} ${d.getUTCDate()} ${m[2]}`;
+    }
+    return [h.movie, h.cinema, when, h.seats.join(', ')].filter(Boolean).join(' · ');
   }
 
   /** "🔒 Esperando el CVV de su tarjeta…" (status line while a payment secret is pending). */

@@ -63,6 +63,8 @@ export class StatusTracker {
   /** Set for approval resumes: the run's end (not the handler's return) closes the message. */
   closeOnRunEnd = false;
   private activityText?: string;
+  /** Final line set by the hub when the tool results have nothing to report (e.g. "✅ PIN correcto"). */
+  private note?: StatusText;
   private transcript?: string;
   private runError?: unknown;
   /** An approval card (or a plan card) is waiting for the user. */
@@ -111,6 +113,10 @@ export class StatusTracker {
   setActivity(text: string): void {
     this.activityText = text;
     void this.show(this.msgs.working(text), true);
+  }
+  /** A final line for a step with no reportable tool outcome. */
+  setNote(text: string): void {
+    this.note = { text };
   }
   /** The hub's own pacing: just make sure the user sees we are working (no ⏸️). */
   pacing(): void {
@@ -178,6 +184,15 @@ export class StatusTracker {
     // waiting for the user's ✅: never "working/executing" before approval
     if (this.awaiting && (!final || /^⏳/.test(final.text))) final = this.msgs.awaitingApproval();
     if (!final && this.transcript) final = this.msgs.transcribed(this.transcript, true);
+    if (!final && this.note) final = this.note;
+    await this.chain; // a send still in flight sets messageId: decide only after it
+    if (final?.fresh && this.messageId !== undefined) {
+      // a terminal outcome the user must see: a new message at the bottom, the old line removed
+      const id = this.messageId;
+      this.messageId = undefined;
+      this.shown = '';
+      await this.d.api.remove(this.d.chatId, id).catch(() => {});
+    }
     if (final) {
       await this.show(final, true, true);
       if (code) {

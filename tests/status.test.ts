@@ -101,9 +101,15 @@ describe('outcome from tool results', () => {
     const down = { error: { code: 'MFP_UNAVAILABLE', message: 'x', retryable: true } };
     expect(msgs.outcome(summarizeOutcome([{ tool: 'fitness_delete_food', args: { query: 'Egg' }, result: down }], isWrite))!.text).toMatch(/^❌ No borré el alimento: Egg — MyFitnessPal no responde/);
   });
-  it('a purchase waiting for a secure code is not "done"', () => {
+  it('a purchase waiting for a secure code is not "done"; a payment secret adds no ❓ line (the 🔒 prompt is the message)', () => {
     const o = summarizeOutcome([{ tool: 'cines_purchase', args: { holdId: 'h' }, result: { status: 'waiting_for_secure_input', kind: 'cvv' } }], isWrite);
-    expect(msgs.outcome(o)!.text).toBe('❓ 🔒 esperando su código');
+    expect(msgs.outcome(o)).toBeUndefined();
+    const e = summarizeOutcome([{ tool: 'cines_hold_seats', args: {}, result: { status: 'waiting_for_secure_input', kind: 'email_code' } }], isWrite);
+    expect(msgs.outcome(e)!.text).toBe('❓ 🔒 esperando su código');
+  });
+  it('a paid purchase with the hold summary is one self-contained line, sent as a NEW message', () => {
+    const o = summarizeOutcome([{ tool: 'cines_purchase', args: {}, result: { status: 'paid', bookingNumber: '606808', total: 79, currency: 'MXN', summary: 'Street Fighter · Cinépolis Parque Toreo · mié 21 19:00 · B7' } }], isWrite);
+    expect(msgs.outcome(o)).toEqual({ text: '✅ 🎟️ Compra confirmada: Street Fighter · Cinépolis Parque Toreo · mié 21 19:00 · B7 · $79 MXN · reserva 606808 (revise su correo)', fresh: true });
   });
 });
 
