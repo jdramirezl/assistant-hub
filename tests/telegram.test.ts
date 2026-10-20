@@ -194,7 +194,8 @@ describe('toolDisplay', () => {
     expect(toolDisplay({ ...base, kind: 'running', toolName: 'echo_say' }, ctx)).toBeUndefined();
     expect(toolDisplay({ ...base, kind: 'result', toolName: 'updateWorkingMemory', result: {}, resultText: '{}', durationMs: 1, isError: false }, ctx)).toBeUndefined();
     expect(toolDisplay({ ...base, kind: 'error', toolName: 'updateWorkingMemory', error: 'x', errorText: 'x', durationMs: 1 }, ctx)).toBeUndefined();
-    expect(toolDisplay({ ...base, kind: 'error', toolName: 'echo_say', error: 'x', errorText: 'boom\nstack', durationMs: 1 }, ctx)).toEqual({ kind: 'post', message: '⚠️ echo_say failed: boom' });
+    // failures are reported by the request's status message, not as raw tool errors
+    expect(toolDisplay({ ...base, kind: 'error', toolName: 'echo_say', error: 'x', errorText: 'boom\nstack', durationMs: 1 }, ctx)).toBeUndefined();
   });
 });
 
@@ -231,7 +232,7 @@ describe('rate limits in Telegram', () => {
     expect(tg.outgoingText(ME)).toContain('⏳ rate limit, retrying in 9s');
   });
 
-  it('a 429 that outlasts the retries shows "⏳ … rate limit", not a failure', async () => {
+  it('a 429 that outlasts the retries shows ⏸️ (a quota wait), not a failure', async () => {
     const { MastraLanguageModelV2Mock } = await import('@mastra/core/test-utils/llm-mock');
     tg = await new MockTelegram().start();
     const model = new MastraLanguageModelV2Mock({
@@ -247,8 +248,8 @@ describe('rate limits in Telegram', () => {
     hubs.push(hub);
     await hub.start();
     tg.push(textUpdate(ME, 'hola'));
-    await tg.waitFor(() => /⏳|❌|⚠️/.test(tg.outgoingText(ME)));
-    expect(tg.outgoingText(ME)).toMatch(/⏳ Gemini nos pide paciencia, Amo Julián/);
+    await tg.waitFor(() => /⏸️|❌|⚠️/.test(tg.outgoingText(ME)));
+    expect(tg.outgoingText(ME)).toMatch(/⏸️ Gemini pidió una pausa más larga de lo normal, Amo Julián\. Vuelva a enviarlo en un minuto\.\n<code>GEMINI_RATE_LIMIT · req [0-9a-f]{6}<\/code>/);
     expect(tg.outgoingText(ME)).not.toMatch(/❌|⚠️/);
   });
 });

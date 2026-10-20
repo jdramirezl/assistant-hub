@@ -123,6 +123,8 @@ export function choose(item: Item, cands: Candidate[]): Candidate | undefined {
   const close = ok.filter((c) => within(c.kcal, est, 1.35));
   const spread = Math.max(...ok.map((c) => c.kcal)) / Math.min(...ok.map((c) => c.kcal));
   if (spread <= 1.3) return ok[0]; // all plausible options agree: take MFP's top one
+  const near = ok.filter((c) => Math.abs(c.kcal - est) <= 15);
+  if (near.length === 1) return near[0]; // e.g. black coffee estimated 0: 2 kcal, not 60
   if (close.length === 1) return close[0];
   return undefined;
 }
@@ -179,6 +181,7 @@ export function createLogMeal(toolbox: MealToolbox, log: (m: string) => void = (
       const shown = (cands.length ? cands : options.flatMap((o) => o.servings.slice(0, 1).map((s) => ({ option: o.option, name: o.name, serving: s.serving, label: s.label, servings: 1, kcal: Math.round(Number(s.calories ?? 0)), pinned: false }))))
         .sort((a, b) => Math.abs(Math.log((a.kcal + 1) / (item.kcal_estimate + 1))) - Math.abs(Math.log((b.kcal + 1) / (item.kcal_estimate + 1))))
         .slice(0, 3);
+      log(`[log_meal] ambiguous "${item.query}" ${item.quantity} ${item.unit} (estimate ${item.kcal_estimate} kcal): ${shown.map((c) => `${c.label} ${c.kcal}`).join(', ') || 'no options'}`);
       out.ambiguous.push({
         query: item.query,
         quantity: item.quantity,

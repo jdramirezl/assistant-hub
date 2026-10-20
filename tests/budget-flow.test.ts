@@ -1,6 +1,5 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import { createHub, type Hub } from '../src/hub.js';
-import { BUDGET_MESSAGE } from '../src/budget.js';
 import { testConfig } from './helpers.js';
 import { scriptedModel } from './support/scripted-model.js';
 import { MockTelegram, textUpdate } from './support/mock-telegram.js';
@@ -38,7 +37,7 @@ describe('daily budget cap', () => {
     await agent.generate('otra'); // 30 tokens now, over the cap
     const blocked = await agent.generate('una más');
     expect(calls).toHaveLength(2); // third call never reached the model
-    expect(JSON.stringify(blocked)).toContain('Paused, budget hit');
+    expect(JSON.stringify(blocked)).toContain('💸 Llegamos al tope diario');
   });
 
   it('resets after Bogota midnight', async () => {
@@ -61,7 +60,7 @@ describe('daily budget cap', () => {
     tg.push(textUpdate(42, 'hola'));
     await tg.waitFor(() => tg!.outgoingText(42).includes('respuesta 0'));
     tg.push(textUpdate(42, 'otra vez'));
-    await tg.waitFor(() => tg!.outgoingText(42).includes(BUDGET_MESSAGE.slice(0, 20)));
+    await tg.waitFor(() => /💸 Llegamos al tope diario del modelo[\s\S]*BUDGET · req [0-9a-f]{6}/.test(tg!.outgoingText(42)));
     expect(calls).toHaveLength(1);
   });
 });

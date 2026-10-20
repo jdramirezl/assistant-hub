@@ -64,6 +64,10 @@ describe('choose (no guessing)', () => {
     const it8 = item({ query: 'green salad', quantity: 1, unit: 'bowl', kcal_estimate: 400 });
     expect(choose(it8, candidates(it8, opts([['Green salad', '1 bowl', 35]]), 1))).toBeUndefined();
   });
+  it('a ~0 kcal estimate picks the near-zero option (black coffee 2 kcal, not with milk 60)', () => {
+    const it9 = item({ query: 'black coffee', quantity: 1, unit: 'cup', kcal_estimate: 0 });
+    expect(choose(it9, candidates(it9, opts([['Coffee with milk', '1 cup (240 ml)', 60], ['Coffee, black', '1 cup (240 ml)', 2]]), 1))).toMatchObject({ kcal: 2 });
+  });
   it('nothing within 2× of the estimate → ambiguous', () => {
     const it4 = item({ quantity: 1, kcal_estimate: 70 });
     expect(choose(it4, candidates(it4, opts([['Lasagna', '1 tray', 1700]]), 1))).toBeUndefined();

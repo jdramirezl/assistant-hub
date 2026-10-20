@@ -14,9 +14,16 @@ export function startupMessage({ host, apps }: { host: string; apps: Record<stri
   return lines.join('\n');
 }
 
-/** Send the startup message unless one was sent in the last few minutes. */
-export async function sendStartupPing(opts: { kv: KvStore; notify: (t: string) => Promise<void>; text: string }): Promise<boolean> {
-  if (!(await opts.kv.setIfNotExists('ops:startup-ping', true, STARTUP_PING_WINDOW_MS))) return false;
+/**
+ * Send the startup message once per deploy (a new version) and once per reboot, but not on
+ * every crash-loop restart (at most once per few minutes for the same version).
+ */
+export async function sendStartupPing(opts: { kv: KvStore; notify: (t: string) => Promise<void>; text: string; version?: string }): Promise<boolean> {
+  const last = await opts.kv.get<string>('ops:startup-version');
+  const newVersion = opts.version !== undefined && last !== opts.version;
+  const fresh = await opts.kv.setIfNotExists('ops:startup-ping', true, STARTUP_PING_WINDOW_MS);
+  if (!fresh && !newVersion) return false;
+  if (opts.version !== undefined) await opts.kv.set('ops:startup-version', opts.version);
   await opts.notify(opts.text);
   return true;
 }

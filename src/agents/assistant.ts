@@ -127,5 +127,8 @@ export function createAssistantAgent(opts: AssistantOptions): Agent {
     inputProcessors: [...(opts.inputGuards ?? []), ...(opts.guards ?? [])],
     outputProcessors: [...(opts.guards ?? []), ...(opts.outputGuards ?? [])],
     maxProcessorRetries: 2,
+    // a batch (meal + several expenses, a correction after an error) needs a few steps; a cap
+    // that is too low ends the run on a tool step, with no reply at all
+    defaultOptions: { maxSteps: 8 } as never,
   });
 }

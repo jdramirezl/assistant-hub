@@ -17,6 +17,9 @@ export interface ToolboxOptions {
   perServerTimeoutMs?: number;
   /** Called when a server that was down is reachable again. */
   onRecovered?: (name: string, downForMs: number) => void;
+  /** Called ONCE per outage when a server has been down for `longDownMs` (default 10 min). */
+  onDownLong?: (name: string, downForMs: number) => void;
+  longDownMs?: number;
   /** Per-tool hooks (e.g. MFP calorie guard). */
   hooks?: ToolHooks;
 }
@@ -102,6 +105,10 @@ interface ServerSlot {
   lastAttemptAt: number;
   nextAt: number;
   downSince?: number;
+  /** When the current state began (for /estado). */
+  since: number;
+  /** onDownLong already fired for this outage. */
+  longNotified?: boolean;
   inflight?: Promise<void>;
 }
 
@@ -128,6 +135,11 @@ export class McpToolbox {
   ) {
     this.log = opts.log ?? ((m) => console.warn(m));
     this.now = opts.now ?? Date.now;
+  }
+
+  /** Status with the time each state began (for /estado). */
+  statusDetail(): Record<string, ServerStatus & { since: number }> {
+    return Object.fromEntries(Object.entries(this.slots).map(([n, s]) => [n, { ...s.status, since: s.since }]));
   }
 
   status(): Record<string, ServerStatus> {
@@ -173,6 +185,12 @@ export class McpToolbox {
     const now = this.now();
     const due = Object.entries(this.slots).filter(([, s]) => s.status.state === 'down' && now >= s.nextAt);
     await Promise.all(due.map(([n]) => this.connect(n)));
+    const long = this.opts.longDownMs ?? 10 * 60_000;
+    for (const [n, s] of Object.entries(this.slots)) {
+      if (s.status.state !== 'down' || s.longNotified || s.downSince === undefined || this.now() - s.downSince < long) continue;
+      s.longNotified = true;
+      this.opts.onDownLong?.(n, this.now() - s.downSince);
+    }
   }
 
   /** Start background retries (every `intervalMs` checks which servers are due). */
@@ -207,6 +225,7 @@ export class McpToolbox {
         attempts: 0,
         lastAttemptAt: -Infinity,
         nextAt: 0,
+        since: this.now(),
       };
       if (skip) this.log(`[mcp] ${name}: skipped (${skip})`);
       else toConnect.push(name);
@@ -286,6 +305,7 @@ export class McpToolbox {
     const downFor = slot.downSince !== undefined ? this.now() - slot.downSince : undefined;
     slot.attempts = 0;
     slot.downSince = undefined;
+    slot.longNotified = false;
     this.setStatus(name, { state: 'up', tools: Object.keys(tools).length });
     if (downFor !== undefined) this.opts.onRecovered?.(name, downFor);
   }
@@ -303,6 +323,7 @@ export class McpToolbox {
     const prev = slot.status;
     slot.status = s;
     const changed = prev.state !== s.state || ('reason' in prev && prev.reason === 'connecting');
+    if (prev.state !== s.state) slot.since = this.now();
     if (changed) this.log(`[mcp] ${name}: ${s.state}${'reason' in s ? ` (${s.reason})` : ` (${s.tools} tools)`}`);
   }
 

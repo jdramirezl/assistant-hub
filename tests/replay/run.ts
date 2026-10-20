@@ -43,6 +43,8 @@ export interface ScenarioResult {
   cards: string[];
   ok: true | string;
   reply: string;
+  /** Final text of the request's status message, if any. */
+  status?: string;
   ms: number;
 }
 
@@ -95,6 +97,7 @@ async function runScenario(s: Scenario, pacer: ReturnType<typeof pacedFetch>, ap
     actions: [],
     calls: [],
     movements: structuredClone(s.movements ?? []).map((m) => ({ ...m, displayedDate: m.displayedDate === 'TODAY' ? today : m.displayedDate })),
+    ...(s.financeReject ? { rejectCreate: s.financeReject } : {}),
   };
   const mason = await startMasonReplica(state, today);
   const finance = await startFinanceReplica(state, today, 'replay-token');
@@ -191,8 +194,12 @@ async function runScenario(s: Scenario, pacer: ReturnType<typeof pacedFetch>, ap
   await sleep(500);
   const rows = (await hub.usage.rows(t0)).filter((r) => r.kind !== 'digest');
   const ok = rows.filter((r) => r.status === 200);
+  // status messages (HTML, the hub's own) are not Alfred's reply
+  const status = tg.calls
+    .filter((c) => ['sendMessage', 'editMessageText'].includes(c.method) && c.body.parse_mode === 'HTML' && String(c.body.chat_id) === String(ME))
+    .map((c) => String(c.body.text ?? ''));
   const reply = tg.calls
-    .filter((c) => ['sendMessage', 'editMessageText'].includes(c.method) && String(c.body.chat_id) === String(ME))
+    .filter((c) => ['sendMessage', 'editMessageText'].includes(c.method) && c.body.parse_mode !== 'HTML' && String(c.body.chat_id) === String(ME))
     .map((c) => String((c.body.rich_message as { markdown?: string } | undefined)?.markdown ?? c.body.text ?? ''))
     .filter((t) => t && t !== '...')
     .at(-1) ?? '';
@@ -209,14 +216,16 @@ async function runScenario(s: Scenario, pacer: ReturnType<typeof pacedFetch>, ap
     cards,
     ok: true,
     reply: reply.slice(0, 400),
+    status: status.at(-1),
     ms: Date.now() - t0,
   };
   const cinesCalls = cines.calls.map((c) => c.tool);
   const photos = tg.sent('sendPhoto').length;
   // a secret the user typed must never reach Gemini
   for (const t of s.turns) if (typeof t === 'object' && 'secret' in t && pacer.bodies.some((b) => b.includes(t.secret))) logs.push('LEAK: secret sent to Gemini');
-  const verdict = s.ok({ actions: state.actions, state, cards, reply, today, yesterday, cines: { calls: cinesCalls, args: cines.calls, actions: cines.actions, secrets: cines.secrets }, photos, logs, outgoing: tg.outgoingText(ME) });
+  const verdict = s.ok({ actions: state.actions, state, cards, reply, today, yesterday, cines: { calls: cinesCalls, args: cines.calls, actions: cines.actions, secrets: cines.secrets }, photos, logs, outgoing: tg.outgoingText(ME), status: status.at(-1) ?? '' });
   result.ok = verdict === true ? true : String(verdict);
+  if (process.env.REPLAY_DEBUG) console.log(`--- ${s.id} status: ${status.join(' → ')}`);
   if (process.env.REPLAY_DEBUG) console.log(`--- ${s.id} bot said:\n${tg.calls.filter((c) => /send|edit/.test(c.method) && c.method !== 'sendChatAction').map((c) => `  [${c.method}] ${String((c.body.rich_message as { markdown?: string } | undefined)?.markdown ?? c.body.text ?? '').slice(0, 300)}`).join('\n')}\n--- cines calls: ${JSON.stringify(cines.calls)}`);
   if (process.env.REPLAY_DEBUG) console.log(`--- ${s.id} hub log\n${logs.filter((l) => !/^\[mcp\] \w+: up/.test(l)).join('\n')}\n--- reply: ${reply}`);
   await hub.stop();

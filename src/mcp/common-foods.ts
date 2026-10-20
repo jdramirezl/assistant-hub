@@ -12,13 +12,17 @@ const UNIT_ALIASES: Record<string, string> = {
   cucharada: 'tbsp', cucharadas: 'tbsp', tablespoon: 'tbsp', cucharadita: 'tsp', cucharaditas: 'tsp', teaspoon: 'tsp',
   rebanada: 'slice', rebanadas: 'slice', tajada: 'slice', tajadas: 'slice', rodaja: 'slice',
   unidad: 'unit', unidades: 'unit', pieza: 'unit', piezas: 'unit', each: 'unit',
+  bandeja: 'tray', charola: 'tray', molde: 'tray', entera: 'whole', entero: 'whole', completa: 'whole', completo: 'whole',
   plato: 'plate', platos: 'plate', porcion: 'portion', porciones: 'portion', racion: 'portion', tazon: 'bowl', bol: 'bowl',
   gramos: 'g', gramo: 'g', grams: 'g', mililitros: 'ml',
 };
 
 export function normalizeUnit(unit: string): string {
   const u = norm(unit);
-  return UNIT_ALIASES[u] ?? u;
+  if (UNIT_ALIASES[u]) return UNIT_ALIASES[u]!;
+  // "family size", "entera", "the whole thing": one whole item
+  if (/\b(family|familiar|whole|entera?|completa?|todo|toda)\b/.test(u)) return 'whole';
+  return u;
 }
 
 /** A portion: quantity of a standard unit per one of the user's unit. */

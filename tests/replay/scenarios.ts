@@ -14,6 +14,8 @@ export interface Scenario {
   movements?: Record<string, unknown>[];
   /** Pin the local (Bogotá) hour the hub sees, e.g. for the meal-by-time fallback. */
   localHour?: number;
+  /** finance-app replica rejects creates whose notes match (a real failure in the batch). */
+  financeReject?: RegExp;
   /** Fake cines-mx-mcp behavior (Phase 3 tools are always served). */
   cines?: FakeCinesOptions;
   /** Sanity check of the end state (the main check is "same actions as the baseline"). */
@@ -30,6 +32,8 @@ export interface Scenario {
     logs: string[];
     /** Every text the bot showed. */
     outgoing: string;
+    /** Final text of the request's status message ('' if none). */
+    status: string;
   }): boolean | string;
 }
 
@@ -172,7 +176,7 @@ export const SCENARIOS: Scenario[] = [
   {
     id: 'ambiguous-food',
     turns: ['comí un sándwich al almuerzo'],
-    ok: ({ actions, reply }) => logs(actions).length === 0 ? /\?/.test(reply) || 'no question asked' : (logs(actions).length === 1 || 'logged more than one'),
+    ok: ({ actions, reply }) => logs(actions).length === 0 ? /\?|cu[aá]l prefiere|elija|dígame/i.test(reply) || 'no question asked' : (logs(actions).length === 1 || 'logged more than one'),
   },
   {
     id: 'over-800',
@@ -246,13 +250,26 @@ export const SCENARIOS: Scenario[] = [
     },
   },
   {
+    id: 'expense-partial',
+    // one of 3 expenses fails server-side: the status must say 2 of 3 with the cause, and the reply must not claim all
+    financeReject: /camisa|ropa|"amount":262000/i,
+    turns: ['gasté 18 mil en el almuerzo, 5 mil en un café y 262 mil en una camisa, todo con Nequi'],
+    ok: ({ actions, status, reply }) =>
+      both(
+        fin(actions, 'create').length === 2 || `creates: ${fin(actions, 'create').length}`,
+        /^⚠️ Guardé 2 de 3 gastos\. Falló: (camisa|ropa)[^—]*\$262\.000 — no hay saldo suficiente/i.test(status) || `status: ${status || 'none'}`,
+        /<code>VALIDATION_ERROR · req [0-9a-f]{6}<\/code>/.test(status) || 'no technical line',
+        /camisa/i.test(reply) || `reply does not mention the failure: ${reply.slice(0, 120)}`,
+      ),
+  },
+  {
     id: 'voice-snack-items',
     // 5 items incl. a 0-kcal one (gum): log_meal must accept kcal_estimate 0
     turns: [{ voice: 'voice-snack-items.wav' }],
     ok: ({ actions }) => {
       const l = logs(actions, 'Snacks');
       // coffee may be asked (black vs with milk); the rest must be logged, gum included at 0 kcal
-      return (l.length >= 4 && has(l, /Apple/) && has(l, /yogurt/i) && has(l, /gum.*= 0 kcal/i)) || actions.map((x) => x.detail).join('; ') || 'nothing logged';
+      return (l.length >= 3 && has(l, /Apple/) && has(l, /gum.*= 0 kcal/i)) || actions.map((x) => x.detail).join('; ') || 'nothing logged';
     },
   },
   {

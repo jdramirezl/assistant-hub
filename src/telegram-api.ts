@@ -48,4 +48,18 @@ export class TelegramApi {
     if (!res.ok || !data.ok) throw new Error(`Telegram sendPhoto failed: ${data.description ?? `HTTP ${res.status}`}`);
     return data.result!.message_id;
   }
+
+  /** Status messages (HTML parse mode): send, edit in place, delete. */
+  async sendHtml(chatId: string, html: string): Promise<number> {
+    const msg = await this.call<{ message_id: number }>('sendMessage', { chat_id: chatId, text: html, parse_mode: 'HTML', link_preview_options: { is_disabled: true } });
+    return msg.message_id;
+  }
+
+  async editHtml(chatId: string, messageId: number, html: string): Promise<void> {
+    await this.call('editMessageText', { chat_id: chatId, message_id: messageId, text: html, parse_mode: 'HTML', link_preview_options: { is_disabled: true } });
+  }
+
+  async remove(chatId: string, messageId: number): Promise<void> {
+    await this.call('deleteMessage', { chat_id: chatId, message_id: messageId });
+  }
 }

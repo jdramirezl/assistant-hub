@@ -169,6 +169,30 @@ Telegram shows ONE message: the plan grouped by section (meal / account), with
 - The Phase 3 tool shapes follow cines-mx-mcp's final contract v1 (docs/hub-integration.md,
   `542f827`) and live in `src/cines/contract.ts` only; test fixtures are exported from that commit.
 
+## Status messages (`src/status/`)
+
+Every non-answer message comes from one layer, in Alfred's voice and the request's language:
+icon + what happened + what's next, one line.
+
+- **One live message per request**, separate from Alfred's answer, edited in place (throttled):
+  📥 received (voice/photo/pdf, right away) → ⏳ working (after ~8 s, specific: "Buscando 4
+  alimentos en MyFitnessPal…") → the result. A quick read-only answer gets no status message.
+- **Result from the tool results, not the model's words:** ✅ done (only after a successful
+  write: "✅ Desayuno: 3 alimentos, 420 kcal · 3 gastos, $35.000"), ⚠️ partial ("Guardé 2 de 3
+  gastos. Falló: camisa $262 — falta la cuenta. ¿Con cuál la pagó?"), ❌ failed, ❓ need info.
+  Failures carry a monospace line `CODE · req 7f3a2c`; the same id prefixes the hub log lines
+  (`[req 7f3a2c] …`) and is the `request_id` in `llm_calls`.
+- **Error table** (`src/status/errors.ts`): every known code → a sentence + an action (es/en);
+  unknown codes still name the code. Validation errors name the missing field.
+- ⏸️ only for a real Gemini 429; the hub's own pacing just shows ⏳. Recoverable errors are
+  retried first (validation → model, MCP session → reconnect, 503 → retry).
+- 🔌 when an app is down for 10+ min and when it is back; 🔄 once per deploy/reboot with the
+  version (git sha, or `HUB_VERSION`) and the connected apps; 💸 when the daily budget is hit.
+- The false-save guard also catches "todo registrado" when some writes failed.
+- **`/estado`** (allowlisted user, no model call): apps with tool counts and up/down time, Gemini
+  calls today per model (+ 429s) and peak RPM, budget used vs cap, the last 3 failures with their
+  request ids, the deployed version.
+
 ## Persona
 
 By default the assistant is **Alfred** (Alfred Pennyworth): formal, dry wit, "Amo Julián" in

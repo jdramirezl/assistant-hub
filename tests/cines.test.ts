@@ -310,7 +310,7 @@ describe('cines through Telegram (fake cines-mx-mcp)', () => {
     await tg.waitFor(() => /expiró/.test(tg.outgoingText(ME)));
     expect(tg.sent('deleteMessage').map((c) => Number(c.body.message_id))).toContain(late.message.message_id);
     expect(cines.calls.map((c) => c.tool)).not.toContain('cines_submit_code');
-    expect(JSON.stringify(sm.calls.map((c) => c.prompt))).not.toContain('4821');
+    expect(JSON.stringify(sm.calls.map((c) => c.prompt))).not.toMatch(/(?<!\d)4821(?!\d)/); // (timestamps may contain the digits)
   }, 30_000);
 
   it('a failed payment is never retried, even if the model calls it again', async () => {

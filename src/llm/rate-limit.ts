@@ -12,6 +12,10 @@ export const rateLimitContext = new AsyncLocalStorage<{
   format?: (seconds: number) => string;
   /** Wording for a client-side pacing wait (not an error); default "⏳ One moment, processing…". */
   waiting?: (seconds: number) => string;
+  /** Status layer: a REAL 429 wait (replaces the notify message). */
+  onQuota?: (seconds: number) => void;
+  /** Status layer: the hub's own pacing wait (replaces the notify message). */
+  onPacing?: (ms: number) => void;
 }>();
 
 /** Pacer waits shorter than this are silent (the user only sees "typing…"). */
@@ -62,6 +66,7 @@ export function createRateLimitedFetch(opts: RateLimitedFetchOptions = {}): type
 
   return (async (input: Parameters<typeof fetch>[0], init?: Parameters<typeof fetch>[1]) => {
     let notified = false;
+    let paced = false;
     const url = String(input instanceof Request ? input.url : input);
     const model = url.match(/models\/([^:/?]+)/)?.[1] ?? 'unknown';
     for (let attempt = 0; ; attempt++) {
@@ -69,10 +74,11 @@ export function createRateLimitedFetch(opts: RateLimitedFetchOptions = {}): type
       if (opts.pacer) {
         slot = await opts.pacer.acquire(model, estimateTokens(init?.body), (ms) => {
           // our own pacing, not an error: a calm "one moment" (or nothing for short waits)
-          if (ms < SILENT_WAIT_MS || notified) return;
+          if (ms < SILENT_WAIT_MS || paced) return;
           const ctx = rateLimitContext.getStore();
           if (!ctx) return;
-          notified = true;
+          paced = true;
+          if (ctx.onPacing) return ctx.onPacing(ms);
           const s = Math.ceil(ms / 1000);
           void ctx.notify(ctx.waiting?.(s) ?? '⏳ One moment, processing your message…').catch(() => {});
         });
@@ -105,7 +111,8 @@ export function createRateLimitedFetch(opts: RateLimitedFetchOptions = {}): type
         if (ctx && !notified) {
           notified = true;
           const s = Math.round(delay / 1000);
-          await ctx.notify(ctx.format?.(s) ?? `⏳ rate limit, retrying in ${s}s`).catch(() => {});
+          if (ctx.onQuota) ctx.onQuota(s);
+          else await ctx.notify(ctx.format?.(s) ?? `⏳ rate limit, retrying in ${s}s`).catch(() => {});
         }
       } else {
         waitMs = Math.min(1_000 * 2 ** attempt, 8_000);

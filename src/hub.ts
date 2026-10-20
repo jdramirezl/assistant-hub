@@ -13,10 +13,14 @@ import { trimForModel } from './mcp/trim.js';
 import { createLogMeal } from './mcp/log-meal.js';
 import { FINANCE_WRITES, FinanceDirectory } from './mcp/finance-cache.js';
 import { ToolCallFilter } from '@mastra/core/processors';
-import { Budget, BudgetGuard, BUDGET_MESSAGE } from './budget.js';
+import { Budget, BudgetGuard } from './budget.js';
 import { createGeminiModels, modelChain, PROVIDER_OPTIONS } from './models.js';
 import { createTranscriber } from './voice/transcribe.js';
 import { mealHint } from './meal.js';
+import { StatusMessages, toPlain } from './status/messages.js';
+import { StatusRunEnd, StatusTracker } from './status/tracker.js';
+import { formatEstado, recentFailures, recordFailure } from './status/estado.js';
+import { hubVersion } from './version.js';
 import { CinesHub } from './cines/service.js';
 import { cinesApprovalCard } from './cines/card.js';
 import { HUB_ONLY_TOOLS, MONEY_TOOLS, PURCHASE_TOOL } from './cines/contract.js';
@@ -25,7 +29,6 @@ import { createNotifier, type Notify } from './notify.js';
 import { Digest, type DigestResult, type DigestSection } from './digest.js';
 import { createDigestWorkflow } from './workflows/weekly-digest.js';
 import { sendStartupPing, startHeartbeat } from './ops.js';
-import { hostname } from 'node:os';
 import { createVoice, personaPrompt } from './persona.js';
 import { PlanStore } from './plans/store.js';
 import { PlanService, planResultsPrompt } from './plans/service.js';
@@ -106,6 +109,9 @@ export function toolsForDomains<T>(tools: Record<string, T>, domains: readonly D
   );
 }
 
+/** Tools that only read (no "✅ done" for them). Everything else from an app is a write. */
+const READ_TOOLS = /^(updateWorkingMemory$|propose_plan$|fitness_(get|search|draft|list|bulk)_|finance_(list|spending|convert|get)_|cines_(list_|listings|find|showtimes|best|upcoming|seat_map|validate|hold_status))/;
+
 /** Finance tools that take accountId + pocketId: the hub fills accountId from the pocket. */
 const POCKET_TOOLS: ReadonlySet<string> = new Set(['finance_create_movement']);
 
@@ -127,14 +133,25 @@ const REPORTER_INSTRUCTIONS =
  * with a temp data dir and mocked dependencies.
  */
 export function createHub(config: HubConfig, deps: HubDeps = {}): Hub {
-  const log = deps.telegram?.log ?? ((m: string) => console.warn(m));
+  const baseLog = deps.telegram?.log ?? ((m: string) => console.warn(m));
+  // every log line inside a request carries its id (the one the user sees as `req 7f3a2c`)
+  const log = (m: string) => {
+    const id = usageContext.getStore()?.requestId;
+    baseLog(id && id !== 'none' ? `[req ${id}] ${m}` : m);
+  };
   const voice = createVoice(config.persona);
+  const msgs = new StatusMessages(config.persona);
+  const version = hubVersion(deps.env ?? process.env);
   const client = createDbClient(config);
   const storage = createStorage(config, client);
   const kv = createKv(client);
   const memory = createMemory(storage);
   const budget = new Budget(kv, config.budget, config.timezone, deps.now);
-  const guard = new BudgetGuard(budget, (s) => log(`[budget] blocked: ${s.tokens} tokens, $${s.costUsd.toFixed(4)} on ${s.day}`));
+  const guard = new BudgetGuard(
+    budget,
+    (s) => log(`[budget] blocked: ${s.tokens} tokens, $${s.costUsd.toFixed(4)} on ${s.day}`),
+    () => toPlain(msgs.budget(usageContext.getStore()?.requestId)),
+  );
   const registry = deps.registry !== undefined ? parseRegistry(deps.registry) : loadRegistry(config.mcpRegistryPath);
   const notify = createNotifier(config, { apiBaseUrl: deps.telegram?.apiBaseUrl, log });
   const nutrition = new NutritionTracker();
@@ -166,8 +183,13 @@ export function createHub(config: HubConfig, deps: HubDeps = {}): Hub {
     },
     onRecovered: (name, downForMs) => {
       log(`[mcp] ${name} is back after ${Math.round(downForMs / 60_000)} min`);
-      if (downForMs > RECOVERY_NOTICE_MS) void notify(voice.back(name, Math.round(downForMs / 60_000)));
+      if (downForMs > RECOVERY_NOTICE_MS) void notify(toPlain(msgs.serviceBack(name, downForMs)));
     },
+    onDownLong: (name, downForMs) => {
+      log(`[mcp] ${name} down for ${Math.round(downForMs / 60_000)} min`);
+      void notify(toPlain(msgs.serviceDown(name, downForMs)));
+    },
+    longDownMs: RECOVERY_NOTICE_MS,
   });
 
   cines = new CinesHub({
@@ -196,6 +218,7 @@ export function createHub(config: HubConfig, deps: HubDeps = {}): Hub {
     }
     return { error: { error: { code: 'VALIDATION_ERROR', message: 'accountId is required: use the accountId listed with the pocket under "## Now" (or pass a pocketId of that account).', retryable: false } } };
   };
+  const isWrite = (tool: string) => tool === 'log_meal' || (!READ_TOOLS.test(tool) && !/workingmemory/i.test(tool) && toolbox.annotationsFor(tool)?.readOnlyHint !== true);
   const financeDir: FinanceDirectory = new FinanceDirectory(toolbox, { now: deps.now, timezone: config.timezone, available: async () => (await toolbox.getTools(), toolbox.status().finance?.state === 'up') });
   const localNow = deps.localNow ?? deps.now ?? Date.now;
   const logMeal = createLogMeal(toolbox, log, {
@@ -252,7 +275,7 @@ export function createHub(config: HubConfig, deps: HubDeps = {}): Hub {
     guards: [guard],
     // Older turns keep their text but drop tool calls/results; the current run keeps all of them.
     inputGuards: [new WorkingMemoryPrompt(memory), new ToolCallFilter()],
-    outputGuards: [new PlanGuard((t) => toolbox.isGated(t) && !MONEY_TOOLS.has(t), log)],
+    outputGuards: [new PlanGuard((t) => toolbox.isGated(t) && !MONEY_TOOLS.has(t), log), new StatusRunEnd(() => usageContext.getStore()?.status) as never],
   });
   summarizePlan = async (prompt, memory) => {
     const res = await assistant.generate(prompt, { ...(memory ? { memory } : {}), maxSteps: 1, toolChoice: 'none' } as never);
@@ -284,9 +307,26 @@ export function createHub(config: HubConfig, deps: HubDeps = {}): Hub {
     ...deps.telegram,
     kv,
     voice,
-    gate: async () => ((await budget.check()).ok ? undefined : BUDGET_MESSAGE),
+    gate: async (requestId) => ((await budget.check()).ok ? undefined : toPlain(msgs.budget(requestId))),
+    status: tgApi
+      ? (chatId, requestId) =>
+          new StatusTracker({
+            api: {
+              send: (c, html) => tgApi.sendHtml(c, html),
+              edit: (c, id, html) => tgApi.editHtml(c, id, html),
+              remove: (c, id) => tgApi.remove(c, id),
+            },
+            chatId,
+            requestId,
+            msgs,
+            isWrite,
+            log,
+            now: deps.now,
+            onFailure: (f) => recordFailure(kv, f),
+          })
+      : undefined,
     onPlanAction: (actionId, userId) => plans.handleAction(actionId, userId),
-    commands: { usage: () => usageReport() },
+    commands: { usage: () => usageReport(), estado: () => estadoReport() },
     transcribe,
     approvalCard: (event) => cinesApprovalCard(event, cinesHub, config.persona.language),
     secureInput: {
@@ -304,6 +344,23 @@ export function createHub(config: HubConfig, deps: HubDeps = {}): Hub {
     ...(telegram ? { channels: { telegram } } : {}),
     server: { host: config.server.host, port: config.server.port },
   });
+
+  async function estadoReport(): Promise<string> {
+    const now = (deps.now ?? Date.now)();
+    const day = bogotaDay(now, config.timezone);
+    const dayStart = Date.parse(`${day}T00:00:00Z`) - tzOffsetMs(config.timezone, now);
+    const [today, b, failures] = await Promise.all([usage.rows(dayStart), budget.check(), recentFailures(kv, 3)]);
+    return formatEstado({
+      lang: config.persona.language,
+      version,
+      now,
+      timezone: config.timezone,
+      services: toolbox.statusDetail(),
+      today,
+      budget: { tokens: b.tokens, costUsd: b.costUsd, tokenCap: config.budget.dailyTokenCap, costCapUsd: config.budget.dailyCostCapUsd },
+      failures,
+    });
+  }
 
   async function usageReport(): Promise<string> {
     const now = (deps.now ?? Date.now)();
@@ -357,7 +414,7 @@ export function createHub(config: HubConfig, deps: HubDeps = {}): Hub {
         log(`[digest] catch-up failed: ${(err as Error).message}`);
       }
       if (opts.ops) {
-        await sendStartupPing({ kv, notify, text: voice.startup(hostname(), toolbox.status()) }).catch((err) =>
+        await sendStartupPing({ kv, notify, version, text: toPlain(msgs.restart(version, toolbox.status())) }).catch((err) =>
           log(`[ops] startup ping failed: ${(err as Error).message}`),
         );
         heartbeat = startHeartbeat({

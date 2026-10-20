@@ -8,6 +8,7 @@ import type { Voice } from '../persona.js';
 import { classifyIntent, domainsFor, mediaOf, type Domain } from '../telemetry/intent.js';
 import { newRequestId, usageContext, withUsageScope } from '../telemetry/context.js';
 import type { Transcribe } from '../voice/transcribe.js';
+import type { StatusTracker } from '../status/tracker.js';
 
 /** Media sent to Gemini as file parts: receipts/meal photos and voice notes. */
 export const INLINE_MEDIA = ['image/*', 'audio/*', 'application/pdf'];
@@ -27,7 +28,9 @@ export interface TelegramDeps {
    * Checked before the agent runs. Return a message to reply with *instead of* running the
    * agent (e.g. the daily budget is used up); undefined to proceed.
    */
-  gate?: () => Promise<string | undefined>;
+  gate?: (requestId: string) => Promise<string | undefined>;
+  /** Live status message per request (received → working → result). */
+  status?: (chatId: string, requestId: string) => StatusTracker;
   /** Persona wording for rate-limit notices. */
   voice?: Voice;
   /** Batch-plan buttons (plan:<a|e|c>:<id>); everything else goes to the built-in approvals. */
@@ -93,14 +96,17 @@ export async function transcribeInPlace(message: Message, transcribe: Transcribe
  * notes are shown. Successful calls and internal tools (working memory) stay invisible; the
  * agent's reply already says what happened.
  */
-export const toolDisplay: ToolDisplayFn = (event) => {
-  if (event.kind === 'approval') return undefined; // undefined → built-in card with buttons
-  if (event.kind === 'error' && !/workingmemory/i.test(event.toolName)) {
-    const reason = event.errorText.split('\n')[0]!.slice(0, 160);
-    return { kind: 'post', message: `⚠️ ${event.displayName} failed${reason ? `: ${reason}` : ''}` };
-  }
+export const toolDisplay: ToolDisplayFn = (_event) => {
+  // undefined → built-in card with buttons for approvals; tool failures are reported by the
+  // request's status message (translated, with the request id), not as raw tool errors
   return undefined;
 };
+
+/** A resumed (approved) run that never reports its end still closes its status message. */
+const RESUME_FINISH_TIMEOUT_MS = 180_000;
+
+/** Media that get an immediate "📥 received" status. */
+const RECEIVED_MEDIA = new Set(['voice', 'photo', 'pdf']);
 
 /** Defense in depth: the adapter also filters by TELEGRAM_ALLOWED_USER_IDS. */
 export function isAllowed(allowed: readonly string[], message: Pick<Message, 'author'>): boolean {
@@ -119,11 +125,12 @@ function guarded(
   allowed: readonly string[],
   kv: KvStore | undefined,
   log: (m: string) => void,
-  gate?: () => Promise<string | undefined>,
+  gate?: (requestId: string) => Promise<string | undefined>,
   voice?: Voice,
   transcribe?: Transcribe,
   secure?: SecureInputPort,
   recent: RecentTopics = new Map(),
+  status?: (chatId: string, requestId: string) => StatusTracker,
 ): ChannelHandler {
   return async (thread: Thread, message: Message, defaultHandler) => {
     if (!thread.isDM) return log(`[telegram] ignoring non-DM message in ${thread.id}`);
@@ -159,18 +166,30 @@ function guarded(
       message.text = resumed;
       message.attachments = [];
     }
-    const blocked = await gate?.();
+    const requestId = newRequestId();
+    const blocked = await gate?.(requestId);
     if (blocked) {
       await thread.post(blocked);
       return;
     }
-    // Lets the model layer post "⏳ rate limit, retrying in Ns" into this chat while it waits.
     const notify = async (text: string) => void (await thread.post(text));
     const media = mediaOf(message.attachments ?? []);
-    await withUsageScope({ requestId: newRequestId(), intent: 'chat', media, kind: 'chat' }, () =>
-      rateLimitContext.run({ notify, format: voice?.rateLimit, waiting: voice?.waiting }, async () => {
+    const tracker = status?.(chatId, requestId);
+    await withUsageScope({ requestId, intent: 'chat', media, kind: 'chat', status: tracker }, () =>
+      rateLimitContext.run({ notify, format: voice?.rateLimit, waiting: voice?.waiting, ...(tracker ? { onQuota: (s: number) => tracker.quota(s), onPacing: () => tracker.pacing() } : {}) }, async () => {
         const scope = usageContext.getStore()!;
         scope.chatId = chatId;
+        tracker?.start();
+        try {
+          await route();
+        } finally {
+          await tracker?.finish().catch((e: Error) => log(`[status] ${e.message}`));
+        }
+      }),
+    );
+
+    async function route() {
+      const scope = usageContext.getStore()!;
         if (resumed) {
           scope.text = resumed;
           scope.intent = 'cines';
@@ -178,10 +197,14 @@ function guarded(
           recent.set(chatId, { domains: scope.domains, at: Date.now() });
           return defaultHandler(thread, message);
         }
+        // a voice note / photo takes a while: say it arrived instead of silence
+        if (tracker && RECEIVED_MEDIA.has(media)) await tracker.received(media as 'voice' | 'photo' | 'pdf');
         // a transcribed voice note is routed like the text it says
-        // a voice note takes a while (transcription + answer): say it arrived instead of silence
-        if (media === 'voice' && voice) await thread.post(voice.voiceAck()).catch(() => {});
         const t = media === 'voice' && transcribe ? await transcribeInPlace(message, transcribe, log) : undefined;
+        if (t && tracker) {
+          tracker.setLanguage(t.language === 'en' || t.language === 'es' ? t.language : undefined);
+          tracker.transcribed(t.transcript);
+        }
         const routed = t ? 'text' : media;
         scope.text = message.text ?? '';
         scope.intent = classifyIntent(scope.text, routed);
@@ -191,8 +214,7 @@ function guarded(
         recent.set(user, { domains: scope.domains, at: Date.now() });
         if (t?.language) scope.language = t.language;
         return defaultHandler(thread, message);
-      }),
-    );
+    }
   };
 }
 
@@ -210,8 +232,11 @@ export function createTelegramChannel(config: HubConfig, deps: TelegramDeps = {}
   process.env.TELEGRAM_ALLOWED_USER_IDS = config.telegram.allowedUserIds.join(',');
 
   const recent: RecentTopics = new Map();
-  const handler = guarded(config.telegram.allowedUserIds, deps.kv, log, deps.gate, deps.voice, deps.transcribe, deps.secureInput, recent);
-  const display: ToolDisplayFn = (event, ctx) => deps.approvalCard?.(event) ?? toolDisplay(event, ctx);
+  const handler = guarded(config.telegram.allowedUserIds, deps.kv, log, deps.gate, deps.voice, deps.transcribe, deps.secureInput, recent, deps.status);
+  const display: ToolDisplayFn = (event, ctx) => {
+    usageContext.getStore()?.status?.onToolEvent(event);
+    return deps.approvalCard?.(event) ?? toolDisplay(event, ctx);
+  };
   const handlers: ChannelHandlers = {
     onDirectMessage: handler,
     onSubscribedMessage: handler,
@@ -232,7 +257,19 @@ export function createTelegramChannel(config: HubConfig, deps: TelegramDeps = {}
         // an approval resumes the same conversation: keep its topic's tools (fewer tokens)
         const last = chatId ? recent.get(chatId) : undefined;
         const domains = last && Date.now() - last.at < STICKY_MS ? last.domains : undefined;
-        return withUsageScope({ requestId: newRequestId(), intent: 'resume', media: 'text', kind: 'resume', chatId, ...(domains ? { domains } : {}) }, () => defaultHandler());
+        const requestId = newRequestId();
+        const tracker = chatId ? deps.status?.(chatId, requestId) : undefined;
+        return withUsageScope({ requestId, intent: 'resume', media: 'text', kind: 'resume', chatId, status: tracker, ...(domains ? { domains } : {}) }, () =>
+          rateLimitContext.run({ notify: async () => {}, ...(tracker ? { onQuota: (s: number) => tracker.quota(s), onPacing: () => tracker.pacing() } : {}) }, async () => {
+            // Mastra resumes the approved tool in the background: the RUN's end closes the
+            // status message (StatusRunEnd), with a safety timeout
+            if (tracker) {
+              tracker.closeOnRunEnd = true;
+              setTimeout(() => void tracker.finish().catch(() => {}), RESUME_FINISH_TIMEOUT_MS).unref?.();
+            }
+            await defaultHandler();
+          }),
+        );
       }
       const userId = event.user?.userId;
       if (!userId || !config.telegram.allowedUserIds.includes(String(userId))) {
@@ -259,13 +296,22 @@ export function createTelegramChannel(config: HubConfig, deps: TelegramDeps = {}
       { command: 'start', description: 'Say hi' },
       { command: 'help', description: 'What I can do' },
       { command: 'usage', description: 'Gemini usage today and last 7 days' },
+      { command: 'estado', description: 'Estado: apps, cuota, presupuesto, últimos fallos' },
     ],
     resolveResourceId: ({ defaultResourceId }) => defaultResourceId, // telegram:<userId>
     tools: false, // no reaction tools; keep the tool list for app MCPs
     // A display function enables Approve/Deny inline-keyboard buttons for approval-gated tools
     // (with the default 'text' they would stay suspended with no way to answer).
     toolDisplay: display,
-    formatError: (err: Error) => describeModelError(err, deps.voice),
+    formatError: (err: Error) => {
+      // the request's status message shows the translated failure with its request id
+      const tracker = usageContext.getStore()?.status;
+      if (tracker) {
+        tracker.failed(err);
+        return '';
+      }
+      return describeModelError(err, deps.voice);
+    },
   });
 }
 

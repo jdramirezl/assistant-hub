@@ -130,6 +130,8 @@ export interface ReplicaState {
   /** Every tool call (reads too), for counting. */
   calls: string[];
   movements: Rec[];
+  /** finance_create_movement fails (VALIDATION_ERROR) when the notes match. */
+  rejectCreate?: RegExp;
 }
 
 const MEALS: Record<string, string> = { breakfast: 'Breakfast', desayuno: 'Breakfast', lunch: 'Lunch', almuerzo: 'Lunch', dinner: 'Dinner', cena: 'Dinner', snacks: 'Snacks', snack: 'Snacks', onces: 'Snacks', merienda: 'Snacks' };
@@ -343,6 +345,7 @@ export async function startFinanceReplica(state: ReplicaState, today: string, to
       if (!UUID.test(String(a.accountId)) || !account) return ferr('NOT_FOUND', `account ${a.accountId} not found`);
       if (!p || p.accountId !== account.id) return ferr('VALIDATION_ERROR', 'pocketId must be a pocket of accountId (see finance_list_pockets)');
       if (!(Number(a.amount) > 0)) return ferr('VALIDATION_ERROR', 'amount must be positive');
+      if (state.rejectCreate?.test(JSON.stringify(a))) return ferr('VALIDATION_ERROR', 'insufficient balance in this pocket for that amount');
       if (!/^\d{4}-\d{2}-\d{2}$/.test(String(a.displayedDate))) return ferr('VALIDATION_ERROR', 'displayedDate must be YYYY-MM-DD');
       const m = { id: `${String(++seq).padStart(8, '0')}-0000-4000-8000-000000000000`, ...a };
       state.movements.push(m);
@@ -357,6 +360,7 @@ export async function startFinanceReplica(state: ReplicaState, today: string, to
       if (!s || !t) return ferr('NOT_FOUND', 'account not found');
       if (!sp || sp.accountId !== s.id || !tp || tp.accountId !== t.id) return ferr('VALIDATION_ERROR', 'pockets must belong to their accounts');
       if (!(Number(a.amount) > 0)) return ferr('VALIDATION_ERROR', 'amount must be positive');
+      if (state.rejectCreate?.test(JSON.stringify(a))) return ferr('VALIDATION_ERROR', 'accountId: this account does not accept that category; choose another account');
       record('transfer', `${a.amount} ${s.name}/${sp.name} → ${t.name}/${tp.name} ${a.displayedDate}`);
       return { ok: true, sourceMovementId: 'x', targetMovementId: 'y' };
     },

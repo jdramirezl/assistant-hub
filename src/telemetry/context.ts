@@ -1,6 +1,7 @@
 import { AsyncLocalStorage } from 'node:async_hooks';
 import { randomBytes } from 'node:crypto';
 import type { Domain, Intent, Media } from './intent.js';
+import type { StatusTracker } from '../status/tracker.js';
 
 /** What a model HTTP call belongs to. Set around each chat turn, resume, plan run and digest. */
 export interface UsageScope {
@@ -19,12 +20,15 @@ export interface UsageScope {
   language?: string;
   /** Telegram chat of the request (private chat id = user id), for hub-sent photos/prompts. */
   chatId?: string;
+  /** The request's live status message (Telegram). */
+  status?: StatusTracker;
 }
 
 export const usageContext = new AsyncLocalStorage<UsageScope>();
 
+/** Short request id (6 hex), shown to the user as `req 7f3a2c` and in logs and llm_calls. */
 export function newRequestId(): string {
-  return randomBytes(5).toString('base64url');
+  return randomBytes(3).toString('hex');
 }
 
 export function withUsageScope<T>(scope: Omit<UsageScope, 'seq'> & { seq?: number }, fn: () => T): T {

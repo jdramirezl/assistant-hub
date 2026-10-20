@@ -112,13 +112,15 @@ export class BudgetGuard implements Processor<'budget-guard'> {
   constructor(
     private readonly budget: Budget,
     private readonly onBlocked?: (status: BudgetStatus) => void,
+    /** User-facing text of the stop (status layer); default BUDGET_MESSAGE. */
+    private readonly message: () => string = () => BUDGET_MESSAGE,
   ) {}
 
   async processInputStep(args: ProcessInputStepArgs) {
     const status = await this.budget.check();
     if (!status.ok) {
       this.onBlocked?.(status);
-      args.abort(BUDGET_MESSAGE, { retry: false });
+      args.abort(this.message(), { retry: false });
     }
     args.state.modelId = modelIdOf(args.model);
     return undefined;

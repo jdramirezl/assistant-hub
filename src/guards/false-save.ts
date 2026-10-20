@@ -43,6 +43,38 @@ export function wroteThisTurn(prompt: Msg[]): boolean {
   );
 }
 
+/**
+ * Write tool calls this turn that failed and were NOT fixed by a later success of the same
+ * tool (a partial result). Their tool names, in order.
+ */
+export function failedWritesThisTurn(prompt: Msg[]): string[] {
+  const lastUser = prompt.map((m) => m.role).lastIndexOf('user');
+  const results: { tool: string; ok: boolean }[] = [];
+  for (const m of prompt.slice(lastUser + 1)) {
+    if (m.role !== 'tool' || !Array.isArray(m.content)) continue;
+    for (const r of m.content as { type?: string; toolName?: string; output?: { value?: unknown } }[]) {
+      if (r.type !== 'tool-result' || !r.toolName || READ_TOOL.test(r.toolName)) continue;
+      let v = r.output?.value as unknown;
+      if (typeof v === 'string') {
+        try {
+          v = JSON.parse(v);
+        } catch {
+          v = {};
+        }
+      }
+      const obj = (v ?? {}) as Record<string, unknown>;
+      const failedItems = r.toolName === 'log_meal' && Array.isArray(obj.failed) && obj.failed.length > 0;
+      results.push({ tool: r.toolName, ok: !(typeof obj === 'object' && 'error' in obj) && !failedItems });
+    }
+  }
+  return results.filter((x, i) => !x.ok && !results.slice(i + 1).some((y) => y.tool === x.tool && y.ok)).map((x) => x.tool);
+}
+
+/** The reply admits something failed or asks the user. */
+const ADMITS = /(fall[óo]|no (pude|se pudo|guard[ée]|registr[ée])|error|pendiente|faltan?\b|failed|could not|did not|couldn't|\?)/iu;
+const PARTIAL_FEEDBACK = (tools: string[]) =>
+  `[hub] Not everything was saved: ${tools.length} write call(s) failed (${[...new Set(tools)].join(', ')}). Your reply must say which ones failed and why, and ask for what is missing. Do not say everything was saved.`;
+
 const claims = (text: string) => SAVE_CLAIM.test(text) && !/\?\s*$/.test(text.trim());
 const FEEDBACK =
   '[hub] Your reply says it was saved/logged/deleted, but no write tool succeeded in this turn. Call the right tool now (finance_create_movement, log_meal, propose_plan, …). If you cannot, say plainly that it was NOT saved and ask.';
@@ -93,7 +125,18 @@ export function withFalseSaveGuard(model: unknown, notSaved: () => string, log: 
   const guardedStream = async (options: unknown) => {
     const first = await m.doStream(options);
     const prompt = ((options as { prompt?: Msg[] }).prompt ?? []) as Msg[];
-    if (!active() || wroteThisTurn(prompt)) return first;
+    if (!active()) return first;
+    if (wroteThisTurn(prompt)) {
+      // partial: some writes failed; the reply must not claim everything was saved
+      const failed = failedWritesThisTurn(prompt);
+      if (!failed.length) return first;
+      const parts = await drain(first.stream);
+      const text = textOf(parts);
+      if (hasToolCall(parts) || !claims(text) || ADMITS.test(text)) return { ...first, stream: replay(parts) };
+      log(`[guard] reply claims a full save but ${failed.length} write(s) failed; retrying once with feedback`);
+      const retry = await m.doStream({ ...(options as object), prompt: [...prompt, { role: 'user', content: [{ type: 'text', text: PARTIAL_FEEDBACK(failed) }] }] });
+      return { ...retry, stream: replay(await drain(retry.stream)) };
+    }
     const parts = await drain(first.stream);
     if (hasToolCall(parts) || !claims(textOf(parts))) return { ...first, stream: replay(parts) };
     log('[guard] reply claims a save but no write tool succeeded; retrying once with feedback');

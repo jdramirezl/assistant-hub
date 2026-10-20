@@ -3,7 +3,7 @@ import { normalizeUnit, standardPortion } from '../src/mcp/common-foods.js';
 
 describe('standard portions', () => {
   it('maps Spanish units', () => {
-    expect(['taza', 'Rebanada', 'cucharada', 'unidades', 'plato'].map(normalizeUnit)).toEqual(['cup', 'slice', 'tbsp', 'unit', 'plate']);
+    expect(['taza', 'Rebanada', 'cucharada', 'unidades', 'plato', 'family size', 'entera'].map(normalizeUnit)).toEqual(['cup', 'slice', 'tbsp', 'unit', 'plate', 'whole', 'whole']);
   });
   it.each([
     ['rice', 1, 'plate', { quantity: 1.5, unit: 'cup' }],
