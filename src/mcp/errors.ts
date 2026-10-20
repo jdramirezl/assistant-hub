@@ -25,6 +25,10 @@ export function masonError(text: string): SharedError {
   if (/session|re-?auth|log ?in|login|unauthori[sz]ed|\b401\b|mfp-mcp auth/i.test(t)) {
     return sharedError('MFP_SESSION_EXPIRED', t, false);
   }
+  // several entries match (0.4.1: also identical duplicates, which it cannot tell apart)
+  // nothing in the diary matches the query (Mason lists what IS logged)
+  if (/no (?:diary )?entry matching|nothing matching|no exercise matching/i.test(t)) return sharedError('MFP_NOT_FOUND', t, false);
+  if (/match(?:es)? (?:multiple|more than one|several)|multiple (?:diary )?entries|more than one entry/i.test(t)) return sharedError('MFP_AMBIGUOUS', t, false);
   if (/unknown|invalid|not found|no draft option|no .* match|no .*found|must be|is required|missing/i.test(t)) {
     return sharedError('MFP_BAD_REQUEST', t, false);
   }

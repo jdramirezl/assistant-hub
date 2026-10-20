@@ -173,8 +173,13 @@ export async function startFakeMason(initial: DiaryEntry[] = []): Promise<FakeMa
       mcp: { annotations: { readOnlyHint: false, destructiveHint: true } },
       execute: async (i) => {
         record('fitness_delete_food', i);
-        const idx = state.diary.findIndex((e) => e.name.toLowerCase().includes(i.query.toLowerCase()) && (!i.meal || e.meal.toLowerCase() === i.meal.toLowerCase()));
-        if (idx < 0) throw new Error(`No entry matching '${i.query}'. Logged: ${state.diary.map((e) => e.name).join(', ')}`);
+        const inMeal = (e: DiaryEntry) => !i.meal || e.meal.toLowerCase() === i.meal.toLowerCase();
+        const matches = state.diary.filter((e) => e.name.toLowerCase().includes(i.query.toLowerCase()) && inMeal(e));
+        const exact = matches.filter((e) => e.name.toLowerCase() === i.query.toLowerCase());
+        // like Mason 0.4.1: a single exact match wins; identical duplicates (2+ exact) fail
+        if (matches.length > 1 && exact.length !== 1) throw new Error(`'${i.query}' matches multiple diary entries: ${matches.map((e) => `${e.name} (${e.meal})`).join(', ')}; narrow the query`);
+        const idx = state.diary.indexOf(exact[0] ?? matches[0]!);
+        if (!matches.length || idx < 0) throw new Error(`No entry matching '${i.query}'. Logged: ${state.diary.map((e) => e.name).join(', ')}`);
         const [removed] = state.diary.splice(idx, 1);
         deletes++;
         return { removed: removed!.name, meal: removed!.meal };

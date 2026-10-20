@@ -122,7 +122,12 @@ Telegram shows ONE message: the plan grouped by section (meal / account), with
   then_log})` reads each day, builds the deletes itself (one per entry, from the diary) and shows
   ONE compact card ("• Desayuno 2026-10-20: 4 entradas, 620 kcal"). After ✅ the hub runs every
   delete in code, then the optional re-add (`then_log`, the same items as `log_meal`), and sends
-  one summary (items it could not log are listed). While the card waits, the status says
+  one summary (items it could not log are listed). Each entry is one
+  `fitness_delete_food(query=<exact name>, meal, date)` call. On Mason 0.4.1 identical duplicates
+  can't be deleted by name: the summary says "N entradas no se pudieron borrar (duplicados
+  idénticos…)" and nothing is retried (the same code succeeds once Mason is upgraded). A single
+  delete that matches several entries (or none) becomes a ❓ question with the candidates.
+  While the card waits, the status says
   "❓ Esperando su aprobación"; "Ejecutando N…" only appears after ✅.
 
 ## MyFitnessPal logging quality

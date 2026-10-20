@@ -1,0 +1,117 @@
+{
+ "label": "v2-dup",
+ "at": "2026-10-20T16:34:42.303Z",
+ "results": [
+  {
+   "id": "plan-delete-breakfast",
+   "calls": 2,
+   "rateLimited": 0,
+   "inputTokens": 13134,
+   "cachedTokens": 4015,
+   "outputTokens": 166,
+   "toolsSentAvg": 22,
+   "systemCharsAvg": 4513,
+   "actions": [
+    "mfp.delete Breakfast: Coffee with milk",
+    "mfp.delete Breakfast: Egg, whole, large",
+    "mfp.delete Breakfast: Toast, white bread",
+    "mfp.delete Breakfast: Orange juice"
+   ],
+   "cards": [
+    "plan(4)"
+   ],
+   "ok": true,
+   "reply": "📋 Vaciar 2026-10-20 (desayuno): 4 entradas: ✅ 4/4 ejecutadas",
+   "status": "❓ Esperando su aprobación, Amo Julián.",
+   "ms": 53108
+  },
+  {
+   "id": "clear-readd",
+   "calls": 2,
+   "rateLimited": 0,
+   "inputTokens": 13751,
+   "cachedTokens": 8039,
+   "outputTokens": 726,
+   "toolsSentAvg": 22,
+   "systemCharsAvg": 4513,
+   "actions": [
+    "mfp.delete Breakfast: Coffee with milk",
+    "mfp.delete Breakfast: Egg, whole, large",
+    "mfp.delete Lunch: Rice, white, cooked",
+    "mfp.delete Dinner: Chicken breast, grilled",
+    "mfp.delete Breakfast: Oatmeal, cooked @2026-10-21",
+    "mfp.delete Snacks: Banana, medium @2026-10-21",
+    "mfp.log Breakfast: Egg, whole, large × 2 [1 large egg] = 144 kcal",
+    "mfp.log Breakfast: Arepa, white corn × 1 [1 arepa (100 g)] = 220 kcal"
+   ],
+   "cards": [
+    "plan(6)"
+   ],
+   "ok": true,
+   "reply": "📋 Vaciar 2026-10-20 y 2026-10-21: 6 entradas: ✅ 7/7 ejecutadas\n❓ Sin registrar, dígame la porción: melon",
+   "status": "❓ Esperando su aprobación, Amo Julián.",
+   "ms": 67072
+  },
+  {
+   "id": "clear-duplicates",
+   "calls": 2,
+   "rateLimited": 0,
+   "inputTokens": 13157,
+   "cachedTokens": 8033,
+   "outputTokens": 180,
+   "toolsSentAvg": 22,
+   "systemCharsAvg": 4513,
+   "actions": [
+    "mfp.delete Breakfast: Coffee with milk"
+   ],
+   "cards": [
+    "plan(3)"
+   ],
+   "ok": true,
+   "reply": "📋 Vaciar 2026-10-20 (desayuno): 3 entradas: ✅ 1/3 ejecutadas · ❌ 2 fallaron\n⚠️ 2 entradas no se pudieron borrar (duplicados idénticos; MFP no deja elegir cuál): Egg, whole, large. Bórrelas en la app de MyFitnessPal.",
+   "status": "❓ Esperando su aprobación, Amo Julián.",
+   "ms": 46513
+  },
+  {
+   "id": "correction",
+   "calls": 4,
+   "rateLimited": 0,
+   "inputTokens": 26478,
+   "cachedTokens": 12034,
+   "outputTokens": 283,
+   "toolsSentAvg": 22,
+   "systemCharsAvg": 4691,
+   "actions": [
+    "mfp.log Breakfast: Arepa, white corn × 1 [1 arepa (100 g)] = 220 kcal",
+    "mfp.modify Breakfast: Arepa, white corn → Arepa, white corn × 2 = 440 kcal"
+   ],
+   "cards": [
+    "tool:fitness_modify_food"
+   ],
+   "ok": true,
+   "reply": "Enseguida, Amo Julián. He corregido la cantidad a dos arepas para el desayuno.",
+   "status": "✅ 1 alimento corregido",
+   "ms": 100864
+  },
+  {
+   "id": "delete-one",
+   "calls": 3,
+   "rateLimited": 0,
+   "inputTokens": 20385,
+   "cachedTokens": 12047,
+   "outputTokens": 510,
+   "toolsSentAvg": 22,
+   "systemCharsAvg": 4691,
+   "actions": [
+    "mfp.delete Breakfast: Coffee with milk"
+   ],
+   "cards": [
+    "tool:fitness_delete_food"
+   ],
+   "ok": true,
+   "reply": "Como usted mande, Amo Julián. He retirado el café del desayuno.",
+   "status": "✅ 1 alimento borrado",
+   "ms": 66562
+  }
+ ]
+}

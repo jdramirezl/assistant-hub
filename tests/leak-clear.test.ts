@@ -168,3 +168,63 @@ describe('through Telegram', () => {
     expect(allText()).not.toMatch(/fitness_delete_food/);
   });
 });
+
+describe('Mason 0.4.1 duplicates and ambiguous deletes', () => {
+  let tg: MockTelegram;
+  let mason: FakeMason;
+  async function boot(script: Turn[], diary: { meal: string; name: string; calories: number }[]) {
+    tg = await new MockTelegram().start();
+    closers.push(() => tg.stop());
+    mason = await startFakeMason(diary);
+    closers.push(mason.close);
+    const sm = scriptedModel(script);
+    const hub: Hub = createHub(testConfig({ TELEGRAM_BOT_TOKEN: '1:abc', TELEGRAM_ALLOWED_USER_IDS: String(ME) }), {
+      model: sm.model as never,
+      registry: MFP_REGISTRY(mason.url),
+      telegram: { apiBaseUrl: tg.url, longPolling: { timeout: 0, retryDelayMs: 50 }, log: () => {} },
+    });
+    closers.push(() => hub.stop());
+    await hub.start();
+    return { sm };
+  }
+  const allText = () =>
+    tg.calls
+      .filter((c) => ['sendMessage', 'editMessageText'].includes(c.method))
+      .map((c) => String((c.body.rich_message as { markdown?: string } | undefined)?.markdown ?? c.body.text ?? '').replace(/\\/g, ''))
+      .join('\n');
+
+  it('clear_day: one exact-name delete per entry; identical duplicates are reported honestly, no loop', async () => {
+    const { sm } = await boot([{ tool: 'clear_day', args: { meals: ['breakfast'] } }, { text: 'ok' }], [
+      { meal: 'Breakfast', name: 'Egg, whole, large', calories: 72 },
+      { meal: 'Breakfast', name: 'Egg, whole, large', calories: 72 },
+      { meal: 'Breakfast', name: 'Coffee, black', calories: 2 },
+      { meal: 'Lunch', name: 'Rice, white, cooked', calories: 205 },
+    ]);
+    tg.push(textUpdate(ME, 'borra todo el desayuno'));
+    await tg.waitFor(() => !!findButton(tg, 'plan:a:'), 10_000);
+    const calls = sm.calls.length;
+    const b = findButton(tg, 'plan:a:')!;
+    tg.push(callbackUpdate(ME, { message_id: b.messageId }, b.data));
+    await tg.waitFor(() => /duplicados idénticos/.test(allText()), 10_000);
+    const deletes = mason.calls.filter((c) => c.tool === 'fitness_delete_food');
+    expect(deletes).toHaveLength(3); // N entries = N calls, exact names, with meal
+    expect(deletes.every((c) => c.input.meal === 'breakfast' && ['Egg, whole, large', 'Coffee, black'].includes(String(c.input.query)))).toBe(true);
+    expect(allText()).toMatch(/⚠️ 2 entradas no se pudieron borrar \(duplicados idénticos; MFP no deja elegir cuál\): Egg, whole, large/);
+    expect(mason.diary.map((e) => e.name).sort()).toEqual(['Egg, whole, large', 'Egg, whole, large', 'Rice, white, cooked']);
+    expect(sm.calls.length).toBe(calls); // no model calls, no loop
+  });
+
+  it('a single ambiguous delete becomes a ❓ question with the candidates', async () => {
+    await boot([{ tool: 'fitness_delete_food', args: { query: 'egg' } }, { text: '¿Cuál de los dos?' }], [
+      { meal: 'Breakfast', name: 'Egg, whole, large', calories: 72 },
+      { meal: 'Lunch', name: 'Egg white', calories: 17 },
+    ]);
+    tg.push(textUpdate(ME, 'borra el huevo'));
+    await tg.waitFor(() => !!findButton(tg, 'tool_approve:'), 10_000);
+    const b = findButton(tg, 'tool_approve:')!;
+    tg.push(callbackUpdate(ME, { message_id: b.messageId }, b.data));
+    await tg.waitFor(() => /^❓ ¿Cuál «egg»\?/m.test(allText()), 10_000);
+    expect(allText()).toMatch(/❓ ¿Cuál «egg»\? Egg, whole, large \(Breakfast\) · Egg white \(Lunch\)/);
+    expect(allText()).not.toMatch(/MFP_AMBIGUOUS|❌/);
+  });
+});

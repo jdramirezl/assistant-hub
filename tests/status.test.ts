@@ -49,6 +49,15 @@ describe('error translation table', () => {
   });
 });
 
+describe('ambiguous-match candidates', () => {
+  it('extracts "Name (Meal)" items, names with commas included', async () => {
+    const { candidatesOf } = await import('../src/status/errors.js');
+    expect(candidatesOf(`Error executing tool fitness_delete_food: 'egg' matches multiple diary entries: Egg, whole, large (Breakfast), Egg white (Lunch); narrow the query`)).toEqual(['Egg, whole, large (Breakfast)', 'Egg white (Lunch)']);
+    expect(candidatesOf('matches more than one entry: banana, apple')).toEqual(['banana', 'apple']);
+    expect(candidatesOf('no candidates here')).toEqual([]);
+  });
+});
+
 describe('outcome from tool results', () => {
   const mov = (amount: number, notes: string, result: unknown): ToolOutcome => ({ tool: 'finance_create_movement', args: { amount, notes, type: 'EgresoNormal' }, result });
   it('a partial expense batch: "Guardé 2 de 3 gastos. Falló: camisa $262 — falta la cuenta"', () => {
@@ -79,6 +88,12 @@ describe('outcome from tool results', () => {
     const o = summarizeOutcome([{ tool: 'fitness_log_food', args: { query: 'egg' }, result: { error: { code: 'MFP_SESSION_EXPIRED', message: 'x', retryable: false } } }], isWrite);
     expect(msgs.outcome(o, 'ab12cd')!).toEqual({ text: '❌ No guardé el alimento: egg — la sesión de MyFitnessPal expiró. Hay que correr `mfp-mcp auth` en el Mac servidor.', tech: 'MFP_SESSION_EXPIRED · req ab12cd' });
     expect(msgs.outcome(summarizeOutcome([{ tool: 'fitness_get_day', args: {}, result: { diary: [] } }], isWrite))).toBeUndefined();
+  });
+  it('a delete that matches nothing is a ❓ with what is logged; a failed delete says "No borré"', () => {
+    const nf = { error: { code: 'MFP_NOT_FOUND', message: "No entry matching 'café'. Logged: Coffee with milk (Breakfast), Egg, whole, large (Breakfast)", retryable: false } };
+    expect(msgs.outcome(summarizeOutcome([{ tool: 'fitness_delete_food', args: { query: 'café' }, result: nf }], isWrite))!.text).toBe('❓ No encontré «café»; ¿cuál es? Coffee with milk (Breakfast) · Egg, whole, large (Breakfast)');
+    const down = { error: { code: 'MFP_UNAVAILABLE', message: 'x', retryable: true } };
+    expect(msgs.outcome(summarizeOutcome([{ tool: 'fitness_delete_food', args: { query: 'Egg' }, result: down }], isWrite))!.text).toMatch(/^❌ No borré el alimento: Egg — MyFitnessPal no responde/);
   });
   it('a purchase waiting for a secure code is not "done"', () => {
     const o = summarizeOutcome([{ tool: 'cines_purchase', args: { holdId: 'h' }, result: { status: 'waiting_for_secure_input', kind: 'cvv' } }], isWrite);

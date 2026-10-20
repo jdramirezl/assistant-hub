@@ -209,7 +209,7 @@ describe('propose_plan through Telegram', () => {
     await tg.waitFor(() => sent(tg, '2/3').length === 1);
     expect(deletes(mason)).toHaveLength(3);
     void summaryPrompt;
-    expect(tg.outgoingText(ME)).toMatch(/❌ 1 fallaron[\s\S]*MFP_BAD_REQUEST/);
+    expect(tg.outgoingText(ME)).toMatch(/❌ 1 fallaron[\s\S]*MFP_NOT_FOUND/);
     expect(tg.outgoingText(ME)).toMatch(/2\/3/);
   });
 

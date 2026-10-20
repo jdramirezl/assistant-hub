@@ -248,8 +248,8 @@ export async function startMasonReplica(state: ReplicaState, today: string) {
       const matches = inDay.filter((e) => e.name.toLowerCase().includes(q) && (!meal || e.meal === meal));
       if (!matches.length) throw new Error(`No entry matching '${a.query}'. Logged: ${inDay.filter((e) => !meal || e.meal === meal).map((e) => `${e.name} (${e.meal})`).join(', ') || 'nothing'}`);
       const exact = matches.filter((e) => e.name.toLowerCase() === q);
-      // like Mason: an exact name match wins (the first one if logged twice)
-      if (matches.length > 1 && exact.length === 0) throw new Error(`'${a.query}' matches more than one entry: ${matches.map((e) => `${e.name} (${e.meal})`).join(', ')}; narrow the query`);
+      // like Mason 0.4.1: a single exact name match wins; identical duplicates (2+ exact) fail
+      if (matches.length > 1 && exact.length !== 1) throw new Error(`'${a.query}' matches multiple diary entries: ${matches.map((e) => `${e.name} (${e.meal})`).join(', ')}; narrow the query`);
       const entry = exact[0] ?? matches[0]!;
       state.diary.splice(state.diary.indexOf(entry), 1);
       record('delete', `${entry.meal}: ${entry.name}${at(date)}`);

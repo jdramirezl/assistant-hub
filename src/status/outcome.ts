@@ -3,7 +3,7 @@
  * writes succeeded, which failed (and why), what still needs the user. Validation errors the
  * model fixed itself (a later success of the same tool) are not failures.
  */
-import { appName, appOfTool, errorOf, explain, type Explained, type Lang } from './errors.js';
+import { appName, appOfTool, candidatesOf, errorOf, explain, type Explained, type Lang } from './errors.js';
 
 type Rec = Record<string, unknown>;
 export interface ToolOutcome {
@@ -29,6 +29,10 @@ export interface Outcome {
   okCount: number;
   total: number;
   noun?: string;
+  /** Singular noun, for "No borré el alimento". */
+  nounOne?: string;
+  /** Verb of the failed writes: 'save' | 'delete' | 'change'. */
+  verb?: 'save' | 'delete' | 'change';
 }
 
 const MEALS: Record<string, { es: string; en: string }> = {
@@ -87,6 +91,21 @@ export function summarizeOutcome(events: ToolOutcome[], isWrite: (tool: string) 
       const sameItem = (x: ToolOutcome) => x.tool === e.tool && (labelOf(x, lang) === label || (typeof e.args.amount === 'number' && x.args.amount === e.args.amount));
       const fixed = err.code === 'VALIDATION_ERROR' && writes.slice(i + 1).some((x) => sameItem(x) && !x.thrown && !errorOf(x.result));
       if (fixed) return;
+      // several entries match: a question for the user, not a failure
+      if (err.code === 'MFP_AMBIGUOUS' || (err.code === 'MFP_NOT_FOUND' && /delete|modify/.test(e.tool))) {
+        const c = candidatesOf(err.message);
+        const q =
+          err.code === 'MFP_NOT_FOUND'
+            ? lang === 'es'
+              ? `No encontré ${label ? `«${label}»` : 'esa entrada'}; ¿cuál es?`
+              : `I could not find ${label ? `"${label}"` : 'that entry'}; which one is it?`
+            : lang === 'es'
+              ? `¿Cuál ${label ? `«${label}»` : 'entrada'}?`
+              : `Which ${label ? `"${label}"` : 'entry'}?`;
+        const line = c.length ? `${q} ${c.join(' · ')}` : q;
+        if (!needInfo.includes(line)) needInfo.push(line);
+        return;
+      }
       // the model retrying the same item counts once
       if (failures.some((f) => f.tool === e.tool && f.label === label)) return;
       g(key).total++;
@@ -150,7 +169,11 @@ export function summarizeOutcome(events: ToolOutcome[], isWrite: (tool: string) 
   const okCount = [...groups.values()].reduce((a, v) => a + v.ok, 0);
   const total = [...groups.values()].reduce((a, v) => a + v.total, 0);
   const nounGroups = [...groups.entries()].filter(([, v]) => v.total > 0);
-  const noun = nounGroups.length === 1 ? NOUN[nounGroups[0]![0]]![lang][1] : undefined;
+  const nk = nounGroups.length === 1 ? nounGroups[0]![0] : undefined;
+  const noun = nk ? NOUN[nk]![lang][1] : undefined;
+  const nounOne = nk ? NOUN[nk]![lang][0] : undefined;
+  const ft = failures[0]?.tool ?? '';
+  const verb: Outcome['verb'] = /delete|release/.test(ft) ? 'delete' : /modify|update|clear_food_pin/.test(ft) ? 'change' : 'save';
   const kind = okCount > 0 ? (failures.length ? 'partial' : 'done') : failures.length ? 'failed' : 'none';
-  return { kind, done, failures, needInfo, okCount, total, noun };
+  return { kind, done, failures, needInfo, okCount, total, noun, nounOne, verb };
 }

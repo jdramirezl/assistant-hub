@@ -119,6 +119,24 @@ export const SCENARIOS: Scenario[] = [
     },
   },
   {
+    id: 'clear-duplicates',
+    // Mason 0.4.1: identical duplicates cannot be deleted by name; the summary must say so, honestly
+    diary: [
+      { meal: 'Breakfast', name: 'Egg, whole, large', calories: 72 },
+      { meal: 'Breakfast', name: 'Egg, whole, large', calories: 72 },
+      { meal: 'Breakfast', name: 'Coffee with milk', calories: 60 },
+      { meal: 'Lunch', name: 'Rice, white, cooked', calories: 205 },
+    ],
+    turns: ['borra todo el desayuno de hoy'],
+    ok: ({ actions, state, cards, outgoing }) =>
+      both(
+        cards.filter((c) => c.startsWith('plan')).length === 1 || `cards: ${cards.join(',') || 'none'}`,
+        actions.filter((a) => a.op === 'delete').length === 1 || `deletes: ${actions.filter((a) => a.op === 'delete').length}`,
+        state.diary.length === 3 || `diary: ${state.diary.length}`,
+        /2 entradas no se pudieron borrar \(duplicados idénticos; MFP no deja elegir cuál\)/.test(outgoing) || 'duplicates not reported',
+      ),
+  },
+  {
     id: 'expense-nequi',
     turns: ['gasté 25k en almuerzo con Nequi'],
     ok: ({ actions, today }) => {

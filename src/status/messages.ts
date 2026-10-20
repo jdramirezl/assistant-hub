@@ -94,8 +94,22 @@ export class StatusMessages {
       const saved = o.noun ? (es ? `Guardé ${o.okCount} de ${o.total} ${o.noun}` : `Saved ${o.okCount} of ${o.total} ${o.noun}`) : `${es ? 'Guardé' : 'Saved'}: ${o.done.join(' · ')}`;
       return { text: `⚠️ ${saved}. ${es ? 'Falló' : 'Failed'}: ${what}${others}. ${f.why.action}${more}`, tech };
     }
-    const one = o.noun?.replace(/s$/, '');
-    const lead = !o.total ? '' : es ? (o.noun ? (o.total === 1 ? `No guardé ${/a$/.test(one!) ? 'la' : 'el'} ${one}` : `No guardé ${/as$/.test(o.noun) ? 'las' : 'los'} ${o.total} ${o.noun}`) : 'No guardé nada') : o.noun ? `Did not save the ${o.total === 1 ? one : `${o.total} ${o.noun}`}` : 'Nothing saved';
+    // the bare noun ("alimento", not "alimento borrado") with the right verb
+    const one = o.nounOne?.split(' ')[0];
+    const many = o.noun?.split(' ')[0];
+    const vEs = { save: 'guardé', delete: 'borré', change: 'cambié' }[o.verb ?? 'save'];
+    const vEn = { save: 'save', delete: 'delete', change: 'change' }[o.verb ?? 'save'];
+    const lead = !o.total
+      ? ''
+      : es
+        ? one
+          ? o.total === 1
+            ? `No ${vEs} ${/a$/.test(one) ? 'la' : 'el'} ${one}`
+            : `No ${vEs} ${/as$/.test(many!) ? 'las' : 'los'} ${o.total} ${many}`
+          : `No ${vEs} nada`
+        : one
+          ? `Did not ${vEn} the ${o.total === 1 ? one : `${o.total} ${many}`}`
+          : `Nothing was ${vEn === 'save' ? 'saved' : vEn === 'delete' ? 'deleted' : 'changed'}`;
     const body = lead ? `${lead}: ${f.label ? `${f.label} — ` : ''}${f.why.cause}` : capital(f.why.cause);
     return { text: `❌ ${body}${others}. ${f.why.action}`, tech };
   }

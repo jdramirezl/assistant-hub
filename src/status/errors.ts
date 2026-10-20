@@ -31,6 +31,8 @@ export const ERROR_TABLE: Record<string, Entry> = {
   MFP_SESSION_EXPIRED: { es: ['la sesión de MyFitnessPal expiró', 'Hay que correr `mfp-mcp auth` en el Mac servidor.'], en: ['the MyFitnessPal session expired', 'Run `mfp-mcp auth` on the server Mac.'] },
   MFP_BLOCKED: { es: ['MyFitnessPal bloqueó la conexión (Cloudflare)', 'Esperemos un rato antes de reintentar.'], en: ['MyFitnessPal blocked the connection (Cloudflare)', 'Let us wait a while before retrying.'] },
   MFP_BAD_REQUEST: { es: ['MyFitnessPal no aceptó ese alimento o porción', 'Dígame el alimento de otra forma (nombre y porción).'], en: ['MyFitnessPal did not accept that food or serving', 'Describe the food differently (name and serving).'] },
+  MFP_NOT_FOUND: { es: ['no encontré esa entrada en el diario', 'Dígame cuál, con el nombre que aparece en MyFitnessPal.'], en: ['I could not find that entry in the diary', 'Tell me which one, with its name in MyFitnessPal.'] },
+  MFP_AMBIGUOUS: { es: ['varias entradas coinciden', 'Dígame cuál (nombre exacto o comida).'], en: ['several entries match', 'Tell me which one (exact name or meal).'] },
   MFP_ERROR: { es: ['MyFitnessPal devolvió un error', 'Inténtelo de nuevo; si se repite, avíseme con el código.'], en: ['MyFitnessPal returned an error', 'Try again; if it repeats, tell me the code.'] },
   // Cinépolis (cines-mx-mcp)
   CINES_UNAVAILABLE: { es: ['Cinépolis no responde', 'Inténtelo de nuevo en un minuto.'], en: ['Cinépolis is not responding', 'Try again in a minute.'] },
@@ -93,6 +95,17 @@ export function explain(code: string, message = '', lang: Lang = 'es', app = '')
   return lang === 'es'
     ? { code, cause: `${app || 'la app'} devolvió un error (${code})`, action: 'Inténtelo de nuevo; si se repite, avíseme con el código.' }
     : { code, cause: `${app || 'the app'} returned an error (${code})`, action: 'Try again; if it repeats, tell me the code.' };
+}
+
+/** Candidate entries listed in an "ambiguous match" error ("…: A (Breakfast), B (Lunch); narrow…"). */
+export function candidatesOf(message: string): string[] {
+  const m = message.match(/(?:entries|entry|candidates|matches|logged)[^:]*:\s*([^;"]+?)(?:;|"|$)/i);
+  if (!m) return [];
+  const list = m[1]!.trim();
+  // names contain commas ("Egg, whole, large"): split on "Name (Meal)" items when present
+  const withMeal = [...list.matchAll(/\s*([^()]+?\s*\([^)]+\))\s*(?:,|$)/g)].map((x) => x[1]!.trim());
+  const items = withMeal.length ? withMeal : list.split(/\s*,\s*/);
+  return items.filter((x) => x && x.length < 80).slice(0, 6);
 }
 
 /** A model/run error (Gemini, transport) → code. */

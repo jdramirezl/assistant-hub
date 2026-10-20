@@ -114,9 +114,21 @@ export function fallbackSummary(plan: StoredPlan, results: ActionResult[], lang:
   const head = [`✅ ${ok}/${results.length} ${es ? 'ejecutadas' : 'done'}`, failed ? `❌ ${failed} ${es ? 'fallaron' : 'failed'}` : '', skipped ? `⏭️ ${skipped} ${es ? 'omitidas' : 'skipped'}` : '']
     .filter(Boolean)
     .join(' · ');
+  // hub-built clears delete by EXACT name: an ambiguous match there means identical duplicates
+  // (Mason 0.4.1 cannot pick one). One honest line instead of N errors.
+  const dup = plan.compact ? results.filter((r) => r.status === 'failed' && r.tool === 'fitness_delete_food' && r.error?.code === 'MFP_AMBIGUOUS') : [];
+  const dupNames = [...new Set(dup.map((r) => r.summary.split(' — ')[0]))];
+  const rest = results.filter((r) => r.status !== 'ok' && !dup.includes(r));
   return [
     `📋 ${plan.title}: ${head}`,
-    ...results.filter((r) => r.status !== 'ok').map((r) => `${r.status === 'skipped' ? '⏭️' : '❌'} ${r.n}. ${r.summary}${r.error ? ` (${r.error.code}: ${r.error.message})` : ''}`),
+    ...(dup.length
+      ? [
+          es
+            ? `⚠️ ${dup.length} ${dup.length === 1 ? 'entrada no se pudo borrar' : 'entradas no se pudieron borrar'} (duplicados idénticos; MFP no deja elegir cuál): ${dupNames.join(', ')}. Bórrelas en la app de MyFitnessPal.`
+            : `⚠️ ${dup.length} ${dup.length === 1 ? 'entry could not be deleted' : 'entries could not be deleted'} (identical duplicates; MFP cannot pick one): ${dupNames.join(', ')}. Delete them in the MyFitnessPal app.`,
+        ]
+      : []),
+    ...rest.map((r) => `${r.status === 'skipped' ? '⏭️' : '❌'} ${r.n}. ${r.summary}${r.error ? ` (${r.error.code}: ${r.error.message})` : ''}`),
     // a re-add (log_meal) that could not pick a food for some items: say which ones
     ...results.flatMap((r) => {
       const res = (r.result ?? {}) as { ambiguous?: { query?: string }[]; failed?: { query?: string }[]; needs_confirmation?: { query?: string }[] };
