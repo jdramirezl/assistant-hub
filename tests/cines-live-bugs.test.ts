@@ -100,7 +100,7 @@ describe('bug 3: an invented showtimeId on the hold', () => {
     const { sm } = await boot([
       { tool: 'cines_best_showtime', args: { movie: 'Dune', window: 'night' } },
       (p) => ({ tool: 'cines_hold_seats', args: { seats: 'Z99', showtimeId: JSON.parse(lastToolResult(p)).value.best.showtimeId } }),
-      (p) => ({ text: `corrijo: ${/Those seats cannot be held/.test(lastToolResult(p)) ? 'asiento inválido' : 'otro'}` }),
+      (p) => ({ text: `corrijo: ${/no existe/.test(lastToolResult(p)) ? 'asiento inválido' : 'otro'}` }),
     ]);
     tg.push(textUpdate(ME, 'aparta el asiento Z99 para Dune hoy en la noche'));
     await tg.waitFor(() => allText().includes('corrijo'), 10_000);

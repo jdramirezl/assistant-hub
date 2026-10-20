@@ -237,7 +237,7 @@ export class CinesHub {
         const v = (await this.d.toolbox.execute('cines_validate_seats', { showtimeId: st.id, seats, ...(typeof input.tickets === 'number' ? { tickets: input.tickets } : {}) }, { raw: true })) as Rec;
         const verr = (v as Rec)?.error as Rec | undefined;
         if (verr) return { error: sharedError(String(verr.code ?? 'CINES_BAD_REQUEST'), String(verr.message ?? 'seat check failed')) };
-        if (v.ok === false) return { error: sharedError('CINES_BAD_REQUEST', `Those seats cannot be held: ${[(v.errors as string[] | undefined) ?? []].flat().join(' ')}`.trim()) };
+        if (v.ok === false) return { error: sharedError('CINES_BAD_REQUEST', [(v.errors as string[] | undefined) ?? []].flat().join(' ') || 'Esos asientos no se pueden apartar.') };
         const label = this.shownFor(chat).ids.get(st.id)?.label;
         const preview = [label ?? st.id, seats.toUpperCase()].join(' · ');
         this.previews.set(key, preview);

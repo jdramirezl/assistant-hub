@@ -177,10 +177,6 @@ export class StatusTracker {
         this.d.log?.(`[status] ${code}: ${final.text}`);
         await this.d.onFailure?.({ at: this.now(), requestId: this.d.requestId, code, text: final.text });
       }
-    } else if (this.messageId !== undefined && this.startedAt > 0 && this.now() - this.startedAt > KEEP_IF_LONGER_MS) {
-      // a long run with nothing to report: leave a trace (the user saw it working for minutes)
-      const min = Math.max(1, Math.round((this.now() - this.startedAt) / 60_000));
-      await this.show({ text: this.msgs.lang === 'es' ? `✔️ Listo (tardó ${min} min)` : `✔️ Done (took ${min} min)` }, true, true);
     } else if (this.messageId !== undefined) {
       // only a "⏳ working" was shown and there is nothing to report: remove it
       await this.chain;

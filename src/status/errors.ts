@@ -93,6 +93,8 @@ export function explain(code: string, message = '', lang: Lang = 'es', app = '')
     if (f) return { code, cause: f[lang][0], action: f[lang][1] };
   }
   const fill = (s: string) => s.replace('{app}', app || (lang === 'es' ? 'la app' : 'the app'));
+  // our own validation (seat rules, totals): the server's message verbatim, never "Cinépolis no aceptó"
+  if (code === 'CINES_BAD_REQUEST' && message.trim()) return { code, cause: message.trim().replace(/\.$/, ''), action: entry ? fill(entry[lang][1]) : '' };
   if (entry) return { code, cause: fill(entry[lang][0]), action: fill(entry[lang][1]) };
   return lang === 'es'
     ? { code, cause: `${app || 'la app'} devolvió un error (${code})`, action: 'Inténtelo de nuevo; si se repite, avíseme con el código.' }

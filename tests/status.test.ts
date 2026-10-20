@@ -58,6 +58,12 @@ describe('ambiguous-match candidates', () => {
   });
 });
 
+describe('own validation is quoted verbatim', () => {
+  it('CINES_BAD_REQUEST uses the server message, not "Cinépolis no aceptó"', () => {
+    expect(explain('CINES_BAD_REQUEST', 'E4 dejaría un asiento libre aislado.').cause).toBe('E4 dejaría un asiento libre aislado');
+  });
+});
+
 describe('outcome from tool results', () => {
   const mov = (amount: number, notes: string, result: unknown): ToolOutcome => ({ tool: 'finance_create_movement', args: { amount, notes, type: 'EgresoNormal' }, result });
   it('a partial expense batch: "Guardé 2 de 3 gastos. Falló: camisa $262 — falta la cuenta"', () => {
