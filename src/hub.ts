@@ -18,6 +18,8 @@ import { Budget, BudgetGuard } from './budget.js';
 import { createGeminiModels, modelChain, PROVIDER_OPTIONS } from './models.js';
 import { createTranscriber } from './voice/transcribe.js';
 import { mealHint } from './meal.js';
+import { checkDate, sanitizeFilters } from './cines/args.js';
+import { withEvidenceGuard } from './guards/evidence.js';
 import { StatusMessages, toPlain } from './status/messages.js';
 import { appName, appOfTool, errorOf, explain } from './status/errors.js';
 import { StatusRunEnd, StatusTracker } from './status/tracker.js';
@@ -53,7 +55,9 @@ export interface HubDeps {
   model?: AssistantOptions['model'];
   /** Test seam: stronger model used when a response is malformed (defaults to `model`). */
   escalationModel?: unknown;
-  telegram?: Omit<TelegramDeps, 'kv' | 'gate' | 'voice' | 'onPlanAction' | 'commands' | 'transcribe' | 'approvalCard' | 'secureInput'>;
+  telegram?: Omit<TelegramDeps, 'kv' | 'gate' | 'voice' | 'onPlanAction' | 'commands' | 'transcribe' | 'approvalCard' | 'secureInput' | 'preAgent'>;
+  /** Status message timings (tests). */
+  statusTimings?: { workingAfterMs?: number; slowAfterMs?: number; minEditGapMs?: number };
   /** Inline registry (tests); default: load config.mcpRegistryPath. */
   registry?: unknown;
   env?: Record<string, string | undefined>;
@@ -188,11 +192,26 @@ export function createHub(config: HubConfig, deps: HubDeps = {}): Hub {
             ? // seats checked (and the showtime fixed) BEFORE the card; a hold that cannot work gets no card
               async (input) => !('error' in (await cines!.prepareHold(usageContext.getStore()?.chatId ?? 'local', input)))
             : undefined,
-      beforeCall: (tool, input) => {
-        const ph = placeholderArg(input);
-        if (ph) return Promise.resolve({ error: { error: { code: 'VALIDATION_ERROR', message: `${ph} is a placeholder, not a real value. Copy the real value verbatim from the latest tool result (never invent ids).`, retryable: false } } });
+      beforeCall: (tool, given) => {
+        const ph = placeholderArg(given);
+        const invalid = (message: string) => Promise.resolve({ error: { error: { code: 'VALIDATION_ERROR', message, retryable: false } } });
+        if (ph) return invalid(`${ph} is a placeholder, not a real value. Copy the real value verbatim from the latest tool result (never invent ids).`);
+        let input = given;
+        if (tool.startsWith('cines_')) {
+          // dates resolved/checked by the hub; filters the user did not ask for dropped
+          const d = checkDate(input.date, config.timezone, localNow());
+          if (d && 'error' in d) {
+            log(`[cines] refused date ${String(input.date)} for ${tool}`);
+            return invalid(d.error);
+          }
+          if (d) input = { ...input, date: d.date };
+          const f = sanitizeFilters(tool, input, usageContext.getStore()?.text);
+          if (f.dropped.length) log(`[cines] ${tool}: dropped filters the user did not ask for (${f.dropped.join(', ')})`);
+          input = f.args;
+        }
         if (MONEY_TOOLS.has(tool) || tool === 'cines_validate_seats' || tool === 'cines_seat_map') return cines!.beforeCall(tool, input, { chatId: usageContext.getStore()?.chatId });
-        return POCKET_TOOLS.has(tool) ? withOwningAccount(input) : undefined;
+        if (POCKET_TOOLS.has(tool)) return withOwningAccount(input);
+        return input === given ? undefined : Promise.resolve({ args: input });
       },
       // the hub fills accountId from the pocket, so the model may omit it
       schema: (tool, s) => (POCKET_TOOLS.has(tool) ? optionalAccountId(s) : s),
@@ -214,7 +233,7 @@ export function createHub(config: HubConfig, deps: HubDeps = {}): Hub {
           const x = explain(e.code, e.message, config.persona.language, appName(appOfTool(tool), config.persona.language));
           return { ...(v as object), user_message: `${x.cause}. ${x.action}`, note: 'Tell the user exactly this cause (user_message), briefly. Do not guess another reason.' };
         };
-        if (tool.startsWith('cines_')) return Promise.resolve(cines!.afterResult(tool, input, out, { chatId: usageContext.getStore()?.chatId })).then(withCause);
+        if (tool.startsWith('cines_')) return Promise.resolve(cines!.afterResult(tool, input, out, { chatId: usageContext.getStore()?.chatId, userText: usageContext.getStore()?.text })).then(withCause);
         return withCause(trimForModel(tool, out));
       },
     },
@@ -242,6 +261,7 @@ export function createHub(config: HubConfig, deps: HubDeps = {}): Hub {
     paypalWaitMin: Number((deps.env ?? process.env).CINES_PAYPAL_WAIT_MIN ?? 15) || 15,
     pollMs: deps.cinesPollMs,
     paypalWaitText: () => msgs.paypalWait(),
+    seatInvalidText: (seats, reason) => msgs.seatInvalid(seats, reason),
     working: (text) => usageContext.getStore()?.status?.setActivity(text),
     ...(tgApi
       ? {
@@ -305,10 +325,10 @@ export function createHub(config: HubConfig, deps: HubDeps = {}): Hub {
   const transcribeModel = deps.transcribeModel ?? gemini?.default;
   const transcribe = transcribeModel ? createTranscriber(transcribeModel, { providerOptions: PROVIDER_OPTIONS.default, log, record: (id, u) => budget.record(id, u) }) : undefined;
   const notSaved = () => notSavedText(config.persona.language, config.persona.persona === 'alfred' ? addressOf(config.persona) : config.persona.ownerName);
-  if (gemini) gemini.default = withFalseSaveGuard(withLeakGuard(withMalformedFallback(gemini.default, gemini.report, log), log), notSaved, log);
+  if (gemini) gemini.default = withFalseSaveGuard(withEvidenceGuard(withLeakGuard(withMalformedFallback(gemini.default, gemini.report, log), log), log), notSaved, log);
   const assistant = createAssistantAgent({
     timezone: config.timezone,
-    model: deps.model ? withFalseSaveGuard(withLeakGuard(withMalformedFallback(deps.model, deps.escalationModel, log), log), notSaved, log) : modelChain('default', gemini!),
+    model: deps.model ? withFalseSaveGuard(withEvidenceGuard(withLeakGuard(withMalformedFallback(deps.model, deps.escalationModel, log), log), log), notSaved, log) : modelChain('default', gemini!),
     memory,
     persona: config.persona,
     now: localNow,
@@ -374,6 +394,7 @@ export function createHub(config: HubConfig, deps: HubDeps = {}): Hub {
             log,
             now: deps.now,
             onFailure: (f) => recordFailure(kv, f),
+            ...(deps.statusTimings ?? {}),
           })
       : undefined,
     onPlanAction: (actionId, userId) => plans.handleAction(actionId, userId),
@@ -383,6 +404,7 @@ export function createHub(config: HubConfig, deps: HubDeps = {}): Hub {
       if (event.kind === 'approval') log(`[approval] card: ${event.toolName}`);
       return cinesApprovalCard(event, cinesHub, config.persona.language) ?? genericApprovalCard(event, config.persona.language, { kcal: (a) => nutrition.estimateLogKcal(a) });
     },
+    preAgent: (chatId, text) => cinesHub.seatPick(chatId, text),
     secureInput: {
       pending: (chatId) => cinesHub.pending(chatId),
       cancel: (chatId) => cinesHub.cancelSecure(chatId),

@@ -370,6 +370,37 @@ export const SCENARIOS: Scenario[] = [
     },
   },
   {
+    id: 'cines-c7',
+    // live (req 6735af): "elige c7" after a seat map → validate on THAT showtime → hold card; no re-search, no wrong year
+    turns: ['Clayface viernes en la noche, 1 boleto, subtitulada', 'muéstrame los asientos de la primera', 'elige c7'],
+    ok: ({ cines, cards, reply }) => {
+      const mapAt = cines.args.map((c) => c.tool).lastIndexOf('cines_seat_map');
+      const map = cines.args[mapAt]?.args.showtimeId;
+      const after = cines.args.slice(mapAt + 1);
+      const thisYear = new Date().getFullYear();
+      return both(
+        mapAt >= 0 || 'no seat map',
+        (after[0]?.tool === 'cines_validate_seats' && after[0]?.args.showtimeId === map && /C7/i.test(String(after[0]?.args.seats))) || `after the map: ${after.map((c) => c.tool).join(',') || 'nothing'}`,
+        !after.some((c) => /showtimes|best_showtime|listings|find_movie/.test(c.tool)) || 're-searched after the seat pick',
+        !cines.args.some((c) => typeof c.args.date === 'string' && /^\d{4}/.test(c.args.date) && Number(c.args.date.slice(0, 4)) < thisYear) || 'a past year reached the server',
+        cards.some((c) => c === 'tool:cines_hold_seats') || `cards: ${cards.join(',') || 'none'}`,
+        (cines.actions.find((x) => x.op === 'hold')?.detail ?? '').includes(` ${map} C7`) || `hold: ${cines.actions.map((x) => x.detail).join('; ') || 'none'}`,
+        !/no (se encuentra|est[aá]) disponible/i.test(reply) || 'false availability claim',
+      );
+    },
+  },
+  {
+    id: 'cines-named',
+    // live: "¿hay en Miyana o Toreo?" must say Toreo 18:30 SUB and Miyana 20:30 SUB, never "solo doblada"
+    turns: ['Clayface el viernes en la noche, subtitulada', '¿hay en Miyana o Toreo?'],
+    ok: ({ reply, outgoing }) =>
+      both(
+        /18[:.]30/.test(reply) || `Toreo 18:30 missing: ${reply.slice(0, 200)}`,
+        /20[:.]30/.test(reply) || `Miyana 20:30 missing: ${reply.slice(0, 200)}`,
+        !/s[oó]lo (la )?hay doblad|solo doblad|únicamente doblad/i.test(outgoing) || 'false "only dubbed"',
+      ),
+  },
+  {
     id: 'cines-paypal',
     // PayPal approved at the Mac: purchase returns in_progress, the hub polls hold_status, then paid with a screenshot
     cines: { inProgress: { polls: 3, outcome: 'paid' } },

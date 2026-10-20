@@ -175,6 +175,20 @@ Telegram shows ONE message: the plan grouped by section (meal / account), with
   failures the model recovered from in the same run never show a ❌. Error results carry the
   real cause (`user_message`) so the model does not invent another. Photo delivery is logged
   (`[photo] sent N bytes` / `[photo] failed: …`).
+- **Seat picks in code:** a bare "elige c7" / "F7 y F8" within 30 min of a seat map is checked
+  by the hub itself (`cines_validate_seats` on that showtime): valid → the agent is told to hold
+  exactly those seats (approval card); taken/invalid → "❓ C7 no se puede: …" with the preview
+  photo, no model call.
+- **Dates and filters in code:** hoy/mañana/viernes… are resolved to YYYY-MM-DD (America/Bogota);
+  a date in the past or > 60 days ahead (a wrong year) is refused before the server. vip/format
+  filters the user did not ask for are dropped (never `vip:"exclude"` with Miyana). When the user
+  names cinemas, a best_showtime result also gets every unfiltered showtime there
+  (`at_named_cinemas`).
+- **No unverified availability:** "C7 no está disponible", "solo la hay doblada" or a list of
+  showtimes need a matching cines result in the same turn; otherwise one retry with feedback,
+  then the claim is removed.
+- Every run shows ⏳ after ~8 s (any intent) and "Sigo en ello; Gemini está lento…" after 90 s;
+  a long run leaves "✔️ Listo (tardó N min)". Short follow-ups in a cines chat are intent `cines`.
 - **Secure input** (CVV, bank 3DS/OTP, Cinépolis e-mail code): a result
   `{status:"needs_cvv"|"needs_3ds"|"needs_email_code", challengeId, kind, expiresAt}` opens ONE
   pending request per chat (LibSQL, no secret stored, ≤ 5 min or the server's `expiresAt`) and

@@ -51,10 +51,12 @@ export const CINEMAS = [
   { id: 'carso', name: 'Cinépolis Plaza Carso', distanceKm: 4.8, vip: true },
   { id: 'satelite', name: 'Cinépolis Satélite', distanceKm: 6.5, vip: true },
   { id: 'miyana', name: 'Cinépolis VIP Miyana Polanco', distanceKm: 5.1, vip: true },
+  { id: 'toreo-vip', name: 'Cinépolis VIP Parque Toreo', distanceKm: 1.2, vip: true },
 ];
 export const MOVIES = [
   { id: 'm-dune3', title: 'Dune: Mesías', rating: 'B', minutes: 165 },
   { id: 'm-coco2', title: 'Coco 2', rating: 'A', minutes: 105 },
+  { id: 'm-clayface', title: 'Clayface', rating: 'B15', minutes: 118 },
 ];
 /** showtimeId → showtime. All "today" in the fake. */
 export const SHOWTIMES = [
@@ -65,7 +67,35 @@ export const SHOWTIMES = [
   { id: '572-3001', movieId: 'm-dune3', cinemaId: 'miyana', time: '20:00', language: 'SUB', format: 'VIP', priceMxn: 260 },
   { id: '570-1101', movieId: 'm-coco2', cinemaId: 'toreo', time: '16:00', language: 'ESP', format: '2D', priceMxn: 85 },
   { id: '570-1102', movieId: 'm-coco2', cinemaId: 'toreo', time: '19:40', language: 'ESP', format: '2D', priceMxn: 85 },
+  // the live Friday listings for Clayface (server Mac, 2026-10-23)
+  { id: '570-2201', movieId: 'm-clayface', cinemaId: 'toreo', time: '18:30', language: 'SUB', format: '2D', priceMxn: 92 },
+  { id: '570-2202', movieId: 'm-clayface', cinemaId: 'toreo', time: '21:30', language: 'ESP', format: '2D', priceMxn: 92 },
+  { id: '573-2301', movieId: 'm-clayface', cinemaId: 'toreo-vip', time: '18:30', language: 'SUB', format: 'VIP', priceMxn: 240 },
+  { id: '572-2401', movieId: 'm-clayface', cinemaId: 'miyana', time: '11:20', language: 'SUB', format: 'VIP', priceMxn: 260 },
+  { id: '572-2402', movieId: 'm-clayface', cinemaId: 'miyana', time: '14:30', language: 'SUB', format: 'VIP', priceMxn: 260 },
+  { id: '572-2403', movieId: 'm-clayface', cinemaId: 'miyana', time: '17:30', language: 'SUB', format: 'VIP', priceMxn: 260 },
+  { id: '572-2404', movieId: 'm-clayface', cinemaId: 'miyana', time: '20:30', language: 'SUB', format: 'VIP', priceMxn: 260 },
+  { id: '419-48705', movieId: 'm-clayface', cinemaId: 'carso', time: '19:00', language: 'SUB', format: '2D', priceMxn: 95 },
+  { id: '419-48706', movieId: 'm-clayface', cinemaId: 'carso', time: '21:30', language: 'SUB', format: '2D', priceMxn: 95 },
 ];
+const cinemaById = (id: string) => CINEMAS.find((c) => c.id === id)!;
+/** The filters cines_showtimes / cines_best_showtime apply, like the real server. */
+function filtered(movieId: string, a: Rec, opts: { window?: boolean } = {}) {
+  const cins = a.cinema ? String(a.cinema).split(',').map((x) => x.trim()).filter(Boolean) : [];
+  const n = (s: string) => s.toLowerCase().normalize('NFD').replace(/\p{Diacritic}/gu, '');
+  return SHOWTIMES.filter((s) => {
+    if (s.movieId !== movieId) return false;
+    const c = cinemaById(s.cinemaId);
+    if (cins.length && !cins.some((q) => n(c.name).includes(n(q)) || c.id === n(q))) return false;
+    if (a.language && s.language !== a.language) return false;
+    if (a.vip === 'exclude' && (c.vip || s.format === 'VIP')) return false;
+    if (a.vip === 'only' && !(c.vip || s.format === 'VIP')) return false;
+    if (a.format && String(a.format).toUpperCase() !== 'REGULAR' && s.format !== String(a.format).toUpperCase()) return false;
+    if (a.format && String(a.format).toUpperCase() === 'REGULAR' && s.format !== '2D') return false;
+    if (opts.window && (a.window === 'night' || a.window === 'evening') && s.time < '19:00') return false;
+    return true;
+  });
+}
 
 export interface CinesAction {
   op: string;
@@ -169,14 +199,13 @@ export async function startFakeCines(opts: FakeCinesOptions = {}): Promise<FakeC
     cines_showtimes: (a) => {
       const m = movieOf(a.movie);
       if (!m) return err('CINES_NOT_FOUND', `No encontré "${a.movie}".`);
-      const st = SHOWTIMES.filter((s) => s.movieId === m.id);
+      const st = filtered(m.id, a);
       return { movie: { id: m.id, title: m.title }, count: st.length, showtimes: st.map(compact) };
     },
     cines_best_showtime: (a) => {
       const m = movieOf(a.movie);
       if (!m) return err('CINES_NOT_FOUND', `No encontré "${a.movie}".`);
-      const night = a.window === 'night' || a.window === 'evening';
-      const st = SHOWTIMES.filter((s) => s.movieId === m.id && (!night || s.time >= '19:00')).sort((x, y) => Number(x.language !== 'SUB') - Number(y.language !== 'SUB'));
+      const st = filtered(m.id, a, { window: true }).sort((x, y) => Number(x.language !== 'SUB') - Number(y.language !== 'SUB') || cinemaById(x.cinemaId).distanceKm - cinemaById(y.cinemaId).distanceKm);
       if (!st.length) return { movie: { id: m.id, title: m.title }, best: null, note: 'No hay funciones que cumplan esos criterios.' };
       const qty = Number(a.tickets ?? 1);
       const present = (s: (typeof SHOWTIMES)[number]) => ({
@@ -209,7 +238,9 @@ export async function startFakeCines(opts: FakeCinesOptions = {}): Promise<FakeC
     cines_validate_seats: (a) => {
       const seats = String(a.seats ?? '').split(/[,\s]+/).filter(Boolean).map((x) => x.toUpperCase());
       const bad = seats.filter((x) => !/^[A-N]\d{1,2}$/.test(x));
-      return { showtimeId: a.showtimeId, ok: bad.length === 0, seats, errors: bad.length ? bad.map((b) => `${b} no existe`) : undefined, imageUrl: publish() };
+      const taken = seats.filter((x) => x === 'A1' || x === 'A2'); // the only taken seats in the fake
+      const errors = [...bad.map((b) => `${b} no existe.`), ...taken.map((t) => `${t} está ocupado.`)];
+      return { showtimeId: a.showtimeId, ok: errors.length === 0, seats, errors: errors.length ? errors : undefined, imageUrl: publish() };
     },
   };
 

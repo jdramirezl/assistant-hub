@@ -58,6 +58,12 @@ export class StatusMessages {
     if (activity && /^\p{Extended_Pictographic}/u.test(activity)) return { text: activity };
     return { text: `⏳ ${activity ?? (this.es ? 'Trabajando en ello…' : 'Working on it…')}` };
   }
+  seatInvalid(seats: string, reason: string): string {
+    return this.es ? `❓ ${seats} no se puede${this.addr}: ${reason} ¿Elige otro asiento?` : `❓ ${seats} is not possible${this.addr}: ${reason} Pick another seat?`;
+  }
+  slow(): string {
+    return this.es ? 'Sigo en ello; Gemini está lento…' : 'Still on it; Gemini is slow…';
+  }
   paypalWait(): string {
     return this.es ? `⏳ Esperando que apruebe el pago en PayPal en el Mac${this.addr}…` : `⏳ Waiting for you to approve the PayPal payment on the Mac${this.addr}…`;
   }

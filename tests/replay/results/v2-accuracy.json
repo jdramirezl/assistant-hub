@@ -1,0 +1,242 @@
+{
+ "label": "v2-accuracy",
+ "at": "2026-10-20T18:12:09.132Z",
+ "results": [
+  {
+   "id": "cines-where",
+   "calls": 2,
+   "rateLimited": 0,
+   "inputTokens": 8338,
+   "cachedTokens": 4001,
+   "outputTokens": 152,
+   "toolsSentAvg": 14,
+   "systemCharsAvg": 5824,
+   "actions": [],
+   "cards": [],
+   "ok": true,
+   "reply": "Muy señor mío, aquí tiene las salas donde proyectan *Dune: Mesías* hoy y mañana:\n\n- **Cinépolis Parque Toreo**: hoy y mañana\n- **Cinépolis Plaza Carso**: hoy y mañana\n- **Cinépolis VIP Miyana Polanco**: hoy y mañana",
+   "status": "⏳ Consultando Cinépolis…",
+   "ms": 41463
+  },
+  {
+   "id": "cines-tonight",
+   "calls": 2,
+   "rateLimited": 0,
+   "inputTokens": 8657,
+   "cachedTokens": 4005,
+   "outputTokens": 289,
+   "toolsSentAvg": 14,
+   "systemCharsAvg": 5824,
+   "actions": [],
+   "cards": [],
+   "ok": true,
+   "reply": "Por supuesto, Amo Julián. He preparado su función para esta noche.\n\n**Mejor opción:**\n- **Cinépolis Parque Toreo** — 20:30, 2D, subtitulada ($92 MXN).\n\n**Alternativas:**\n- **Cinépolis Plaza Carso** — 21:00, IMAX, subtitulada ($165 MXN).\n- **Cinépolis VIP Miyana Polanco** — 20:00, VIP, subtitulada ($260 MXN — *Precio VIP*).",
+   "status": "⏳ Consultando Cinépolis…",
+   "ms": 39722
+  },
+  {
+   "id": "cines-pick-seat",
+   "calls": 10,
+   "rateLimited": 0,
+   "inputTokens": 31457,
+   "cachedTokens": 9984,
+   "outputTokens": 472,
+   "toolsSentAvg": 14,
+   "systemCharsAvg": 5824,
+   "actions": [
+    "cines.hold hold_1 570-1002 C7 $99"
+   ],
+   "cards": [
+    "tool:cines_hold_seats"
+   ],
+   "ok": true,
+   "reply": "Amo Julián, he apartado el asiento C7 para *Dune: Mesías* en Cinépolis Parque Toreo. El total es de $99 MXN.",
+   "status": "✅ 1 apartado de asientos",
+   "ms": 117988
+  },
+  {
+   "id": "cines-c7",
+   "calls": 8,
+   "rateLimited": 0,
+   "inputTokens": 31644,
+   "cachedTokens": 13987,
+   "outputTokens": 581,
+   "toolsSentAvg": 14,
+   "systemCharsAvg": 5824,
+   "actions": [
+    "cines.hold hold_1 419-48705 C7 $102"
+   ],
+   "cards": [
+    "tool:cines_hold_seats"
+   ],
+   "ok": true,
+   "reply": "Amo Julián, he apartado el asiento **C7** para *Clayface* en Cinépolis Plaza Carso a las 19:00. El total es de **$102 MXN**.",
+   "status": "✅ 1 apartado de asientos",
+   "ms": 112085
+  },
+  {
+   "id": "cines-named",
+   "calls": 4,
+   "rateLimited": 0,
+   "inputTokens": 17652,
+   "cachedTokens": 8001,
+   "outputTokens": 556,
+   "toolsSentAvg": 14,
+   "systemCharsAvg": 5824,
+   "actions": [],
+   "cards": [],
+   "ok": true,
+   "reply": "Como desee, Amo Julián. Estas son las funciones disponibles en Toreo y Miyana para el viernes:\n\n* **Cinépolis Parque Toreo:**\n  * 18:30 (2D, Subtitulada) — *un poco antes de la noche*\n  * 21:30 (2D, Doblada)\n* **Cinépolis VIP Parque Toreo:**\n  * 18:30 (VIP, Subtitulada) — *un poco antes de la noche*\n* **Cinépolis VIP Miyana Polanco:**\n  * 20:30 (VIP, Subtitulada)",
+   "status": "⏳ Consultando Cinépolis…",
+   "ms": 63411
+  },
+  {
+   "id": "eggs-toast",
+   "calls": 4,
+   "rateLimited": 0,
+   "inputTokens": 13604,
+   "cachedTokens": 4018,
+   "outputTokens": 380,
+   "toolsSentAvg": 22,
+   "systemCharsAvg": 4938,
+   "actions": [
+    "mfp.log Breakfast: Egg, whole, large × 2 [1 large egg] = 144 kcal",
+    "mfp.log Breakfast: Toast, white bread × 1 [1 slice] = 75 kcal"
+   ],
+   "cards": [],
+   "ok": true,
+   "reply": "Muy bien, Amo Julián. Queda servido.\n\nDesayuno: 2 items, 219 kcal.",
+   "status": "✅ Desayuno: 2 alimentos, 219 kcal",
+   "ms": 30419
+  },
+  {
+   "id": "expense-nequi",
+   "calls": 2,
+   "rateLimited": 0,
+   "inputTokens": 8868,
+   "cachedTokens": 0,
+   "outputTokens": 369,
+   "toolsSentAvg": 15,
+   "systemCharsAvg": 4836,
+   "actions": [
+    "finance.create EgresoNormal 25000 COP Nequi/Disponible 2026-10-20"
+   ],
+   "cards": [],
+   "ok": true,
+   "reply": "Muy bien, Amo Julián. Quedó registrado su almuerzo.\n\nEgreso: $25,000 COP — Nequi (Disponible)",
+   "status": "✅ 1 gasto, $25.000",
+   "ms": 44564
+  },
+  {
+   "id": "voice-meal",
+   "calls": 3,
+   "rateLimited": 0,
+   "inputTokens": 13808,
+   "cachedTokens": 8037,
+   "outputTokens": 381,
+   "toolsSentAvg": 15,
+   "systemCharsAvg": 3331,
+   "actions": [
+    "mfp.log Dinner: Rice, white, cooked × 1 [1 cup] = 205 kcal",
+    "mfp.log Dinner: Chicken breast, grilled × 1 [1 breast (172 g)] = 284 kcal"
+   ],
+   "cards": [],
+   "ok": true,
+   "reply": "Muy bien, Amo Julián. Su cena ha quedado registrada con distinción.\n\n**Cena:** 2 items, 489 kcal",
+   "status": "✅ Cena: 2 alimentos, 489 kcal",
+   "ms": 30758
+  },
+  {
+   "id": "chat",
+   "calls": 2,
+   "rateLimited": 0,
+   "inputTokens": 9481,
+   "cachedTokens": 0,
+   "outputTokens": 26,
+   "toolsSentAvg": 35,
+   "systemCharsAvg": 6539,
+   "actions": [],
+   "cards": [],
+   "ok": true,
+   "reply": "Como corresponde, Amo Julián, a su servicio y en perfecto estado. ¿En qué le puedo asistir el día de hoy?",
+   "status": "⏳ Trabajando en ello…",
+   "ms": 42310
+  },
+  {
+   "id": "cines-listings",
+   "calls": 2,
+   "rateLimited": 0,
+   "inputTokens": 8476,
+   "cachedTokens": 2001,
+   "outputTokens": 240,
+   "toolsSentAvg": 14,
+   "systemCharsAvg": 5824,
+   "actions": [],
+   "cards": [],
+   "ok": true,
+   "reply": "Muy bien, Amo Julián, aquí tiene la cartelera para hoy en Parque Toreo:\n\n- **Dune: Mesías**: 17:10 (SUB), 20:30 (SUB), 21:15 (ESP)\n- **Coco 2**: 16:00 (ESP), 19:40 (ESP)\n- **Clayface**: 18:30 (SUB), 21:30 (ESP)",
+   "status": "⏳ Consultando Cinépolis…",
+   "ms": 22938
+  },
+  {
+   "id": "cines-seats",
+   "calls": 5,
+   "rateLimited": 0,
+   "inputTokens": 22698,
+   "cachedTokens": 8002,
+   "outputTokens": 438,
+   "toolsSentAvg": 14,
+   "systemCharsAvg": 5824,
+   "actions": [],
+   "cards": [],
+   "ok": true,
+   "reply": "Amo Julián, para la función de las 20:30 en el Toreo, le propongo los asientos **F7 y F8**. Por favor, indíqueme si son de su agrado.",
+   "status": "⏳ Preparando el mapa de asientos…",
+   "ms": 53374
+  },
+  {
+   "id": "cines-paypal",
+   "calls": 3,
+   "rateLimited": 0,
+   "inputTokens": 14182,
+   "cachedTokens": 6011,
+   "outputTokens": 1077,
+   "toolsSentAvg": 14,
+   "systemCharsAvg": 5824,
+   "actions": [
+    "cines.hold hold_1 570-1002 F7 $99",
+    "cines.purchase hold_1 $99 dry-run"
+   ],
+   "cards": [
+    "tool:cines_hold_seats",
+    "tool:cines_purchase"
+   ],
+   "ok": true,
+   "reply": "Amo Julián, he apartado el asiento F7 para Dune en Cinépolis Parque Toreo y la compra ha sido procesada exitosamente. Total: $99 MXN.",
+   "status": "✅ 🎟️ Compra confirmada: reserva DRYRUN-001 · $99 MXN (simulada)",
+   "ms": 50823
+  },
+  {
+   "id": "cines-buy",
+   "calls": 6,
+   "rateLimited": 0,
+   "inputTokens": 18745,
+   "cachedTokens": 4008,
+   "outputTokens": 1445,
+   "toolsSentAvg": 14,
+   "systemCharsAvg": 5824,
+   "actions": [
+    "cines.hold hold_1 570-1002 F7,F8 $198",
+    "cines.purchase hold_1 $198 dry-run"
+   ],
+   "cards": [
+    "tool:cines_hold_seats",
+    "tool:cines_purchase"
+   ],
+   "ok": true,
+   "reply": "Muy bien, amo Julián, el deber cumplido con la precisión de un suizo. Sus lugares han quedado asegurados.\n\n- **Cine:** Parque Toreo\n- **Película:** Dune\n- **Asientos:** F7, F8\n- **Total:** $198 MXN\n- **Reserva:** DRYRUN-001",
+   "status": "⏳ Trabajando en ello…",
+   "ms": 74248
+  }
+ ]
+}

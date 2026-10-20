@@ -40,8 +40,14 @@ export interface TrackerDeps {
   onFailure?: (f: FailureRecord) => void | Promise<void>;
   now?: () => number;
   workingAfterMs?: number;
+  /** After this long, "⏳ Sigo en ello; Gemini está lento…" (default 90 s). */
+  slowAfterMs?: number;
   minEditGapMs?: number;
 }
+
+export const SLOW_AFTER_MS = 90_000;
+/** A run that took longer keeps its status message (a final line) instead of deleting it. */
+export const KEEP_IF_LONGER_MS = 60_000;
 
 export class StatusTracker {
   private messageId?: number;
@@ -80,9 +86,18 @@ export class StatusTracker {
 
   /** Start the clock: a "⏳ working" message appears if the request takes long. */
   start(): void {
+    this.startedAt = this.now();
     this.workingTimer = setTimeout(() => this.ensureWorking(), this.d.workingAfterMs ?? WORKING_AFTER_MS);
     this.workingTimer.unref?.();
+    this.slowTimer = setTimeout(() => {
+      if (this.finished || this.awaiting || /PayPal/.test(this.activityText ?? '')) return;
+      this.d.log?.('[status] still running after 90 s');
+      void this.show(this.msgs.working(this.msgs.slow()), true);
+    }, this.d.slowAfterMs ?? SLOW_AFTER_MS);
+    this.slowTimer.unref?.();
   }
+  private startedAt = 0;
+  private slowTimer?: ReturnType<typeof setTimeout>;
   received(media: 'voice' | 'photo' | 'pdf'): Promise<void> {
     return this.show(this.msgs.received(media), true);
   }
@@ -140,6 +155,7 @@ export class StatusTracker {
     if (this.finished) return;
     this.finished = true;
     clearTimeout(this.workingTimer);
+    clearTimeout(this.slowTimer);
     let final: StatusText | undefined;
     let code: string | undefined;
     if (this.runError !== undefined) {
@@ -161,6 +177,10 @@ export class StatusTracker {
         this.d.log?.(`[status] ${code}: ${final.text}`);
         await this.d.onFailure?.({ at: this.now(), requestId: this.d.requestId, code, text: final.text });
       }
+    } else if (this.messageId !== undefined && this.startedAt > 0 && this.now() - this.startedAt > KEEP_IF_LONGER_MS) {
+      // a long run with nothing to report: leave a trace (the user saw it working for minutes)
+      const min = Math.max(1, Math.round((this.now() - this.startedAt) / 60_000));
+      await this.show({ text: this.msgs.lang === 'es' ? `✔️ Listo (tardó ${min} min)` : `✔️ Done (took ${min} min)` }, true, true);
     } else if (this.messageId !== undefined) {
       // only a "⏳ working" was shown and there is nothing to report: remove it
       await this.chain;
@@ -188,6 +208,7 @@ export class StatusTracker {
         try {
           this.messageId = await this.d.api.send(this.d.chatId, text);
           this.shown = text;
+          this.d.log?.(`[status] shown: ${text.split('\n')[0]!.slice(0, 60)}`);
         } catch (err) {
           this.d.log?.(`[status] send failed: ${(err as Error).message.split('\n')[0]}`);
         }

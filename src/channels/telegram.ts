@@ -43,6 +43,11 @@ export interface TelegramDeps {
   approvalCard?: (event: ToolDisplayEvent) => ToolDisplayResult | undefined;
   /** Secure input: the user's next message goes to a tool, never to the model. */
   secureInput?: SecureInputPort;
+  /**
+   * Deterministic shortcuts before the agent (e.g. a seat pick after a seat map): a `reply` is
+   * posted instead of running the agent; an `agentText` replaces the user's message for it.
+   */
+  preAgent?: (chatId: string, text: string) => Promise<{ reply?: string; agentText?: string } | undefined>;
 }
 
 type Pending = { requestId: string; kind: string; expiresAt: number; expired?: boolean };
@@ -131,6 +136,7 @@ function guarded(
   secure?: SecureInputPort,
   recent: RecentTopics = new Map(),
   status?: (chatId: string, requestId: string) => StatusTracker,
+  preAgent?: TelegramDeps['preAgent'],
 ): ChannelHandler {
   return async (thread: Thread, message: Message, defaultHandler) => {
     if (!thread.isDM) return log(`[telegram] ignoring non-DM message in ${thread.id}`);
@@ -197,6 +203,23 @@ function guarded(
           recent.set(chatId, { domains: scope.domains, at: Date.now() });
           return defaultHandler(thread, message);
         }
+        // a seat pick right after a seat map: the hub checks it itself (no model wandering)
+        if (preAgent && media === 'text' && message.text) {
+          const r = await preAgent(chatId, message.text).catch((e: Error) => (log(`[telegram] preAgent failed: ${e.message.split('\n')[0]}`), undefined));
+          if (r?.reply) {
+            await thread.post(r.reply);
+            return;
+          }
+          if (r?.agentText) {
+            message.text = r.agentText;
+            message.formatted = undefined as never;
+            scope.text = r.agentText;
+            scope.intent = 'cines';
+            scope.domains = ['cines'];
+            recent.set(chatId, { domains: scope.domains, at: Date.now() });
+            return defaultHandler(thread, message);
+          }
+        }
         // a voice note / photo takes a while: say it arrived instead of silence
         if (tracker && RECEIVED_MEDIA.has(media)) await tracker.received(media as 'voice' | 'photo' | 'pdf');
         // a transcribed voice note is routed like the text it says
@@ -210,7 +233,10 @@ function guarded(
         scope.intent = classifyIntent(scope.text, routed);
         const user = String(message.author?.userId ?? '');
         const last = recent.get(user);
-        scope.domains = domainsFor(scope.text, routed, last && Date.now() - last.at < STICKY_MS ? last.domains : undefined);
+        const sticky = last && Date.now() - last.at < STICKY_MS ? last.domains : undefined;
+        scope.domains = domainsFor(scope.text, routed, sticky);
+        // a short follow-up in a cines conversation is a cines request
+        if (scope.intent === 'chat' && sticky?.includes('cines') && scope.domains.includes('cines')) scope.intent = 'cines';
         recent.set(user, { domains: scope.domains, at: Date.now() });
         if (t?.language) scope.language = t.language;
         return defaultHandler(thread, message);
@@ -232,7 +258,7 @@ export function createTelegramChannel(config: HubConfig, deps: TelegramDeps = {}
   process.env.TELEGRAM_ALLOWED_USER_IDS = config.telegram.allowedUserIds.join(',');
 
   const recent: RecentTopics = new Map();
-  const handler = guarded(config.telegram.allowedUserIds, deps.kv, log, deps.gate, deps.voice, deps.transcribe, deps.secureInput, recent, deps.status);
+  const handler = guarded(config.telegram.allowedUserIds, deps.kv, log, deps.gate, deps.voice, deps.transcribe, deps.secureInput, recent, deps.status, deps.preAgent);
   const display: ToolDisplayFn = (event, ctx) => {
     usageContext.getStore()?.status?.onToolEvent(event);
     return deps.approvalCard?.(event) ?? toolDisplay(event, ctx);

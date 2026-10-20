@@ -21,6 +21,7 @@
  */
 import type { KvStore } from '../kv.js';
 import { fetchLoopbackPng } from './images.js';
+import { namedCinemas } from './args.js';
 import {
   HARD_CAP_MXN,
   HOLD_TOOL,
@@ -75,6 +76,8 @@ export interface CinesHubDeps {
   paypalWaitMin?: number;
   /** Poll interval for an in-progress purchase (default 10 s). */
   pollMs?: number;
+  /** "❓ C7 no se puede: …" for an invalid seat pick (persona). */
+  seatInvalidText?: (seats: string, reason: string) => string;
   /** "⏳ Esperando que apruebe el pago en PayPal en el Mac…" (persona). */
   paypalWaitText?: () => string;
   /** Show a "working" line in the request's live status message. */
@@ -96,6 +99,22 @@ export interface PendingSecure {
 export interface CallContext {
   /** Chat the request came from (Telegram private chat id = user id). */
   chatId?: string;
+  /** The user's message for this request (cinemas they named, filters they asked for). */
+  userText?: string;
+}
+
+/** Seats the user picked in a short message ("elige c7", "F7 y F8", "quiero el D5"); undefined otherwise. */
+export function seatPickOf(text: string | undefined): string[] | undefined {
+  const t = (text ?? '').trim().replace(/[.!¡¿?]+$/g, '').trim();
+  if (!t || t.length > 60) return undefined;
+  const words = t.toLowerCase().normalize('NFD').replace(/\p{Diacritic}/gu, '').split(/[\s,]+/).filter(Boolean);
+  const FILLER = new Set(['elige', 'elijo', 'escojo', 'escoge', 'aparta', 'apartame', 'quiero', 'dame', 'prefiero', 'mejor', 'ponme', 'pon', 'el', 'la', 'los', 'las', 'asiento', 'asientos', 'lugar', 'lugares', 'butaca', 'butacas', 'y', 'e', 'and', 'seat', 'seats', 'por', 'favor', 'porfa', 'please', 'mejor', 'entonces', 'ok', 'va']);
+  const seats: string[] = [];
+  for (const w of words) {
+    if (/^[a-n]\d{1,2}$/.test(w)) seats.push(w.toUpperCase());
+    else if (!FILLER.has(w)) return undefined; // anything else: not a bare seat pick
+  }
+  return seats.length && seats.length <= 10 ? [...new Set(seats)] : undefined;
 }
 
 /** How long a showtime the user was shown stays "in play" (holds must use one of them). */
@@ -126,6 +145,27 @@ export class CinesHub {
   constructor(private readonly d: CinesHubDeps) {
     this.log = d.log ?? (() => {});
     this.now = d.now ?? Date.now;
+  }
+
+  /**
+   * A recommendation is FILTERED (window, language, vip…). When the user named cinemas, add
+   * everything that really exists there that day (unfiltered), so "only dubbed" can never be
+   * claimed from a filtered search.
+   */
+  private async withNamedCinemas(input: Rec, result: Rec, ctx: CallContext): Promise<Rec> {
+    const named = namedCinemas(ctx.userText);
+    if (!named.length || typeof input.movie !== 'string') return result;
+    const st = (await this.d.toolbox.execute('cines_showtimes', { movie: input.movie, cinema: named.join(','), ...(typeof input.date === 'string' ? { date: input.date } : {}) }, { raw: true })) as Rec;
+    if (st?.error) return result;
+    this.remember(ctx.chatId ?? 'local', 'cines_showtimes', st);
+    const all = ((st.showtimes as Rec[] | undefined) ?? []).map((s) => [s.cinema, s.date, s.time, s.lang ?? s.language, s.format, s.showtimeId].filter(Boolean).join(' · '));
+    this.log(`[cines] best_showtime: added ${all.length} unfiltered showtimes at ${named.join(', ')}`);
+    return {
+      ...result,
+      at_named_cinemas: all,
+      note_named:
+        'at_named_cinemas lists ALL showtimes that day at the cinemas the user named (no window/vip/format filter). Answer about those cinemas from it: say what exists (also times just outside their preferred window). Never say "only dubbed" or "none" unless at_named_cinemas shows it.',
+    };
   }
 
   /* ---------------------------------------------------------------- showtimes in play */
@@ -207,6 +247,39 @@ export class CinesHub {
       setTimeout(() => (this.prepared.delete(key), this.previews.delete(key)), 15 * 60_000).unref?.();
     }
     return p;
+  }
+
+  /**
+   * Seat-pick fast path: a bare "elige c7" right after a seat map is validated BY THE HUB on
+   * that showtime (no model wandering). Valid → an instruction for the agent to hold exactly
+   * those seats (the normal approval card); invalid → the server's reason for the user
+   * (plus the preview image). undefined when this is not a seat pick after a seat map.
+   */
+  async seatPick(chat: string, text: string): Promise<{ agentText?: string; reply?: string } | undefined> {
+    const seats = seatPickOf(text);
+    if (!seats) return undefined;
+    const map = this.shownFor(chat).lastMap;
+    if (!map) return undefined;
+    const label = this.shownFor(chat).ids.get(map.id)?.label ?? map.id;
+    const list = seats.join(',');
+    const v = (await this.d.toolbox.execute('cines_validate_seats', { showtimeId: map.id, seats: list, tickets: seats.length }, { raw: true })) as Rec;
+    this.log(`[cines] seat pick ${list} on ${map.id}: ${v?.error ? `error ${String((v.error as Rec).code)}` : v?.ok === false ? 'invalid' : 'valid'}`);
+    if (v?.error) {
+      const e = v.error as Rec;
+      return { reply: this.d.seatInvalidText?.(list, String(e.message ?? e.code)) ?? `❓ ${list}: ${String(e.message ?? e.code)}` };
+    }
+    this.remember(chat, 'cines_validate_seats', v);
+    if (v.ok === false) {
+      if (typeof v.imageUrl === 'string') await this.sendImage(v.imageUrl, chat);
+      const reason = [(v.errors as string[] | undefined) ?? []].flat().join(' ') || 'no disponible';
+      return { reply: this.d.seatInvalidText?.(list, reason) ?? `❓ ${list}: ${reason}` };
+    }
+    return {
+      agentText:
+        `[hub] The user picked seat(s) ${list} on the seat map they just saw (showtimeId ${map.id}: ${label}). ` +
+        `The hub checked them with cines_validate_seats: they are available. Call cines_hold_seats NOW with {"showtimeId":"${map.id}","seats":"${list}","tickets":${seats.length}} ` +
+        '(the user gets the approval card). Do not search showtimes again and do not ask anything else.',
+    };
   }
 
   /** Seat tools (validate/seat map) use a showtime the user was shown. */
@@ -330,6 +403,7 @@ export class CinesHub {
     }
     let out = result;
     this.remember(ctx.chatId ?? 'local', tool, result);
+    if (tool === 'cines_best_showtime' && !(result as Rec | undefined)?.error) out = await this.withNamedCinemas(input, result as Rec, ctx);
     const h = holdOf(result);
     if (h && (tool === HOLD_TOOL || tool === SECURE_TOOL)) {
       h.serverApprovalRequired = (result as Rec).purchaseApprovalRequired === true;
