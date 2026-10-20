@@ -339,6 +339,9 @@ startup ping, weekly digest, "app is back" and rate-limit notices. Switch off wi
 
 ## Running 24/7 on the server Mac
 
+Operating the live server (what runs, where config lives, recovery playbooks, secret rotation,
+decision log): **[docs/server-runbook.md](docs/server-runbook.md)** (Spanish).
+
 Do this on the always-on Mac itself; no SSH is needed.
 
 ```bash
