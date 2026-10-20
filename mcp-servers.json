@@ -28,9 +28,10 @@
       "enabled": true
     },
     "cines": {
-      "description": "cines-mx-mcp (Cinépolis listings, showtimes, seat maps; holds and purchases are approval-gated by the hub). Loopback, no auth. Enabled where CINES_MCP_URL is set in .env (server Mac: http://127.0.0.1:8686/mcp).",
+      "description": "cines-mx-mcp (Cinépolis listings, showtimes, seat maps; holds and purchases are approval-gated by the hub). Loopback, no auth. Enabled where CINES_MCP_URL is set in .env (server Mac: http://127.0.0.1:8686/mcp). timeoutMs 130 s: holds return in_progress at ~40 s and purchases at ~110 s.",
       "url": "${CINES_MCP_URL}",
-      "enabled": true
+      "enabled": true,
+      "timeoutMs": 130000
     }
   }
 }

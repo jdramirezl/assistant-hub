@@ -235,6 +235,8 @@ export function createHub(config: HubConfig, deps: HubDeps = {}): Hub {
         if (POCKET_TOOLS.has(tool)) return withOwningAccount(input);
         return input === given ? undefined : Promise.resolve({ args: input });
       },
+      // a hold/purchase that timed out may have happened at Cinépolis: poll for the outcome
+      onCallError: (tool) => (MONEY_TOOLS.has(tool) ? { status: 'in_progress', jobId: '', transport: true } : undefined),
       // the hub fills accountId from the pocket, so the model may omit it
       schema: (tool, s) => (POCKET_TOOLS.has(tool) ? optionalAccountId(s) : s),
       afterResult: (tool, input, result, { raw }) => {

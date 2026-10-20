@@ -16,6 +16,8 @@ export interface Scenario {
   localHour?: number;
   /** finance-app replica rejects creates whose notes match (a real failure in the batch). */
   financeReject?: RegExp;
+  /** Per-server MCP timeout for the fake cines (default from mcp-servers.json). */
+  cinesTimeoutMs?: number;
   /** Fake cines-mx-mcp behavior (Phase 3 tools are always served). */
   cines?: FakeCinesOptions;
   /** Sanity check of the end state (the main check is "same actions as the baseline"). */
@@ -425,6 +427,19 @@ export const SCENARIOS: Scenario[] = [
         cines.calls.filter((t) => t === 'cines_hold_status').length >= 2 || 'did not poll',
         /Apartando en Cinépolis/.test(outgoing) || 'no hold waiting status',
         cines.actions.some((x) => x.op === 'hold') || 'no hold',
+      ),
+  },
+  {
+    id: 'cines-hold-timeout',
+    // the live hold that outlived the hub's MCP timeout: the hub polls and finds it (no "no responde")
+    cines: { holdDelayMs: 4000 },
+    cinesTimeoutMs: 1500,
+    turns: ['aparta el B7 para la función 570-1002 de Dune en el Toreo'],
+    ok: ({ cines, outgoing }) =>
+      both(
+        cines.actions.some((x) => x.op === 'hold') || 'no hold',
+        !/no responde|MCP_UNAVAILABLE/.test(outgoing) || 'reported as unavailable',
+        cines.calls.filter((t) => t === 'cines_hold_seats').length === 1 || 'hold re-called',
       ),
   },
   {

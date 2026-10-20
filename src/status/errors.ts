@@ -45,6 +45,7 @@ export const ERROR_TABLE: Record<string, Entry> = {
   CINES_HOLD_EXPIRED: { es: ['los asientos ya no están apartados', 'Elijamos asientos de nuevo.'], en: ['the seats are no longer held', 'Let us choose seats again.'] },
   CINES_PAYMENT_FAILED: { es: ['el pago no se completó (no lo reintento)', 'Revise su correo y su banco antes de intentar otra compra.'], en: ['the payment did not go through (not retried)', 'Check your e-mail and bank before trying again.'] },
   CINES_PAYMENT_NOT_ARMED: { es: ['el pago real no está armado', 'En el Mac corra: bin/cinesctl arm-payment'], en: ['real payment is not armed', 'On the Mac run: bin/cinesctl arm-payment'] },
+  CINES_HOLD_UNKNOWN: { es: ['no sé si quedó apartado', 'Lo reviso; no lo reintento. Pregúnteme por el apartado en un momento.'], en: ['I do not know whether the seats were held', 'I am checking; I will not retry. Ask me about the hold in a moment.'] },
   CINES_PAYMENT_UNKNOWN: { es: ['no sé si se cobró', 'Revise su correo. No liberé los asientos.'], en: ['I do not know whether it was charged', 'Check your e-mail. I did not release the seats.'] },
   CINES_LIMIT_EXCEEDED: { es: ['el total supera el límite de $1,000 MXN', 'Elija menos asientos o una sala más barata.'], en: ['the total is over the $1,000 MXN limit', 'Pick fewer seats or a cheaper room.'] },
   // Hub-level

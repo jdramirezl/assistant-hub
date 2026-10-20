@@ -122,7 +122,11 @@ async function runScenario(s: Scenario, pacer: ReturnType<typeof pacedFetch>, ap
     MCP_REGISTRY_PATH: join(process.cwd(), 'mcp-servers.json'),
   };
   const logs: string[] = [];
+  // same registry as production, with an optional shorter cines timeout (timeout scenarios)
+  const reg = JSON.parse(readFileSync(join(process.cwd(), 'mcp-servers.json'), 'utf8')) as { servers: Record<string, Record<string, unknown>> };
+  if (s.cinesTimeoutMs) reg.servers.cines!.timeoutMs = s.cinesTimeoutMs;
   const hub: Hub = createHub(loadConfig(env), {
+    registry: reg,
     env,
     geminiFetch: pacer.fetch,
     cinesPollMs: 1000,

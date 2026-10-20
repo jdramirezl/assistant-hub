@@ -247,3 +247,50 @@ describe("a hold that takes > 40 s: in_progress → the hub polls cines_hold_sta
     });
   }
 });
+
+describe('a hold slower than the MCP timeout (the live hold_ac2cffa16eab)', () => {
+  it('is not reported as "Cinépolis no responde": the hub polls hold-status and finds the hold; server stays up', async () => {
+    tg = await new MockTelegram().start();
+    closers.push(() => tg.stop());
+    cines = await startFakeCines({ phase3: true, holdDelayMs: 1500 });
+    closers.push(cines.close);
+    const sm = scriptedModel([{ tool: 'cines_hold_seats', args: { showtimeId: '570-1002', seats: 'B7' } }, { text: 'ok' }]);
+    const logs: string[] = [];
+    const hub: Hub = createHub(testConfig({ TELEGRAM_BOT_TOKEN: '1:abc', TELEGRAM_ALLOWED_USER_IDS: String(ME) }), {
+      model: sm.model as never,
+      cinesPollMs: 200,
+      registry: { servers: { cines: { url: cines.url, timeoutMs: 500 } } }, // shorter than the hold
+      telegram: { apiBaseUrl: tg.url, longPolling: { timeout: 0, retryDelayMs: 50 }, log: (m) => logs.push(m) },
+    });
+    closers.push(() => hub.stop());
+    await hub.start();
+    tg.push(textUpdate(ME, 'aparta el B7 de la 570-1002'));
+    await tg.waitFor(() => !!findButton(tg, 'tool_approve:'), 10_000);
+    const b = findButton(tg, 'tool_approve:')!;
+    tg.push(callbackUpdate(ME, { message_id: b.messageId }, b.data));
+    await tg.waitFor(() => status().some((x) => /^✅ 1 apartado de asientos/.test(x)), 10_000);
+    expect(status()).toContain('⏳ Apartando en Cinépolis…');
+    expect(status().join('\n')).not.toMatch(/no responde|MCP_UNAVAILABLE|❌/);
+    // the model saw a normal "held" result (it can now call cines_purchase → the card)
+    const toolOut = JSON.stringify(sm.calls[1]!.prompt);
+    expect(toolOut).toContain('hold_1');
+    expect(toolOut).toMatch(/held/);
+    expect(logs.join('\n')).toMatch(/cines_hold_seats failed in transport .*not marking down/);
+    expect(logs.join('\n')).not.toMatch(/cines: down/);
+    expect(hub.toolbox.status().cines).toMatchObject({ state: 'up' });
+    expect(cines.calls.filter((c) => c.tool === 'cines_hold_seats')).toHaveLength(1);
+  });
+
+  it('a read that times out does not mark the server down', async () => {
+    const { McpToolbox } = await import('../src/mcp/toolbox.js');
+    const { parseRegistry } = await import('../src/mcp/registry.js');
+    cines = await startFakeCines({ phase3: true, holdDelayMs: 1500 });
+    closers.push(cines.close);
+    const logs: string[] = [];
+    const tb = new McpToolbox(parseRegistry({ servers: { cines: { url: cines.url, timeoutMs: 400 } } }), {}, { log: (m) => logs.push(m) });
+    closers.push(() => tb.close());
+    expect(await tb.execute('cines_hold_seats', { showtimeId: '570-1002', seats: 'B7' })).toMatchObject({ error: { code: 'MCP_UNAVAILABLE' } });
+    expect(tb.status().cines).toMatchObject({ state: 'up' });
+    expect(logs.join('\n')).toMatch(/timed out .*server stays up/);
+  });
+});

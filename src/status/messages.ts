@@ -101,6 +101,9 @@ export class StatusMessages {
     if (f.why.code === 'CINES_PAYMENT_NOT_ARMED') {
       return { text: this.es ? '🔒 El pago real no está armado. En el Mac corra: bin/cinesctl arm-payment' : '🔒 Real payment is not armed. On the Mac run: bin/cinesctl arm-payment', tech: techLine(f.why.code, requestId) };
     }
+    if (f.why.code === 'CINES_HOLD_UNKNOWN') {
+      return { text: this.es ? '⚠️ No sé si quedó apartado; lo reviso. No lo reintento.' : '⚠️ I do not know whether the seats were held; I am checking. I will not retry.', tech: techLine(f.why.code, requestId) };
+    }
     if (f.why.code === 'CINES_PAYMENT_UNKNOWN') {
       return { text: this.es ? '⚠️ No sé si se cobró; revise su correo. No liberé los asientos.' : '⚠️ I do not know whether it was charged; check your e-mail. I did not release the seats.', tech: techLine(f.why.code, requestId) };
     }

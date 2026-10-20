@@ -116,6 +116,8 @@ export interface FakeCinesOptions {
   inProgress?: { polls: number; outcome: 'paid' | 'failed' | 'unknown' };
   /** cines_hold_seats returns in_progress; hold_status shows the hold after N polls (or failError). */
   holdInProgress?: { polls: number; failError?: string; legacyError?: boolean };
+  /** cines_hold_seats takes this long (like the real headed-Chrome hold) before answering. */
+  holdDelayMs?: number;
   /** Real (non-dryRun) payment armed on the server Mac; default true. false → "no está armado". */
   paymentArmed?: boolean;
   /** Successful purchases already in the server's ledger. */
@@ -318,7 +320,8 @@ export async function startFakeCines(opts: FakeCinesOptions = {}): Promise<FakeC
     let lastJob: Rec | undefined;
     const holdNow = (a: Rec) => (opts.emailCode ? ask('email_code', 'Escribe el código de 6 dígitos que Cinépolis envió a tu correo.', () => finishHold(a)) : finishHold(a));
     Object.assign(handlers, {
-      cines_hold_seats: (a: Rec) => {
+      cines_hold_seats: async (a: Rec) => {
+        if (opts.holdDelayMs) await new Promise((r) => setTimeout(r, opts.holdDelayMs));
         if (!opts.holdInProgress) return holdNow(a);
         pendingHold = { args: a, polls: 0 };
         lastJob = { jobId: 'job_hold_1', tool: 'cines_hold_seats', status: 'running', startedAt: new Date().toISOString() };
@@ -432,7 +435,7 @@ export async function startFakeCines(opts: FakeCinesOptions = {}): Promise<FakeC
         const p = msg.params as { name: string; arguments?: Rec };
         state.calls.push({ tool: p.name, args: p.name === 'cines_submit_code' ? { challengeId: p.arguments?.challengeId, code: '<secret>' } : (p.arguments ?? {}) });
         const h = handlers[p.name];
-        const out = h ? h(p.arguments ?? {}) : err('CINES_BAD_REQUEST', `Unknown tool ${p.name}`);
+        const out = h ? await h(p.arguments ?? {}) : err('CINES_BAD_REQUEST', `Unknown tool ${p.name}`);
         const isError = !!out && typeof out === 'object' && 'error' in (out as Rec);
         return void ok({ isError, content: [{ type: 'text', text: JSON.stringify(out) }] });
       }

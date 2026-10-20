@@ -365,7 +365,7 @@ export class CinesHub {
    * cines_hold_status (no model calls, never re-calling the hold) until the hold appears; it is
    * then handled exactly like a direct "held" result (summary / purchase card).
    */
-  private async waitForHold(input: Rec, jobId = ''): Promise<unknown> {
+  private async waitForHold(input: Rec, jobId = '', unsure = false): Promise<unknown> {
     const started = this.now();
     const limit = this.d.holdWaitMs ?? 3 * 60_000;
     const every = this.d.holdPollMs ?? 5_000;
@@ -404,6 +404,7 @@ export class CinesHub {
       }
     }
     this.log(`[cines] hold not confirmed after ${Math.round(limit / 60_000)} min (not retried)`);
+    if (unsure) return { error: { code: 'CINES_HOLD_UNKNOWN', message: 'no hold visible in cines_hold_status yet', retryable: false } };
     return { error: { code: 'CINES_UNAVAILABLE', message: 'Cinépolis no confirmó el apartado a tiempo; no lo reintento. Revise en un momento si quedó apartado.', retryable: false } };
   }
 
@@ -418,8 +419,10 @@ export class CinesHub {
     return { error: { code: String(e.code ?? 'CINES_UNAVAILABLE'), message: String(e.message ?? 'El trabajo en segundo plano falló.'), retryable: false } };
   }
 
-  private async waitForPurchase(jobId = ''): Promise<unknown> {
+  private async waitForPurchase(jobId = '', unsure = false): Promise<unknown> {
     const started = this.now();
+    // after a timed-out call, only a purchase that started around it counts (not an older one)
+    const since = unsure ? started - 5 * 60_000 : -Infinity;
     const limit = ((this.d.paypalWaitMin ?? 15) + 2) * 60_000;
     const every = this.d.pollMs ?? 10_000;
     const sleep = this.d.sleep ?? ((ms: number) => new Promise((r) => setTimeout(r, ms)));
@@ -439,7 +442,8 @@ export class CinesHub {
       }
       const list = (st.purchases as Rec[] | undefined) ?? [];
       // the server lists the last purchases oldest first: the newest is ours
-      const p = list.at(-1);
+      const p0 = list.at(-1);
+      const p = p0 && Date.parse(String(p0.at ?? '')) >= since ? p0 : unsure ? undefined : p0;
       const s = String(p?.status ?? '');
       if (s === 'paid') {
         this.log(`[cines] purchase paid after ${polls} polls`);
@@ -467,8 +471,9 @@ export class CinesHub {
   async afterResult(tool: string, input: Rec, given: unknown, ctx: CallContext = {}): Promise<unknown> {
     let result = given;
     const jobId = String((result as Rec | undefined)?.jobId ?? '');
-    if (tool === HOLD_TOOL && (result as Rec | undefined)?.status === 'in_progress') result = await this.waitForHold(input, jobId);
-    else if ((tool === PURCHASE_TOOL || tool === SECURE_TOOL) && (result as Rec | undefined)?.status === 'in_progress') result = await this.waitForPurchase(jobId);
+    const unsure = (result as Rec | undefined)?.transport === true; // our call timed out: the server may have done it
+    if (tool === HOLD_TOOL && (result as Rec | undefined)?.status === 'in_progress') result = await this.waitForHold(input, jobId, unsure);
+    else if ((tool === PURCHASE_TOOL || tool === SECURE_TOOL) && (result as Rec | undefined)?.status === 'in_progress') result = await this.waitForPurchase(jobId, unsure);
     if (tool === PURCHASE_TOOL) {
       const e = (result as Rec | undefined)?.error as Rec | undefined;
       if (e && NOT_ARMED.test(String(e.message ?? ''))) {

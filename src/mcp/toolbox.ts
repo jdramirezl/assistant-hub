@@ -31,6 +31,12 @@ export interface ToolHooks {
   approvalOverride?(tool: string): ((input: Record<string, unknown>) => boolean | Promise<boolean>) | undefined;
   /** Last checks before the server is called: new args, or a shared-shape error (not called). */
   beforeCall?(tool: string, input: Record<string, unknown>): Promise<{ args: Record<string, unknown> } | { error: unknown }> | undefined;
+  /**
+   * A call failed in transport (timeout, connection reset). Return a result to use instead
+   * (e.g. {status:"in_progress"} for a write that may have run) — the server is then NOT marked
+   * down — or undefined for the default (unavailable error).
+   */
+  onCallError?(tool: string, input: Record<string, unknown>, reason: string): unknown;
   /** Adjust a tool's JSON Schema before it is shown to the model and validated (e.g. a field the hub fills). */
   schema?(tool: string, schema: Record<string, unknown>): Record<string, unknown>;
   /** Inspect/transform a tool's normalized result (may be async). */
@@ -88,6 +94,9 @@ export const ON_DEMAND_GAP_MS = 15_000;
  * dispatching the call, so re-initializing and retrying once is safe, also for writes.
  */
 export const SESSION_LOST = /session not found|no valid session|unknown session|session (?:has )?expired|"code"\s*:\s*-32600|\bHTTP 404\b|status(?:Code)?[ :=]+404/i;
+
+/** A per-call timeout (MCP -32001 / AbortSignal), not a dead server. */
+const TIMEOUT = /timed? ?out|-32001|aborted due to timeout|TimeoutError/i;
 
 /** JSON Schema formats accepted without validation (they are hints for the model). */
 const SCHEMA_FORMATS = Object.fromEntries(
@@ -407,20 +416,34 @@ export class McpToolbox {
       mcp: t.mcp as never,
       requireApproval: this.approvalFor(name, t.mcp?.annotations),
       execute: async (given: unknown, ctx: unknown) => {
+        let input = given;
+        const raw = (ctx as { hubRaw?: boolean } | undefined)?.hubRaw === true; // hub-internal call: full, untrimmed result
+        const finish = async (out: unknown) => {
+          const hook = this.opts.hooks?.afterResult;
+          if (!hook) return out;
+          const hooked = await hook(name, (input ?? {}) as Record<string, unknown>, out, { raw }); // side effects (guards) always run
+          return raw ? out : hooked;
+        };
         try {
-          let input = given;
           const before = await this.opts.hooks?.beforeCall?.(name, (given ?? {}) as Record<string, unknown>);
           if (before && 'error' in before) return before.error;
           if (before) input = before.args;
           const out = normalizeResult(await this.callWithSessionRetry(server, name, t, input, ctx), style);
-          const hook = this.opts.hooks?.afterResult;
-          const raw = (ctx as { hubRaw?: boolean } | undefined)?.hubRaw === true; // hub-internal call: full, untrimmed result
-          if (!hook) return out;
-          const hooked = await hook(name, (input ?? {}) as Record<string, unknown>, out, { raw }); // side effects (guards) always run
-          return raw ? out : hooked;
+          return await finish(out);
         } catch (err) {
           const reason = firstLine((err as Error).message);
+          // a write that may have run anyway (timeout / transport error): the hub decides (e.g. poll)
+          const alt = this.opts.hooks?.onCallError?.(name, (input ?? {}) as Record<string, unknown>, reason);
+          if (alt !== undefined) {
+            this.log(`[mcp] ${server}: ${name} failed in transport (${reason}); not marking down, the hub checks the outcome`);
+            return await finish(alt);
+          }
           const slot = this.slots[server];
+          // one slow call is not an outage: only connection failures mark the server down
+          if (TIMEOUT.test(reason)) {
+            this.log(`[mcp] ${server}: ${name} timed out (${reason}); server stays up`);
+            return unavailableError(style, server, reason);
+          }
           if (slot && slot.status.state === 'up') {
             slot.attempts = 1;
             slot.lastAttemptAt = this.now();

@@ -1,0 +1,48 @@
+{
+ "label": "v2-timeout",
+ "at": "2026-10-20T20:21:01.270Z",
+ "results": [
+  {
+   "id": "cines-paypal",
+   "calls": 3,
+   "rateLimited": 0,
+   "inputTokens": 14150,
+   "cachedTokens": 4009,
+   "outputTokens": 553,
+   "toolsSentAvg": 14,
+   "systemCharsAvg": 6053,
+   "actions": [
+    "cines.hold hold_1 570-1002 F7 $99",
+    "cines.purchase hold_1 $99 dry-run"
+   ],
+   "cards": [
+    "tool:cines_hold_seats",
+    "tool:cines_purchase"
+   ],
+   "ok": true,
+   "reply": "Amo Julián, el asiento F7 para *Dune: Mesías* en Parque Toreo ha quedado apartado y pagado. Disfrute de la función.",
+   "status": "✅ 🎟️ Compra confirmada: reserva DRYRUN-001 · $99 MXN (simulada)",
+   "ms": 21823
+  },
+  {
+   "id": "cines-hold-timeout",
+   "calls": 2,
+   "rateLimited": 0,
+   "inputTokens": 8722,
+   "cachedTokens": 4005,
+   "outputTokens": 209,
+   "toolsSentAvg": 14,
+   "systemCharsAvg": 6053,
+   "actions": [
+    "cines.hold hold_1 570-1002 B7 $99"
+   ],
+   "cards": [
+    "tool:cines_hold_seats"
+   ],
+   "ok": true,
+   "reply": "Muy bien, Amo Julián. He apartado el asiento B7 para *Dune* en Parque Toreo. El total es de $99 MXN (incluye cargos) y expirará en unos minutos.",
+   "status": "✅ 1 apartado de asientos",
+   "ms": 17424
+  }
+ ]
+}
