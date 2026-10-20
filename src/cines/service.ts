@@ -691,17 +691,18 @@ export class CinesHub {
       } else if (kind === '3ds') {
         this.log('[cines] card refused: the bank asks for 3-D Secure (nothing charged)');
         result = { error: { ...perr, code: 'CINES_CARD_3DS', retryable: false } };
-      } else if (kind === 'pin') {
+      } else if (kind === 'pin' || kind === 'pin_disabled') {
         // a wrong / too-early / disabled PIN: nothing recorded or charged, the hold stays
+        const next = kind === 'pin' ? (es ? 'Puede volver a tocar Comprar.' : 'You can tap Buy again.') : es ? 'Después vuelva a tocar Comprar.' : 'Then tap Buy again.';
         if (payHold) {
           await this.d.kv.delete(`cines:attempt:${payHold}`);
-          await this.reofferCard(payHold, `🔒 ${String(perr.message)} ${es ? 'Puede volver a tocar Comprar.' : 'You can tap Buy again.'}`);
+          await this.reofferCard(payHold, `🔒 ${String(perr.message)} ${next}`);
         }
-        this.log('[cines] arming PIN refused (nothing charged)');
-        result = { error: { ...perr, code: 'CINES_ARM_PIN', retryable: false } };
+        this.log(`[cines] arming PIN refused${kind === 'pin_disabled' ? ' (PIN arming disabled)' : ''} (nothing charged)`);
+        result = { error: { ...perr, code: kind === 'pin' ? 'CINES_ARM_PIN' : 'CINES_ARM_PIN_DISABLED', retryable: false } };
       }
     }
-    if ((tool === PURCHASE_TOOL || tool === SECURE_TOOL) && (purchaseOutcome(result) || ((result as Rec | undefined)?.error && ((result as Rec).error as Rec).code !== 'CINES_ARM_PIN'))) {
+    if ((tool === PURCHASE_TOOL || tool === SECURE_TOOL) && (purchaseOutcome(result) || ((result as Rec | undefined)?.error && !['CINES_ARM_PIN', 'CINES_ARM_PIN_DISABLED'].includes(String(((result as Rec).error as Rec).code))))) {
       await this.closeCard(payHold, result);
     }
     let out = result;

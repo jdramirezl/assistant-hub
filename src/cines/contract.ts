@@ -119,12 +119,14 @@ export function promptDetails(prompt: string | undefined): { last4?: string; tot
 /**
  * A payment error, by what it means for the user (server texts from cines-mx-mcp card.ts / purchase.ts):
  * unknown = no clear answer after the charge (never retry, never release); 3ds = the bank wants
- * 3-D Secure, refused before any charge (seats released); pin = wrong/blocked arming PIN (nothing
- * recorded, the hold stays).
+ * 3-D Secure, refused before any charge (seats released); pin = wrong PIN or "Espera N s" (nothing
+ * recorded, the hold stays, Comprar again); pin_disabled = 3rd wrong PIN (arm at the Mac first).
  */
-export function paymentErrorKind(code: string, message: string): 'unknown' | '3ds' | 'pin' | undefined {
+export function paymentErrorKind(code: string, message: string): 'unknown' | '3ds' | 'pin' | 'pin_disabled' | undefined {
   if (code === 'CINES_UNAVAILABLE' && /incierto|uncertain/i.test(message)) return 'unknown';
   if (/3-?D\s*Secure|\b3DS\b/i.test(message)) return '3ds';
+  // 3 wrong PINs (now or earlier): PIN arming is off until bin/cinesctl set-arm-pin at the Mac
+  if (/\bPIN\b/.test(message) && /desactiv/i.test(message)) return 'pin_disabled';
   if (/\bPIN\b/.test(message) && (code === 'CINES_PAYMENT_FAILED' || code === 'CINES_BAD_REQUEST')) return 'pin';
   return undefined;
 }

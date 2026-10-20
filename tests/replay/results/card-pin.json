@@ -1,0 +1,66 @@
+{
+ "label": "card-pin",
+ "at": "2026-10-20T22:03:59.470Z",
+ "results": [
+  {
+   "id": "chat",
+   "calls": 1,
+   "rateLimited": 0,
+   "inputTokens": 9481,
+   "cachedTokens": 7468,
+   "outputTokens": 93,
+   "toolsSentAvg": 35,
+   "systemCharsAvg": 6539,
+   "actions": [],
+   "cards": [],
+   "ok": true,
+   "reply": "Excelentemente bien, Amo Julián. ¿En qué le puedo servir el día de hoy?",
+   "ms": 7225
+  },
+  {
+   "id": "cines-card",
+   "calls": 2,
+   "rateLimited": 0,
+   "inputTokens": 9242,
+   "cachedTokens": 2006,
+   "outputTokens": 370,
+   "toolsSentAvg": 14,
+   "systemCharsAvg": 6332,
+   "actions": [
+    "cines.hold hold_1 570-1002 F7 $99",
+    "cines.purchase hold_1 $99 card *1234 dry-run"
+   ],
+   "cards": [
+    "tool:cines_hold_seats",
+    "purchase-card"
+   ],
+   "ok": true,
+   "reply": "🎟️ Asientos apartados — ¿confirmo la compra?\n🎬 Dune: Mesías\n📍 Cinépolis Parque Toreo · 2026-10-19 20:30 · subtitulada 2D\n💺 F7 · Admision General\n💰 $99 MXN (boletos $92 + cargos $7)\n⌛ Expira 16:12 (≈9 min)\n💳 Tarjeta guardada (predeterminada); le pediré el CVV en privado.\n\n✅ Pagado: reserva DRYRUN-001 (simulado)",
+   "status": "✅ 🎟️ Compra confirmada: reserva DRYRUN-001 · $99 MXN (simulada)",
+   "ms": 21949
+  },
+  {
+   "id": "cines-card-pin",
+   "calls": 2,
+   "rateLimited": 0,
+   "inputTokens": 9152,
+   "cachedTokens": 4009,
+   "outputTokens": 280,
+   "toolsSentAvg": 14,
+   "systemCharsAvg": 6332,
+   "actions": [
+    "cines.hold hold_1 570-1002 F7 $99",
+    "cines.pin-ok hold_1",
+    "cines.purchase hold_1 $99 card *1234"
+   ],
+   "cards": [
+    "tool:cines_hold_seats",
+    "purchase-card"
+   ],
+   "ok": true,
+   "reply": "🎟️ Asientos apartados — ¿confirmo la compra?\n🎬 Dune: Mesías\n📍 Cinépolis Parque Toreo · 2026-10-19 20:30 · subtitulada 2D\n💺 F7 · Admision General\n💰 $99 MXN (boletos $92 + cargos $7)\n⌛ Expira 16:12 (≈9 min)\n💳 Tarjeta guardada (predeterminada); le pediré el CVV en privado.\n\n✅ Pagado: reserva BK001",
+   "status": "✅ 🎟️ Compra confirmada: reserva BK001 · $99 MXN",
+   "ms": 25684
+  }
+ ]
+}

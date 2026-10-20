@@ -244,7 +244,9 @@ Telegram shows ONE message: the plan grouped by section (meal / account), with
     PayPal or the Cinépolis app. The model is told never to ask for card data, the CVV or a PIN.
   - **PIN arming:** with a PIN set on the Mac (`bin/cinesctl set-arm-pin`) and payment not armed,
     the server asks `needs_arm_pin` (6–8 digits) before the CVV, through the same secure input.
-    A wrong PIN charges nothing and keeps the hold: the card stays valid (Comprar again after 30 s).
+    A wrong PIN (or "Espera N s") charges nothing and keeps the hold: the card stays valid (Comprar
+    again after 30 s). After 3 wrong PINs PIN arming is disabled: "🔒 … En el Mac corra: bin/cinesctl
+    set-arm-pin". PayPal + PIN: the PIN first, then the PayPal wait. dryRun never asks for a PIN.
   - PayPal is approved at the Mac's screen: when `cines_purchase` returns `in_progress`, the hub
     polls `cines_hold_status` every 10 s (up to `CINES_PAYPAL_WAIT_MIN`+2 min, no model calls, never
     re-calling the purchase) with "⏳ Esperando que apruebe el pago en PayPal en el Mac…". Paid →

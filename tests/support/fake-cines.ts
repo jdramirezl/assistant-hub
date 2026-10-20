@@ -131,7 +131,7 @@ export interface FakeCinesOptions {
    * cines_hold_status.pendingInput after `cvvAfterPolls` polls (submit_code → {status:"accepted"}).
    * The fake asks the CVV even with dryRun (the real DryRunDriver does not).
    */
-  card?: { slow?: boolean; cvvAfterPolls?: number; outcome?: 'paid' | 'declined' | 'uncertain' | '3ds'; last4?: string; pin?: 'ok' | 'wrong' };
+  card?: { slow?: boolean; cvvAfterPolls?: number; outcome?: 'paid' | 'declined' | 'uncertain' | '3ds'; last4?: string; pin?: 'ok' | 'wrong' | 'wait' | 'disabled' };
 }
 /** cines-mx-mcp card.ts MSG_3DS */
 export const MSG_3DS = 'Tu banco pidió una verificación extra (3-D Secure) que todavía no puedo hacer; no cobré nada y liberé los asientos. Intenta con PayPal o desde la app de Cinépolis.';
@@ -375,6 +375,14 @@ export async function startFakeCines(opts: FakeCinesOptions = {}): Promise<FakeC
         return ask('cvv', `Escribe el CVV (3 o 4 dígitos) de tu tarjeta *${String(a.cardLast4 ?? last4)} para pagar $${h.totalMxn} MXN.`, () => settleCard(h, a, entry));
       };
       if (!c.pin || a.dryRun) return cvv();
+      // like PinArm.usable(): checked before the prompt
+      if (c.pin === 'disabled' || c.pin === 'wait') {
+        h.status = 'held';
+        paid.delete(h.holdId);
+        return c.pin === 'disabled'
+          ? err('CINES_PAYMENT_FAILED', 'El armado por PIN está desactivado tras 3 PIN incorrectos. En la Mac: bin/cinesctl set-arm-pin (o arm-payment).')
+          : err('CINES_BAD_REQUEST', 'Espera 22 s antes de intentar el PIN otra vez.');
+      }
       return ask('arm_pin', `Escribe tu PIN de compras para autorizar este pago de $${h.totalMxn} MXN.`, () => {
         if (c.pin === 'wrong') {
           h.status = 'held';
@@ -461,6 +469,10 @@ export async function startFakeCines(opts: FakeCinesOptions = {}): Promise<FakeC
         if (!a.dryRun && successes < 3 && a.userApproved !== true) return err('CINES_BAD_REQUEST', 'Las primeras 3 compras requieren la aprobación explícita del usuario (userApproved: true tras el ✅).');
         if (!a.dryRun) h.status = 'purchasing';
         if (opts.card && a.method !== 'paypal') return cardPurchase(h, a);
+        // PayPal + PIN (unarmed): the PIN first, then the PayPal step
+        if (opts.card?.pin === 'ok' && a.method === 'paypal' && !a.dryRun) {
+          return ask('arm_pin', `Escribe tu PIN de compras para autorizar este pago de $${h.totalMxn} MXN.`, () => (state.actions.push({ op: 'pin-ok', detail: h.holdId }), pay(h, a)));
+        }
         const steps = [...(opts.purchaseInputs ?? [])];
         const prompts: Record<string, string> = { cvv: 'Escribe el CVV de tu tarjeta.', otp_3ds: 'Escribe el código que te envió tu banco.' };
         const step = (): unknown => {

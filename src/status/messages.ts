@@ -114,6 +114,14 @@ export class StatusMessages {
         tech: techLine(f.why.code, requestId),
       };
     }
+    if (f.why.code === 'CINES_ARM_PIN_DISABLED') {
+      return {
+        text: this.es
+          ? '🔒 El armado por PIN está desactivado tras 3 PIN incorrectos. No se cobró nada y el apartado sigue. En el Mac corra: bin/cinesctl set-arm-pin (o bin/cinesctl arm-payment) y vuelva a tocar Comprar.'
+          : '🔒 PIN arming is disabled after 3 wrong PINs. Nothing was charged and the hold stays. On the Mac run: bin/cinesctl set-arm-pin (or bin/cinesctl arm-payment), then tap Buy again.',
+        tech: techLine(f.why.code, requestId),
+      };
+    }
     if (f.why.code === 'CINES_ARM_PIN') {
       const msg = (f.message ?? '').trim();
       return { text: `🔒 ${msg || (this.es ? 'El PIN no se aceptó. No se cobró nada.' : 'The PIN was not accepted. Nothing was charged.')} ${this.es ? 'Puede volver a tocar Comprar.' : 'You can tap Buy again.'}`, tech: techLine(f.why.code, requestId) };

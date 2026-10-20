@@ -48,6 +48,7 @@ export const ERROR_TABLE: Record<string, Entry> = {
   CINES_HOLD_UNKNOWN: { es: ['no sé si quedó apartado', 'Lo reviso; no lo reintento. Pregúnteme por el apartado en un momento.'], en: ['I do not know whether the seats were held', 'I am checking; I will not retry. Ask me about the hold in a moment.'] },
   CINES_PAYMENT_UNKNOWN: { es: ['no sé si se cobró', 'Revise su correo de Cinépolis y su banco. No liberé los asientos ni lo reintento.'], en: ['I do not know whether it was charged', 'Check your Cinépolis e-mail and your bank. I did not release the seats or retry.'] },
   CINES_CARD_3DS: { es: ['su banco pide una verificación 3-D Secure que aún no puedo hacer', 'No se cobró nada; pague con PayPal (en el Mac) o en la app de Cinépolis.'], en: ['your bank asks for 3-D Secure, which I cannot do yet', 'Nothing was charged; pay with PayPal (at the Mac) or in the Cinépolis app.'] },
+  CINES_ARM_PIN_DISABLED: { es: ['el armado por PIN está desactivado', 'En el Mac corra: bin/cinesctl set-arm-pin'], en: ['PIN arming is disabled', 'On the Mac run: bin/cinesctl set-arm-pin'] },
   CINES_ARM_PIN: { es: ['el PIN de compras no se aceptó', 'No se cobró nada; puede volver a tocar Comprar.'], en: ['the purchase PIN was not accepted', 'Nothing was charged; you can tap Buy again.'] },
   CINES_LIMIT_EXCEEDED: { es: ['el total supera el límite de $1,000 MXN', 'Elija menos asientos o una sala más barata.'], en: ['the total is over the $1,000 MXN limit', 'Pick fewer seats or a cheaper room.'] },
   // Hub-level

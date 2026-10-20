@@ -4,6 +4,8 @@
  * the CVV challenge appears in cines_hold_status.pendingInput. Secrets never reach the model.
  */
 import { afterEach, describe, expect, it } from 'vitest';
+import { readdirSync, readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { createHub, type Hub } from '../src/hub.js';
 import { testConfig } from './helpers.js';
 import { scriptedModel, lastToolResult, type Turn } from './support/scripted-model.js';
@@ -32,7 +34,8 @@ async function buy(card: NonNullable<FakeCinesOptions['card']>, text = 'compra e
   ];
   const sm = scriptedModel(script);
   logs = [];
-  const hub: Hub = createHub(testConfig({ TELEGRAM_BOT_TOKEN: '1:abc', TELEGRAM_ALLOWED_USER_IDS: String(ME) }), {
+  const cfg = testConfig({ TELEGRAM_BOT_TOKEN: '1:abc', TELEGRAM_ALLOWED_USER_IDS: String(ME) });
+  const hub: Hub = createHub(cfg, {
     model: sm.model as never,
     cinesPollMs: 20,
     registry: CINES_REGISTRY(cines.url),
@@ -46,7 +49,7 @@ async function buy(card: NonNullable<FakeCinesOptions['card']>, text = 'compra e
     const b = findButton(tg, needle)!;
     tg.push(callbackUpdate(ME, { message_id: b.messageId }, b.data));
   }
-  return { sm, hub };
+  return { sm, hub, cfg };
 }
 const status = () => tg.calls.filter((c) => /sendMessage|editMessageText/.test(c.method) && c.body.parse_mode === 'HTML').map((c) => String(c.body.text));
 const out = () => tg.outgoingText(ME).replace(/\\/g, '');
@@ -130,7 +133,7 @@ describe('saved card: Comprar → CVV via secure input → paid', () => {
 
 describe('PIN arming from Telegram (needs_arm_pin → needs_cvv)', () => {
   it('PIN then CVV, both private; paid', async () => {
-    const { sm } = await buy({ pin: 'ok' }, undefined, { realPaymentDisabled: false });
+    const { sm, cfg } = await buy({ pin: 'ok' }, undefined, { realPaymentDisabled: false });
     const pinMsg = await sendSecret(/🔒 Envíe su PIN de compras \(\$99 MXN\)/, '246810');
     await sendSecret(/🔒 Envíe el CVV de su tarjeta \*1234/, '987');
     await tg.waitFor(() => status().some((s) => /^✅ 🎟️ Compra confirmada/.test(s)), 10_000);
@@ -139,6 +142,8 @@ describe('PIN arming from Telegram (needs_arm_pin → needs_cvv)', () => {
     const blob = JSON.stringify(sm.calls.map((c) => c.prompt)) + logs.join('\n');
     expect(blob).not.toContain('246810');
     expect(blob).not.toContain('987');
+    // nor in any file of the data dir (memory, llm_calls, kv)
+    for (const f of readdirSync(cfg.dataDir)) expect(readFileSync(join(cfg.dataDir, f)).toString('latin1')).not.toContain('246810');
   }, 30_000);
 
   it('a PIN that is too short is asked again without the server', async () => {
@@ -156,6 +161,36 @@ describe('PIN arming from Telegram (needs_arm_pin → needs_cvv)', () => {
     expect(await hub.kv.get('cines:attempt:hold_1')).toBeNull(); // nothing recorded: a retry is allowed
     const edits = tg.sent('editMessageText');
     expect(JSON.stringify(edits.at(-1)!.body.reply_markup)).toMatch(/cines:b:hold_1/);
+  }, 30_000);
+});
+
+describe('PayPal + PIN: needs_arm_pin → the PayPal step', () => {
+  it('PIN privately, then the PayPal wait (in_progress polled) → paid', async () => {
+    await buy({ pin: 'ok' }, 'compra el F7 para Dune hoy en la noche con PayPal', { inProgress: { polls: 2, outcome: 'paid' } });
+    await sendSecret(/🔒 Envíe su PIN de compras \(\$99 MXN\)/, '246810');
+    await tg.waitFor(() => status().some((s) => /^✅ 🎟️ Compra confirmada/.test(s)), 10_000);
+    expect(status()).toContain('⏳ Esperando que apruebe el pago en PayPal en el Mac, Amo Julián…');
+    expect(out()).not.toMatch(/🔒 Envíe el CVV/);
+    expect(purchases()[0]!.args).toMatchObject({ method: 'paypal' });
+    expect(cines.secrets).toEqual(['246810']);
+  }, 30_000);
+});
+
+describe('PIN refused before the prompt (PinArm.usable)', () => {
+  it('3rd wrong PIN earlier → disabled: 🔒 run set-arm-pin at the Mac; no prompt, card still usable', async () => {
+    const { hub } = await buy({ pin: 'disabled' });
+    await tg.waitFor(() => status().some((s) => /desactivado/.test(s)), 10_000);
+    expect(status().at(-1)).toMatch(/^🔒 El armado por PIN está desactivado tras 3 PIN incorrectos\. No se cobró nada y el apartado sigue\. En el Mac corra: bin\/cinesctl set-arm-pin/);
+    expect(out()).not.toMatch(/🔒 Envíe/);
+    expect(await hub.kv.get('cines:attempt:hold_1')).toBeNull();
+    expect(JSON.stringify(tg.sent('editMessageText').at(-1)!.body.reply_markup)).toMatch(/cines:b:hold_1/);
+  }, 30_000);
+
+  it('"Espera N s": the server text, the card stays (Comprar again)', async () => {
+    await buy({ pin: 'wait' });
+    await tg.waitFor(() => status().some((s) => /Espera 22 s/.test(s)), 10_000);
+    expect(status().at(-1)).toMatch(/^🔒 Espera 22 s antes de intentar el PIN otra vez\. Puede volver a tocar Comprar\./);
+    expect(JSON.stringify(tg.sent('editMessageText').at(-1)!.body.reply_markup)).toMatch(/cines:b:hold_1/);
   }, 30_000);
 });
 

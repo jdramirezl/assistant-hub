@@ -20,6 +20,8 @@ export interface Scenario {
   cinesTimeoutMs?: number;
   /** Fake cines-mx-mcp behavior (Phase 3 tools are always served). */
   cines?: FakeCinesOptions;
+  /** No CINES_PURCHASE_DRY_RUN: the hub sends a "real" purchase to the FAKE server (the PIN step is skipped for dryRun). */
+  fakeRealPayment?: boolean;
   /** Sanity check of the end state (the main check is "same actions as the baseline"). */
   ok(r: {
     actions: Action[];
@@ -481,6 +483,24 @@ export const SCENARIOS: Scenario[] = [
         cines.calls.filter((t) => t === 'cines_purchase').length === 1 || 'purchase re-called',
         photos === 0 || `photos: ${photos}`,
         /^✅ 🎟️ Compra confirmada: reserva DRYRUN-001 · \$99 MXN/.test(status) || `status: ${status || 'none'}`,
+      ),
+  },
+  {
+    id: 'cines-card-pin',
+    // cines-mx-mcp cddca3d: unarmed + PIN configured → needs_arm_pin → needs_cvv → paid; neither secret reaches Gemini
+    cines: { card: { pin: 'ok' } },
+    fakeRealPayment: true,
+    turns: ['aparta y compra el F7 para la función 570-1002 de Dune en el Toreo', { secret: '246810' }, { secret: '4729' }],
+    ok: ({ cines, outgoing, logs, status }) =>
+      both(
+        cines.actions.map((a) => a.op).join(',') === 'hold,pin-ok,purchase' || `cines actions: ${cines.actions.map((a) => a.op).join(',') || 'none'}`,
+        /🔒 Envíe su PIN de compras \(\$99 MXN\)/.test(outgoing) || 'no secure PIN prompt',
+        /🔒 Envíe el CVV de su tarjeta \*1234/.test(outgoing) || 'no secure CVV prompt',
+        cines.secrets.join() === '246810,4729' || `secrets: ${cines.secrets.length}`,
+        !logs.join('\n').includes('246810') && !logs.join('\n').includes('4729') || 'secret in logs',
+        !logs.some((l) => l.startsWith('LEAK') || l.startsWith('SKIPPED')) || logs.find((l) => l.startsWith('LEAK') || l.startsWith('SKIPPED'))!,
+        cines.calls.filter((t) => t === 'cines_purchase').length === 1 || 'purchase re-called',
+        /^✅ 🎟️ Compra confirmada: reserva BK001 · \$99 MXN/.test(status) || `status: ${status || 'none'}`,
       ),
   },
   {

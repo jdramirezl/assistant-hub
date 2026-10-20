@@ -103,7 +103,8 @@ async function runScenario(s: Scenario, pacer: ReturnType<typeof pacedFetch>, ap
   const mason = await startMasonReplica(state, today);
   const finance = await startFinanceReplica(state, today, 'replay-token');
   // like the real server today: real payment disabled; the hub sends dryRun (CINES_PURCHASE_DRY_RUN)
-  const cines = await startFakeCines({ phase3: true, realPaymentDisabled: true, ...(s.cines ?? {}) });
+  // fakeRealPayment: a non-dryRun purchase against the FAKE server only (the PIN step needs it; nothing real exists)
+  const cines = await startFakeCines({ phase3: true, realPaymentDisabled: !s.fakeRealPayment, ...(s.cines ?? {}) });
   const tg = await new MockTelegram().start();
   for (const f of ['receipt.png', 'voice-expense.wav', 'voice-meal.wav', 'voice-breakfast.wav', 'voice-snack.wav', 'voice-dinner-en.wav', 'voice-mixed.wav', 'voice-snack-items.wav']) {
     tg.addFile(f, { path: `files/${f}`, mime: f.endsWith('.png') ? 'image/png' : 'audio/wav', bytes: readFileSync(join(FIXTURES, f)) });
@@ -118,7 +119,7 @@ async function runScenario(s: Scenario, pacer: ReturnType<typeof pacedFetch>, ap
     FINANCE_MCP_URL: finance.url,
     FINANCE_MCP_TOKEN: 'replay-token',
     CINES_MCP_URL: cines.url,
-    CINES_PURCHASE_DRY_RUN: '1',
+    ...(s.fakeRealPayment ? {} : { CINES_PURCHASE_DRY_RUN: '1' }),
     MCP_REGISTRY_PATH: join(process.cwd(), 'mcp-servers.json'),
   };
   const logs: string[] = [];
