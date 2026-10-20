@@ -207,6 +207,7 @@ export function createHub(config: HubConfig, deps: HubDeps = {}): Hub {
 
   const usage = new UsageLog(client, deps.now);
   const observe = createUsageObserver(usage, { now: deps.now, primaryModel: 'gemini-3.5-flash-lite', onError: (e) => log(`[usage] ${e.message}`) });
+  if (!deps.model) log(`[models] Gemini key from ${config.modelKeySource}${config.modelKeySource === 'DEV_GOOGLE_API_KEY' ? ' (dev project)' : ''}`);
   const gemini = deps.model ? undefined : createGeminiModels(config.googleApiKey, log, observe, deps.geminiFetch);
   const transcribeModel = deps.transcribeModel ?? gemini?.default;
   const transcribe = transcribeModel ? createTranscriber(transcribeModel, { providerOptions: PROVIDER_OPTIONS.default, log, record: (id, u) => budget.record(id, u) }) : undefined;

@@ -29,6 +29,20 @@ npm run dev       # Mastra Studio at http://localhost:4111
 Values set to `CHANGEME` are treated as not configured. With no Telegram token (or no
 `TELEGRAM_ALLOWED_USER_IDS`), the hub runs in Studio-only mode and logs a warning.
 
+### Trying Cinépolis on the dev bot (this laptop)
+
+The dev bot uses `DEV_GOOGLE_API_KEY` (AssistantDev project) as its model key: outside
+production it wins over `GOOGLE_API_KEY`, so the prod key is never spent in dev. Startup logs
+`[models] Gemini key from DEV_GOOGLE_API_KEY (dev project)`.
+
+```bash
+cd ~/code/cines-mx-mcp && npx tsx src/cli.ts probe          # must say OK (FAIL CINES_BLOCKED = Cloudflare blocks this network)
+npm run dev &                                                # cines-mx-mcp on 127.0.0.1:8686 (read tools + seat maps, no login)
+cd ~/code/assistant-hub && grep -q '^DEV_GOOGLE_API_KEY=' .env || sed -n 's/^REPLAY_GOOGLE_API_KEY=/DEV_GOOGLE_API_KEY=/p' .env >> .env
+grep -q '^CINES_MCP_URL=' .env || echo 'CINES_MCP_URL=http://127.0.0.1:8686/mcp' >> .env
+npm run dev                                                  # dev hub + @jdrami_hub_dev_bot (long polling)
+```
+
 ## Apps (MCP servers)
 
 Apps are listed in `mcp-servers.json`. Adding an app means adding one entry; secrets are

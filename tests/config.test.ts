@@ -84,3 +84,15 @@ describe('loadConfig', () => {
     expect(() => loadConfig({ ...base, DAILY_TOKEN_CAP: '-1' })).toThrow(/DAILY_TOKEN_CAP/);
   });
 });
+
+describe('DEV_GOOGLE_API_KEY', () => {
+  it('wins over GOOGLE_API_KEY outside production, never in production', async () => {
+    const { loadConfig } = await import('../src/config.js');
+    const dev = loadConfig({ NODE_ENV: 'development', HUB_DATA_DIR: '/tmp/x', GOOGLE_API_KEY: 'prod-key', DEV_GOOGLE_API_KEY: 'dev-key' });
+    expect(dev.googleApiKey).toBe('dev-key');
+    expect(dev.modelKeySource).toBe('DEV_GOOGLE_API_KEY');
+    const prod = loadConfig({ NODE_ENV: 'production', HUB_DATA_DIR: '/tmp/x', GOOGLE_API_KEY: 'prod-key', DEV_GOOGLE_API_KEY: 'dev-key' });
+    expect(prod.googleApiKey).toBe('prod-key');
+    expect(loadConfig({ HUB_DATA_DIR: '/tmp/x', DEV_GOOGLE_API_KEY: 'dev-key' }).googleApiKey).toBe('dev-key');
+  });
+});

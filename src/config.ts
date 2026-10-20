@@ -38,6 +38,8 @@ const positiveNumber = (name: string) =>
 const EnvSchema = z.object({
   NODE_ENV: z.string().optional(),
   GOOGLE_API_KEY: optionalValue,
+  /** Dev laptop only: model key from a SEPARATE Google project; wins over GOOGLE_API_KEY outside production. */
+  DEV_GOOGLE_API_KEY: optionalValue,
   HUB_DATA_DIR: optionalValue.refine((v) => v === undefined || isAbsolute(v), 'HUB_DATA_DIR must be an absolute path'),
   HUB_HOST: optionalValue.refine(
     (v) => v === undefined || LOOPBACK.has(v),
@@ -66,6 +68,8 @@ const EnvSchema = z.object({
 export interface HubConfig {
   isTest: boolean;
   googleApiKey?: string;
+  /** Which env var the model key came from (logged at startup, never the key). */
+  modelKeySource: 'GOOGLE_API_KEY' | 'DEV_GOOGLE_API_KEY';
   dataDir: string;
   dbPath: string;
   server: { host: string; port: number };
@@ -108,7 +112,10 @@ export function loadConfig(env: Record<string, string | undefined> = process.env
   }
   const e = parsed.data;
   const isTest = e.NODE_ENV === 'test';
-  if (!e.GOOGLE_API_KEY && !isTest) {
+  // Outside production a dev key (separate Google project) always wins, so the dev bot never
+  // spends the production key's quota even if GOOGLE_API_KEY still holds it.
+  const devKey = e.NODE_ENV !== 'production' ? e.DEV_GOOGLE_API_KEY : undefined;
+  if (!e.GOOGLE_API_KEY && !devKey && !isTest) {
     throw new ConfigError(['GOOGLE_API_KEY: required (get one at https://aistudio.google.com/apikey)']);
   }
 
@@ -130,7 +137,8 @@ export function loadConfig(env: Record<string, string | undefined> = process.env
 
   return {
     isTest,
-    googleApiKey: e.GOOGLE_API_KEY,
+    googleApiKey: devKey ?? e.GOOGLE_API_KEY,
+    modelKeySource: devKey ? 'DEV_GOOGLE_API_KEY' : 'GOOGLE_API_KEY',
     dataDir,
     dbPath: join(dataDir, 'mastra.db'),
     server: { host: e.HUB_HOST ?? '127.0.0.1', port: e.HUB_PORT ? Number(e.HUB_PORT) : 4111 },
