@@ -1,0 +1,150 @@
+{
+ "label": "card",
+ "at": "2026-10-20T21:56:31.174Z",
+ "results": [
+  {
+   "id": "eggs-toast",
+   "calls": 2,
+   "rateLimited": 0,
+   "inputTokens": 13469,
+   "cachedTokens": 4017,
+   "outputTokens": 249,
+   "toolsSentAvg": 22,
+   "systemCharsAvg": 4938,
+   "actions": [
+    "mfp.log Breakfast: Egg, whole, large × 2 [1 large egg] = 144 kcal",
+    "mfp.log Breakfast: Toast, white bread × 1 [1 slice] = 75 kcal"
+   ],
+   "cards": [],
+   "ok": true,
+   "reply": "Enseguida, Amo Julián. \n\nDesayuno: 2 items, 219 kcal (Huevo y Tostada).",
+   "status": "✅ Desayuno: 2 alimentos, 219 kcal",
+   "ms": 8203
+  },
+  {
+   "id": "chat",
+   "calls": 1,
+   "rateLimited": 0,
+   "inputTokens": 9481,
+   "cachedTokens": 0,
+   "outputTokens": 118,
+   "toolsSentAvg": 35,
+   "systemCharsAvg": 6539,
+   "actions": [],
+   "cards": [],
+   "ok": true,
+   "reply": "Excelente, Amo Julián. A su entera disposición. ¿En qué le puedo servir el día de hoy?",
+   "ms": 9868
+  },
+  {
+   "id": "cines-paypal",
+   "calls": 2,
+   "rateLimited": 0,
+   "inputTokens": 9399,
+   "cachedTokens": 2007,
+   "outputTokens": 522,
+   "toolsSentAvg": 14,
+   "systemCharsAvg": 6332,
+   "actions": [
+    "cines.hold hold_1 570-1002 F7 $99",
+    "cines.purchase hold_1 $99 dry-run"
+   ],
+   "cards": [
+    "tool:cines_hold_seats",
+    "purchase-card"
+   ],
+   "ok": true,
+   "reply": "🎟️ Asientos apartados — ¿confirmo la compra?\n🎬 Dune: Mesías\n📍 Cinépolis Parque Toreo · 2026-10-19 20:30 · subtitulada 2D\n💺 F7 · Admision General\n💰 $99 MXN (boletos $92 + cargos $7)\n⌛ Expira 16:03 (≈9 min)\n💳 PayPal: apruébelo en la pantalla del Mac.\n\n✅ Pagado: reserva DRYRUN-001 (simulado)",
+   "status": "✅ 🎟️ Compra confirmada: reserva DRYRUN-001 · $99 MXN (simulada)",
+   "ms": 21421
+  },
+  {
+   "id": "cines-hold-slow",
+   "calls": 2,
+   "rateLimited": 0,
+   "inputTokens": 8993,
+   "cachedTokens": 4008,
+   "outputTokens": 166,
+   "toolsSentAvg": 14,
+   "systemCharsAvg": 6332,
+   "actions": [
+    "cines.hold hold_1 570-1002 F7 $99",
+    "cines.purchase hold_1 $99 dry-run"
+   ],
+   "cards": [
+    "tool:cines_hold_seats",
+    "purchase-card"
+   ],
+   "ok": true,
+   "reply": "🎟️ Asientos apartados — ¿confirmo la compra?\n🎬 ?\n📍 Cinépolis Parque Toreo · 2026-10-19 20:30 · subtitulada 2D\n💺 F7 · Admision General\n💰 $99 MXN (boletos $92 + cargos $7)\n⌛ Expira 16:04 (≈9 min)\n💳 Tarjeta guardada (predeterminada); le pediré el CVV en privado.\n\n✅ Pagado: reserva DRYRUN-001 (simulado)",
+   "status": "✅ 🎟️ Compra confirmada: reserva DRYRUN-001 · $99 MXN (simulada)",
+   "ms": 18642
+  },
+  {
+   "id": "cines-buy",
+   "calls": 2,
+   "rateLimited": 0,
+   "inputTokens": 9231,
+   "cachedTokens": 4010,
+   "outputTokens": 353,
+   "toolsSentAvg": 14,
+   "systemCharsAvg": 6332,
+   "actions": [
+    "cines.hold hold_1 570-1002 F7,F8 $198",
+    "cines.purchase hold_1 $198 dry-run"
+   ],
+   "cards": [
+    "tool:cines_hold_seats",
+    "purchase-card"
+   ],
+   "ok": true,
+   "reply": "🎟️ Asientos apartados — ¿confirmo la compra?\n🎬 Dune: Mesías\n📍 Cinépolis Parque Toreo · 2026-10-19 20:30 · subtitulada 2D\n💺 F7, F8 · Admision General\n💰 $198 MXN (boletos $184 + cargos $14)\n⌛ Expira 16:04 (≈9 min)\n💳 Tarjeta guardada (predeterminada); le pediré el CVV en privado.\n\n✅ Pagado: reserva DRYRUN-001 (simulado)",
+   "status": "✅ 🎟️ Compra confirmada: reserva DRYRUN-001 · $198 MXN (simulada)",
+   "ms": 21159
+  },
+  {
+   "id": "cines-card",
+   "calls": 2,
+   "rateLimited": 0,
+   "inputTokens": 9070,
+   "cachedTokens": 4008,
+   "outputTokens": 470,
+   "toolsSentAvg": 14,
+   "systemCharsAvg": 6332,
+   "actions": [
+    "cines.hold hold_1 570-1002 F7 $99",
+    "cines.purchase hold_1 $99 card *1234 dry-run"
+   ],
+   "cards": [
+    "tool:cines_hold_seats",
+    "purchase-card"
+   ],
+   "ok": true,
+   "reply": "🎟️ Asientos apartados — ¿confirmo la compra?\n🎬 Dune: Mesías\n📍 Cinépolis Parque Toreo · 2026-10-19 20:30 · subtitulada 2D\n💺 F7 · Admision General\n💰 $99 MXN (boletos $92 + cargos $7)\n⌛ Expira 16:04 (≈9 min)\n💳 Tarjeta guardada (predeterminada); le pediré el CVV en privado.\n\n✅ Pagado: reserva DRYRUN-001 (simulado)",
+   "status": "✅ 🎟️ Compra confirmada: reserva DRYRUN-001 · $99 MXN (simulada)",
+   "ms": 21675
+  },
+  {
+   "id": "cines-card-slow",
+   "calls": 2,
+   "rateLimited": 0,
+   "inputTokens": 9251,
+   "cachedTokens": 4010,
+   "outputTokens": 616,
+   "toolsSentAvg": 14,
+   "systemCharsAvg": 6332,
+   "actions": [
+    "cines.hold hold_1 570-1002 F7 $99",
+    "cines.purchase hold_1 $99 card *1234 dry-run"
+   ],
+   "cards": [
+    "tool:cines_hold_seats",
+    "purchase-card"
+   ],
+   "ok": true,
+   "reply": "🎟️ Asientos apartados — ¿confirmo la compra?\n🎬 Dune: Mesías\n📍 Cinépolis Parque Toreo · 2026-10-19 20:30 · subtitulada 2D\n💺 F7 · Admision General\n💰 $99 MXN (boletos $92 + cargos $7)\n⌛ Expira 16:05 (≈9 min)\n💳 Tarjeta guardada (predeterminada); le pediré el CVV en privado.\n\n✅ Pagado: reserva DRYRUN-001 (simulado)",
+   "status": "✅ 🎟️ Compra confirmada: reserva DRYRUN-001 · $99 MXN (simulada)",
+   "ms": 26169
+  }
+ ]
+}

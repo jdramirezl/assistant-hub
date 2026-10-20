@@ -406,7 +406,7 @@ export const SCENARIOS: Scenario[] = [
     id: 'cines-paypal',
     // PayPal approved at the Mac: purchase returns in_progress, the hub polls hold_status, then paid with a screenshot
     cines: { inProgress: { polls: 3, outcome: 'paid' } },
-    turns: ['aparta y compra el F7 para la función 570-1002 de Dune en el Toreo'],
+    turns: ['aparta y compra el F7 para la función 570-1002 de Dune en el Toreo, con PayPal'],
     ok: ({ cines, photos, status, outgoing }) =>
       both(
         cines.calls.filter((t) => t === 'cines_purchase').length === 1 || `purchase calls: ${cines.calls.filter((t) => t === 'cines_purchase').length}`,
@@ -461,6 +461,43 @@ export const SCENARIOS: Scenario[] = [
         !logs.some((l) => l.startsWith('SKIPPED')) || 'no secure prompt before the secret',
         (cines.args.find((c) => c.tool === 'cines_purchase')?.args.expectedTotal === 198) || 'purchase total not from the hold',
         cines.args.find((c) => c.tool === 'cines_purchase')?.args.dryRun === true || 'purchase not sent as dryRun',
+      ),
+  },
+  {
+    id: 'cines-card',
+    // cines-mx-mcp 0e2f600: the saved card (default) → needs_cvv → secure CVV (never to Gemini) → paid, no photo
+    cines: { card: {} },
+    turns: ['aparta y compra el F7 para la función 570-1002 de Dune en el Toreo', { secret: '4729' }],
+    ok: ({ cines, cards, outgoing, logs, status, photos }) =>
+      both(
+        cines.actions.map((a) => a.op).join(',') === 'hold,purchase' || `cines actions: ${cines.actions.map((a) => a.op).join(',') || 'none'}`,
+        cards.includes('purchase-card') || `cards pressed: ${cards.join(',')}`,
+        /Tarjeta guardada \(predeterminada\)/.test(outgoing) || 'card line missing on the purchase card',
+        /🔒 Envíe el CVV de su tarjeta \*1234 \(\$99 MXN\)/.test(outgoing) || 'no secure CVV prompt',
+        cines.secrets.join() === '4729' || `secrets: ${cines.secrets.length}`,
+        !logs.join('\n').includes('4729') || 'CVV in logs',
+        !logs.some((l) => l.startsWith('LEAK')) || 'CVV sent to Gemini',
+        !logs.some((l) => l.startsWith('SKIPPED')) || 'no secure prompt before the CVV',
+        cines.calls.filter((t) => t === 'cines_purchase').length === 1 || 'purchase re-called',
+        photos === 0 || `photos: ${photos}`,
+        /^✅ 🎟️ Compra confirmada: reserva DRYRUN-001 · \$99 MXN/.test(status) || `status: ${status || 'none'}`,
+      ),
+  },
+  {
+    id: 'cines-card-slow',
+    // the purchase returns in_progress before the CVV challenge: it appears in hold_status.pendingInput
+    cines: { card: { slow: true, cvvAfterPolls: 2 } },
+    turns: ['aparta y compra el F7 para la función 570-1002 de Dune en el Toreo', { secret: '4729' }],
+    ok: ({ cines, outgoing, logs, status }) =>
+      both(
+        cines.calls.filter((t) => t === 'cines_purchase').length === 1 || 'purchase re-called',
+        cines.calls.filter((t) => t === 'cines_hold_status').length >= 2 || 'did not poll',
+        /🔒 Envíe el CVV de su tarjeta \*1234/.test(outgoing) || 'no secure CVV prompt from pendingInput',
+        logs.some((l) => /secure input from cines_hold_status \(cvv\)/.test(l)) || 'pendingInput not used',
+        cines.secrets.join() === '4729' || `secrets: ${cines.secrets.length}`,
+        !logs.some((l) => l.startsWith('LEAK') || l.startsWith('SKIPPED')) || logs.find((l) => l.startsWith('LEAK') || l.startsWith('SKIPPED'))!,
+        !/PayPal/.test(outgoing) || 'PayPal wording for a card purchase',
+        /^✅ 🎟️ Compra confirmada: reserva DRYRUN-001 · \$99 MXN/.test(status) || `status: ${status || 'none'}`,
       ),
   },
 ];

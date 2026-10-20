@@ -26,7 +26,7 @@ import { appName, appOfTool, errorOf, explain } from './status/errors.js';
 import { StatusRunEnd, StatusTracker } from './status/tracker.js';
 import { formatEstado, recentFailures, recordFailure } from './status/estado.js';
 import { hubVersion } from './version.js';
-import { CinesHub } from './cines/service.js';
+import { CinesHub, type PendingSecure } from './cines/service.js';
 import { cinesApprovalCard } from './cines/card.js';
 import { genericApprovalCard } from './status/approval-card.js';
 import { HOLD_TOOL, HUB_ONLY_TOOLS, MONEY_TOOLS, PURCHASE_TOOL } from './cines/contract.js';
@@ -203,7 +203,7 @@ export function createHub(config: HubConfig, deps: HubDeps = {}): Hub {
           ? (input) => cines!.purchaseNeedsApproval(input)
           : tool === HOLD_TOOL
             ? // seats checked (and the showtime fixed) BEFORE the card; a hold that cannot work gets no card
-              async (input) => !('error' in (await cines!.prepareHold(usageContext.getStore()?.chatId ?? 'local', input)))
+              async (input) => !('error' in (await cines!.prepareHold(usageContext.getStore()?.chatId ?? 'local', input, usageContext.getStore()?.text)))
             : undefined,
       beforeCall: (tool, given) => {
         if (deps.debug) {
@@ -278,7 +278,7 @@ export function createHub(config: HubConfig, deps: HubDeps = {}): Hub {
     log,
     now: deps.now,
     fetch: deps.cinesFetch,
-    securePrompt: (kind) => voice.securePrompt(kind),
+    securePrompt: (kind, details) => voice.securePrompt(kind, details),
     secureBadFormat: (kind) => voice.secureBadFormat(kind),
     secureExpired: () => voice.secureExpired(),
     dryRun: config.cinesDryRun,
@@ -451,7 +451,7 @@ export function createHub(config: HubConfig, deps: HubDeps = {}): Hub {
       pending: (chatId) => cinesHub.pending(chatId),
       cancel: (chatId) => cinesHub.cancelSecure(chatId),
       looksLikeSecret: (kind, text) => cinesHub.looksLikeSecret(kind, text),
-      deliver: (chatId, value, p) => cinesHub.deliver(chatId, value, p),
+      deliver: (chatId, value, p) => (p.purpose === 'payment' ? securePayment(chatId, value, p) : cinesHub.deliver(chatId, value, p)),
     },
   });
 
@@ -477,6 +477,27 @@ export function createHub(config: HubConfig, deps: HubDeps = {}): Hub {
       const r = m[1] === 'b' ? await cinesHub.buyFromCard(holdId) : await cinesHub.releaseFromCard(holdId);
       if (r !== undefined) tracker?.onToolEvent({ kind: 'result', toolCallId: `card-${requestId}`, toolName: tool, displayName: tool, argsSummary: '', args: { holdId }, result: r, resultText: '', durationMs: 0, isError: false });
       await tracker?.finish();
+    });
+  }
+
+  /**
+   * The user's CVV / arming PIN / bank code for a purchase: delivered by the hub, and the outcome
+   * (paid, failed, unknown, the next secret) reported by its own status message, like a purchase
+   * card button. The model is not called (the secret never reaches it either way).
+   */
+  async function securePayment(chatId: string, value: string, p: PendingSecure): Promise<{ agentText?: string; userText?: string }> {
+    const requestId = newRequestId();
+    const tracker = makeTracker?.(chatId, requestId);
+    return withUsageScope({ requestId, intent: 'cines', media: 'text', kind: 'resume', chatId, domains: ['cines'], status: tracker }, async () => {
+      tracker?.start();
+      log(`[req ${requestId}] [cines] secure ${p.kind} for ${p.holdId ?? 'a purchase'}`);
+      const r = await cinesHub.deliver(chatId, value, p);
+      const res = r.payment?.result as Record<string, unknown> | undefined;
+      // only a settled purchase is reported here; a next secret / a background job reports itself
+      const settled = !!res && (res.status === 'paid' || !!res.error);
+      if (settled) tracker?.onToolEvent({ kind: 'result', toolCallId: `secure-${requestId}`, toolName: PURCHASE_TOOL, displayName: PURCHASE_TOOL, argsSummary: '', args: { holdId: p.holdId }, result: res, resultText: '', durationMs: 0, isError: false });
+      await tracker?.finish();
+      return { userText: r.userText, agentText: r.payment ? undefined : r.agentText };
     });
   }
 

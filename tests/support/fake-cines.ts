@@ -1,6 +1,6 @@
 /**
  * Fake cines-mx-mcp for tests and the replay. Serves the EXACT tool definitions exported from
- * cines-mx-mcp main 542f827 (fixtures/cines-tools.json: read + seat tools;
+ * cines-mx-mcp main cddca3d (saved card + CVV, PIN arming) (fixtures/cines-tools.json: read + seat tools;
  * fixtures/cines-phase3-tools.json: the final Phase 3 contract v1) and mimics their results.
  *
  * Plain stateless Streamable HTTP (JSON responses) on loopback, like the real server, plus
@@ -124,7 +124,17 @@ export interface FakeCinesOptions {
   successes?: number;
   /** Like the real server today: a non-dryRun payment fails ("aún no está habilitado"). */
   realPaymentDisabled?: boolean;
+  /**
+   * The saved-card flow (cines-mx-mcp 0e2f600/cddca3d), for any method but "paypal":
+   * [needs_arm_pin →] needs_cvv → paid (no imageUrl) | declined | uncertain; '3ds' is refused
+   * before any charge. slow: the purchase returns in_progress and the CVV challenge appears in
+   * cines_hold_status.pendingInput after `cvvAfterPolls` polls (submit_code → {status:"accepted"}).
+   * The fake asks the CVV even with dryRun (the real DryRunDriver does not).
+   */
+  card?: { slow?: boolean; cvvAfterPolls?: number; outcome?: 'paid' | 'declined' | 'uncertain' | '3ds'; last4?: string; pin?: 'ok' | 'wrong' };
 }
+/** cines-mx-mcp card.ts MSG_3DS */
+export const MSG_3DS = 'Tu banco pidió una verificación extra (3-D Secure) que todavía no puedo hacer; no cobré nada y liberé los asientos. Intenta con PayPal o desde la app de Cinépolis.';
 /** Cinépolis fees per ticket (included in `total`). */
 export const FEE_MXN = 7;
 export interface FakeCines {
@@ -167,14 +177,15 @@ export async function startFakeCines(opts: FakeCinesOptions = {}): Promise<FakeC
   };
   const holds = new Map<string, Rec & { holdId: string; totalMxn: number; status: string; seats: string[] }>();
   const paid = new Set<string>();
-  const pending = new Map<string, { kind: string; next: (value: string) => unknown }>();
+  const pending = new Map<string, { kind: string; prompt: string; expiresAt: string; next: (value: string) => unknown; accepted?: boolean }>();
   let reqSeq = 0;
   let successes = opts.successes ?? 0;
-  const STATUS: Record<string, string> = { email_code: 'needs_email_code', cvv: 'needs_cvv', otp_3ds: 'needs_3ds' };
-  const ask = (kind: string, prompt: string, next: (value: string) => unknown) => {
+  const STATUS: Record<string, string> = { email_code: 'needs_email_code', cvv: 'needs_cvv', otp_3ds: 'needs_3ds', arm_pin: 'needs_arm_pin' };
+  const ask = (kind: string, prompt: string, next: (value: string) => unknown, accepted = false) => {
     const challengeId = `sec_${++reqSeq}`;
-    pending.set(challengeId, { kind, next });
-    return { status: STATUS[kind], secure: true, challengeId, kind, prompt, expiresAt: new Date(Date.now() + 5 * 60_000).toISOString() };
+    const expiresAt = new Date(Date.now() + 5 * 60_000).toISOString();
+    pending.set(challengeId, { kind, prompt, expiresAt, next, accepted });
+    return { status: STATUS[kind], secure: true, challengeId, kind, prompt, expiresAt };
   };
 
   const handlers: Record<string, (a: Rec) => unknown> = {
@@ -316,6 +327,65 @@ export async function startFakeCines(opts: FakeCinesOptions = {}): Promise<FakeC
       const n = h.holdId.replace(/\D/g, '').padStart(3, '0');
       return { status: 'paid', purchaseId: `pur_${n}`, dryRun: a.dryRun || undefined, bookingNumber: a.dryRun ? `DRYRUN-${n}` : `BK${n}`, total: h.totalMxn, currency: 'MXN', totalMxn: h.totalMxn, seats: h.seats, imageUrl: publish() };
     };
+    const c = opts.card ?? {};
+    const last4 = c.last4 ?? '1234';
+    /** Settle a card charge after the CVV: like CardDriver.pay + the ledger. */
+    const settleCard = (h: (typeof holds extends Map<string, infer V> ? V : never), a: Rec, entry: Rec) => {
+      const n = h.holdId.replace(/\D/g, '').padStart(3, '0');
+      const outcome = c.outcome ?? 'paid';
+      if (outcome === 'paid') {
+        h.status = a.dryRun ? 'held' : 'purchased';
+        if (!a.dryRun) successes++;
+        Object.assign(entry, { status: 'paid', bookingNumber: a.dryRun ? `DRYRUN-${n}` : `BK${n}` });
+        state.actions.push({ op: 'purchase', detail: `${h.holdId} $${h.totalMxn} card *${String(a.cardLast4 ?? last4)}${a.dryRun ? ' dry-run' : ''}` });
+        if (lastJob?.tool === 'cines_purchase') lastJob = { ...lastJob, status: 'done', finishedAt: new Date().toISOString() };
+        return { status: 'paid', purchaseId: entry.purchaseId, dryRun: a.dryRun || undefined, bookingNumber: entry.bookingNumber, transactionNumber: `TX${n}`, total: h.totalMxn, currency: 'MXN', seats: h.seats };
+      }
+      const e =
+        outcome === 'declined'
+          ? err('CINES_PAYMENT_FAILED', `Cinépolis rechazó el pago con la tarjeta *${last4} (fondos insuficientes). No se cobró nada y liberé los asientos.`)
+          : err('CINES_UNAVAILABLE', 'El resultado del pago es incierto (sin respuesta de handlerComplete). No libero los asientos ni reintento; revisa tu correo de Cinépolis y tu banco.');
+      if (outcome === 'declined') h.status = 'released';
+      Object.assign(entry, { status: outcome === 'declined' ? 'failed' : 'unknown' });
+      state.actions.push({ op: `purchase-${outcome}`, detail: h.holdId });
+      if (lastJob?.tool === 'cines_purchase') lastJob = { ...lastJob, status: 'failed', error: e.error, finishedAt: new Date().toISOString() };
+      return e;
+    };
+    let slowCard: { h: (typeof holds extends Map<string, infer V> ? V : never); a: Rec; entry: Rec; polls: number; asked?: boolean } | undefined;
+    const cardPurchase = (h: (typeof holds extends Map<string, infer V> ? V : never), a: Rec): unknown => {
+      if (opts.paymentArmed === false && !a.dryRun && !c.pin) {
+        h.status = 'held';
+        paid.delete(h.holdId);
+        return err('CINES_PAYMENT_FAILED', 'El pago real no está armado. En la Mac servidor: bin/cinesctl arm-payment (válido 30 min, un solo intento).');
+      }
+      if (c.outcome === '3ds') {
+        h.status = 'released';
+        state.actions.push({ op: 'purchase-3ds', detail: h.holdId });
+        return err('CINES_PAYMENT_FAILED', MSG_3DS);
+      }
+      const n = h.holdId.replace(/\D/g, '').padStart(3, '0');
+      const entry: Rec = { purchaseId: `pur_${n}`, at: new Date().toISOString(), total: h.totalMxn, currency: 'MXN', status: 'started', dryRun: a.dryRun || undefined, holdId: h.holdId };
+      const cvv = () => {
+        ledger.push(entry);
+        if (c.slow) {
+          lastJob = { jobId: `job_${n}`, tool: 'cines_purchase', status: 'running', startedAt: new Date().toISOString() };
+          slowCard = { h, a, entry, polls: 0 };
+          return { status: 'in_progress', jobId: `job_${n}`, note: 'Sigue en curso; consulta con cines_hold_status.' };
+        }
+        return ask('cvv', `Escribe el CVV (3 o 4 dígitos) de tu tarjeta *${String(a.cardLast4 ?? last4)} para pagar $${h.totalMxn} MXN.`, () => settleCard(h, a, entry));
+      };
+      if (!c.pin || a.dryRun) return cvv();
+      return ask('arm_pin', `Escribe tu PIN de compras para autorizar este pago de $${h.totalMxn} MXN.`, () => {
+        if (c.pin === 'wrong') {
+          h.status = 'held';
+          paid.delete(h.holdId);
+          state.actions.push({ op: 'pin-wrong', detail: h.holdId });
+          return err('CINES_PAYMENT_FAILED', 'PIN incorrecto (te quedan 2 intentos; espera 30 s). No se cobró nada.');
+        }
+        state.actions.push({ op: 'pin-ok', detail: h.holdId });
+        return cvv();
+      });
+    };
     let pendingHold: { args: Rec; polls: number } | undefined;
     let lastJob: Rec | undefined;
     const holdNow = (a: Rec) => (opts.emailCode ? ask('email_code', 'Escribe el código de 6 dígitos que Cinépolis envió a tu correo.', () => finishHold(a)) : finishHold(a));
@@ -362,8 +432,15 @@ export async function startFakeCines(opts: FakeCinesOptions = {}): Promise<FakeC
             state.actions.push({ op: 'purchase', detail: `${h.holdId} $${h.totalMxn}${last.dryRun ? ' dry-run' : ''}` });
           } else state.actions.push({ op: `purchase-${last.status}`, detail: h.holdId });
         }
+        // the slow card purchase: the CVV challenge opens after N polls (vault loading)
+        if (slowCard && !slowCard.asked && ++slowCard.polls >= (c.cvvAfterPolls ?? 1)) {
+          const sc = slowCard;
+          sc.asked = true;
+          ask('cvv', `Escribe el CVV (3 o 4 dígitos) de tu tarjeta *${String(sc.a.cardLast4 ?? last4)} para pagar $${sc.h.totalMxn} MXN.`, () => settleCard(sc.h, sc.a, sc.entry), true);
+        }
         const held = [...holds.values()].find((x) => x.status === 'held');
         return {
+          pendingInput: [...pending.entries()].map(([requestId, p]) => ({ requestId, kind: p.kind, prompt: p.prompt, expiresAt: p.expiresAt })),
           lastJob: lastJob ?? null,
           ...(holdError ? { holdError } : {}),
           // like the server: publicHold (totalMxn, cinemaName, …) + secondsLeft
@@ -383,6 +460,7 @@ export async function startFakeCines(opts: FakeCinesOptions = {}): Promise<FakeC
         if (!a.dryRun) paid.add(h.holdId);
         if (!a.dryRun && successes < 3 && a.userApproved !== true) return err('CINES_BAD_REQUEST', 'Las primeras 3 compras requieren la aprobación explícita del usuario (userApproved: true tras el ✅).');
         if (!a.dryRun) h.status = 'purchasing';
+        if (opts.card && a.method !== 'paypal') return cardPurchase(h, a);
         const steps = [...(opts.purchaseInputs ?? [])];
         const prompts: Record<string, string> = { cvv: 'Escribe el CVV de tu tarjeta.', otp_3ds: 'Escribe el código que te envió tu banco.' };
         const step = (): unknown => {
@@ -395,10 +473,15 @@ export async function startFakeCines(opts: FakeCinesOptions = {}): Promise<FakeC
         const p = pending.get(String(a.challengeId));
         if (!p) return err('CINES_NOT_FOUND', 'Esa solicitud ya no está activa.');
         const v = String(a.code ?? '').replace(/\s+/g, '');
-        const re = p.kind === 'email_code' ? /^\d{6}$/ : p.kind === 'cvv' ? /^\d{3,4}$/ : /^[0-9A-Za-z]{4,10}$/;
+        const re = p.kind === 'email_code' ? /^\d{6}$/ : p.kind === 'cvv' ? /^\d{3,4}$/ : p.kind === 'arm_pin' ? /^\d{6,8}$/ : /^[0-9A-Za-z]{4,10}$/;
         if (!re.test(v)) return err('CINES_BAD_REQUEST', 'Formato inválido.');
         pending.delete(String(a.challengeId));
         state.secrets.push(v);
+        // a challenge opened by a background job (after in_progress): the job continues; poll
+        if (p.accepted) {
+          p.next(v);
+          return { status: 'accepted' };
+        }
         return p.next(v);
       },
     });

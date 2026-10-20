@@ -208,12 +208,12 @@ Telegram shows ONE message: the plan grouped by section (meal / account), with
   then the claim is removed.
 - Every run shows ⏳ after ~8 s (any intent) and "Sigo en ello; Gemini está lento…" after 90 s;
   a long run leaves "✔️ Listo (tardó N min)". Short follow-ups in a cines chat are intent `cines`.
-- **Secure input** (CVV, bank 3DS/OTP, Cinépolis e-mail code): a result
+- **Secure input** (CVV, arming PIN, bank 3DS/OTP, Cinépolis e-mail code): a result
   `{status:"needs_cvv"|"needs_3ds"|"needs_email_code", challengeId, kind, expiresAt}` opens ONE
   pending request per chat (LibSQL, no secret stored, ≤ 5 min or the server's `expiresAt`) and
   Alfred asks "🔒 Envíe el CVV, Amo Julián. No lo verá el modelo…" (plus the result's image, if any).
   The user's next message is taken by the channel before the agent: it is deleted from the chat,
-  format-checked by the hub (code 6 digits, CVV 3–4, OTP 4–10 alphanumerics; a bad one is asked
+  format-checked by the hub (code 6 digits, CVV 3–4, PIN 6–8, OTP 4–10 alphanumerics; a bad one is asked
   again without calling anything), sent straight to the hub-only `cines_submit_code`, and never
   reaches the model, memory, logs or `llm_calls`; the agent gets only the redacted result.
   "cancelar" stops; a late reply up to 10 min after expiry is still deleted and not used.
@@ -232,19 +232,33 @@ Telegram shows ONE message: the plan grouped by section (meal / account), with
     model cannot. If the server's hold result still says `purchaseApprovalRequired`, the card is shown.
   - ❌ on the purchase card releases the hold (`cines_release_hold`); unanswered holds expire on the
     server after ~9 min.
+  - **Saved card (default):** Comprar pays with the card saved in the Cinépolis account (its
+    "Predeterminada"; `cardLast4` only if the user named a card, `method:"paypal"` only if they
+    asked for PayPal). The server answers `needs_cvv` → "🔒 Envíe el CVV de su tarjeta *1234 ($99
+    MXN)…" → the secure-input path → `cines_submit_code` → `paid` (no photo; "✅ 🎟️ Compra
+    confirmada: reserva …"). A payment secret is settled by the hub itself (status line + the
+    purchase card closed), with no model call. If the purchase went `in_progress` first, the
+    poller finds the CVV in `cines_hold_status.pendingInput`, asks for it, and keeps polling.
+    Declined → ❌ nothing charged (the server released the seats); "incierto" → ⚠️ check e-mail
+    and bank, never retried or released; a 3-D Secure card → ❌ refused before any charge, try
+    PayPal or the Cinépolis app. The model is told never to ask for card data, the CVV or a PIN.
+  - **PIN arming:** with a PIN set on the Mac (`bin/cinesctl set-arm-pin`) and payment not armed,
+    the server asks `needs_arm_pin` (6–8 digits) before the CVV, through the same secure input.
+    A wrong PIN charges nothing and keeps the hold: the card stays valid (Comprar again after 30 s).
   - PayPal is approved at the Mac's screen: when `cines_purchase` returns `in_progress`, the hub
     polls `cines_hold_status` every 10 s (up to `CINES_PAYPAL_WAIT_MIN`+2 min, no model calls, never
     re-calling the purchase) with "⏳ Esperando que apruebe el pago en PayPal en el Mac…". Paid →
     the confirmation screenshot, then "✅ 🎟️ Compra confirmada: reserva … · $… MXN"; failed → ❌ with
     the server's message; unknown → ⚠️ "No sé si se cobró; revise su correo. No liberé los asientos."
   - Not armed on the Mac → "🔒 El pago real no está armado. En el Mac corra: bin/cinesctl
-    arm-payment" (nothing was recorded, so the hold can still be paid once armed).
+    arm-payment (o configure un PIN con bin/cinesctl set-arm-pin…)" (nothing was recorded, so the
+    hold can still be paid once armed).
   - `CINES_PURCHASE_DRY_RUN=1` sends every purchase with `dryRun` (nothing is charged; not counted).
     Real payment is disabled on cines-mx-mcp until the live PayPal check.
   - A hold is paid at most once (claimed before the call): a failed or unknown payment is never
     retried. The success counter is persistent (LibSQL). Money tools cannot go in batch plans.
 - The Phase 3 tool shapes follow cines-mx-mcp's final contract v1 (docs/hub-integration.md,
-  `542f827`) and live in `src/cines/contract.ts` only; test fixtures are exported from that commit.
+  `542f827`; saved card `0e2f600`, PIN arming `cddca3d`) and live in `src/cines/contract.ts` only; test fixtures are exported from that commit.
 
 ## Status messages (`src/status/`)
 

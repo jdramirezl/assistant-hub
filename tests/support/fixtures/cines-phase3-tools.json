@@ -2,7 +2,7 @@
  {
   "name": "cines_hold_seats",
   "title": "Hold seats (approval required)",
-  "description": "Reserve (apartar) the chosen seats for a showtime under the user's Cinépolis account for ~9 minutes, without paying. Requires the user's approval. Validates the seats first. Default ticket type 'Admision General'. Returns holdId, seats, ticket type and the exact total with fees, plus `purchaseApprovalRequired`. May return status 'needs_email_code' with a challengeId if Cinépolis asks for a login code: the hub collects it via secure input and calls cines_submit_code.",
+  "description": "Reserve (apartar) the chosen seats for a showtime under the user's Cin\u00e9polis account for ~9 minutes, without paying. Requires the user's approval. Validates the seats first. Default ticket type 'Admision General'. Returns holdId, seats, ticket type and the exact total with fees, plus `purchaseApprovalRequired`. May return status 'needs_email_code' with a challengeId if Cin\u00e9polis asks for a login code: the hub collects it via secure input and calls cines_submit_code.",
   "inputSchema": {
    "type": "object",
    "properties": {
@@ -79,7 +79,7 @@
  {
   "name": "cines_hold_status",
   "title": "Current hold, purchase and session status",
-  "description": "The active seat hold (if any) with time left, pending secure-input requests, recent purchases and the Cinépolis session state.",
+  "description": "The active seat hold (if any) with time left, pending secure-input requests, recent purchases and the Cin\u00e9polis session state.",
   "inputSchema": {
    "type": "object",
    "properties": {},
@@ -98,7 +98,7 @@
  {
   "name": "cines_purchase",
   "title": "Pay for held seats (approval required)",
-  "description": "Pay for a hold. Hard cap $1,000 MXN. `expectedTotal` must equal the hold's `total` shown to the user. Never pass card data or codes here. While fewer than 3 purchases have succeeded, `userApproved: true` is required (only after the user tapped ✅). Never retried. May return status 'needs_cvv', 'needs_3ds' or 'needs_email_code' with a challengeId — the hub collects the secret via secure input and calls cines_submit_code. `dryRun: true` simulates without paying.",
+  "description": "Pay for a hold with the card saved in the user's Cin\u00e9polis account (default) or PayPal. Hard cap $1,000 MXN. `expectedTotal` must equal the hold's `total` shown to the user. Never pass card data or codes here. While fewer than 3 purchases have succeeded, `userApproved: true` is required (only after the user tapped \u2705). Never retried. May return status 'needs_cvv', 'needs_3ds' or 'needs_email_code' with a challengeId \u2014 the hub collects the secret via secure input and calls cines_submit_code. `dryRun: true` simulates without paying.",
   "inputSchema": {
    "type": "object",
    "properties": {
@@ -111,12 +111,17 @@
      "description": "MXN; must equal the hold's `total` shown to the user"
     },
     "method": {
-     "description": "Default paypal; card = card saved in the Cinépolis/DEUNA wallet",
+     "description": "Default card = card saved in the user's Cin\u00e9polis/DEUNA wallet (CVV via secure input); paypal needs the user at the server Mac",
      "type": "string",
      "enum": [
-      "paypal",
-      "card"
+      "card",
+      "paypal"
      ]
+    },
+    "cardLast4": {
+     "description": "Only if the user has several saved cards and named one (last four digits)",
+     "type": "string",
+     "pattern": "^\\d{4}$"
     },
     "userApproved": {
      "type": "boolean"
@@ -144,7 +149,7 @@
  {
   "name": "cines_submit_code",
   "title": "Deliver a secret the user typed (hub only)",
-  "description": "HUB ONLY — must not be exposed to the language model. Delivers the user's secure-input reply (6-digit e-mail code, 3DS/OTP code or CVV) for a challengeId from a needs_* result, and continues the paused operation, returning its next result (held / paid / another needs_* / error). The value is never logged or returned.",
+  "description": "HUB ONLY \u2014 must not be exposed to the language model. Delivers the user's secure-input reply (6-digit e-mail code, 3DS/OTP code, CVV or arming PIN) for a challengeId from a needs_* result, and continues the paused operation, returning its next result (held / paid / another needs_* / error). The value is never logged or returned.",
   "inputSchema": {
    "type": "object",
    "properties": {

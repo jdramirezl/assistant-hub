@@ -71,7 +71,7 @@ async function buy(opts: FakeCinesOptions) {
   );
   closers.push(() => hub.stop());
   await hub.start();
-  tg.push(textUpdate(ME, "compra el F7 para Dune hoy en la noche"));
+  tg.push(textUpdate(ME, "compra el F7 para Dune hoy en la noche, con PayPal"));
   for (const needle of ["tool_approve:call-1", "cines:b:"]) {
     await tg.waitFor(() => !!findButton(tg, needle), 10_000);
     const b = findButton(tg, needle)!;
@@ -135,7 +135,7 @@ describe("PayPal at the Mac: in_progress → the hub polls cines_hold_status", (
     await buy({ inProgress: { polls: 2, outcome: "unknown" } });
     await tg.waitFor(() => status().some((s) => /^⚠️/.test(s)), 10_000);
     expect(status().at(-1)).toMatch(
-      /^⚠️ No sé si se cobró; revise su correo\. No liberé los asientos\.\n<code>CINES_PAYMENT_UNKNOWN · req [0-9a-f]{6}<\/code>$/,
+      /^⚠️ No sé si se cobró; revise su correo de Cinépolis y su banco\. No liberé los asientos ni lo reintento\.\n<code>CINES_PAYMENT_UNKNOWN · req [0-9a-f]{6}<\/code>$/,
     );
     expect(cines.calls.map((c) => c.tool)).not.toContain("cines_release_hold");
     expect(cines.calls.filter((c) => c.tool === "cines_purchase")).toHaveLength(

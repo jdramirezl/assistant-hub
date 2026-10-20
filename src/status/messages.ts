@@ -99,13 +99,30 @@ export class StatusMessages {
     const f = o.failures[0]!;
     // purchases: their own lines, never the generic failure wording
     if (f.why.code === 'CINES_PAYMENT_NOT_ARMED') {
-      return { text: this.es ? '🔒 El pago real no está armado. En el Mac corra: bin/cinesctl arm-payment' : '🔒 Real payment is not armed. On the Mac run: bin/cinesctl arm-payment', tech: techLine(f.why.code, requestId) };
+      return {
+        text: this.es
+          ? '🔒 El pago real no está armado. En el Mac corra: bin/cinesctl arm-payment (o configure un PIN con bin/cinesctl set-arm-pin para autorizar compras desde aquí).'
+          : '🔒 Real payment is not armed. On the Mac run: bin/cinesctl arm-payment (or set a PIN with bin/cinesctl set-arm-pin to authorize purchases from here).',
+        tech: techLine(f.why.code, requestId),
+      };
+    }
+    if (f.why.code === 'CINES_CARD_3DS') {
+      return {
+        text: this.es
+          ? '❌ Su banco pide una verificación extra (3-D Secure) que aún no puedo hacer. No se cobró nada y Cinépolis liberó los asientos. Puede pagar con PayPal (en el Mac) o en la app de Cinépolis.'
+          : '❌ Your bank asks for an extra check (3-D Secure) that I cannot do yet. Nothing was charged and Cinépolis released the seats. You can pay with PayPal (at the Mac) or in the Cinépolis app.',
+        tech: techLine(f.why.code, requestId),
+      };
+    }
+    if (f.why.code === 'CINES_ARM_PIN') {
+      const msg = (f.message ?? '').trim();
+      return { text: `🔒 ${msg || (this.es ? 'El PIN no se aceptó. No se cobró nada.' : 'The PIN was not accepted. Nothing was charged.')} ${this.es ? 'Puede volver a tocar Comprar.' : 'You can tap Buy again.'}`, tech: techLine(f.why.code, requestId) };
     }
     if (f.why.code === 'CINES_HOLD_UNKNOWN') {
       return { text: this.es ? '⚠️ No sé si quedó apartado; lo reviso. No lo reintento.' : '⚠️ I do not know whether the seats were held; I am checking. I will not retry.', tech: techLine(f.why.code, requestId) };
     }
     if (f.why.code === 'CINES_PAYMENT_UNKNOWN') {
-      return { text: this.es ? '⚠️ No sé si se cobró; revise su correo. No liberé los asientos.' : '⚠️ I do not know whether it was charged; check your e-mail. I did not release the seats.', tech: techLine(f.why.code, requestId) };
+      return { text: this.es ? '⚠️ No sé si se cobró; revise su correo de Cinépolis y su banco. No liberé los asientos ni lo reintento.' : '⚠️ I do not know whether it was charged; check your Cinépolis e-mail and your bank. I did not release the seats or retry.', tech: techLine(f.why.code, requestId) };
     }
     if (f.why.code === 'CINES_PAYMENT_FAILED' && f.tool === 'cines_purchase') {
       const msg = f.message ?? '';

@@ -44,7 +44,7 @@ export interface Voice {
   digestEmpty(period: string): string;
   planEdit(): string;
   /** "🔒 Send the CVV…": the prompt for a secure input (the model never sees the reply). */
-  securePrompt(kind: string): string;
+  securePrompt(kind: string, details?: { last4?: string; total?: string }): string;
   secureBadFormat(kind: string): string;
   secureExpired(): string;
 }
@@ -53,14 +53,22 @@ const SECRET_NAMES: Record<string, { es: string; en: string }> = {
   cvv: { es: 'el CVV de su tarjeta', en: 'your card\'s CVV' },
   otp_3ds: { es: 'el código que le envió su banco', en: 'the code your bank sent you' },
   email_code: { es: 'el código de 6 dígitos que Cinépolis envió a su correo', en: 'the 6-digit code Cinépolis e-mailed you' },
+  arm_pin: { es: 'su PIN de compras', en: 'your purchase PIN' },
 };
 const FORMATS: Record<string, { es: string; en: string }> = {
   email_code: { es: '6 dígitos', en: '6 digits' },
   cvv: { es: '3 o 4 dígitos', en: '3 or 4 digits' },
   otp_3ds: { es: '4 a 10 letras o números', en: '4 to 10 letters or digits' },
+  arm_pin: { es: '6 a 8 dígitos', en: '6 to 8 digits' },
 };
 const formatOf = (kind: string, lang: 'es' | 'en') => FORMATS[kind]?.[lang] ?? '';
-const secretName = (kind: string, lang: 'es' | 'en') => SECRET_NAMES[kind]?.[lang] ?? (lang === 'es' ? 'el código' : 'the code');
+/** "el CVV de su tarjeta *1234 ($99 MXN)": the card and total the server named in its prompt. */
+const secretName = (kind: string, lang: 'es' | 'en', d: { last4?: string; total?: string } = {}) => {
+  const base = SECRET_NAMES[kind]?.[lang] ?? (lang === 'es' ? 'el código' : 'the code');
+  const card = kind === 'cvv' && d.last4 ? ` *${d.last4}` : '';
+  const total = (kind === 'cvv' || kind === 'arm_pin') && d.total ? ` ($${d.total} MXN)` : '';
+  return `${base}${card}${total}`;
+};
 
 function appLines(apps: Apps, lang: Language): string[] {
   const up = Object.entries(apps).filter(([, s]) => s.state === 'up').map(([n]) => n);
@@ -88,7 +96,7 @@ export function createVoice(p: PersonaConfig): Voice {
           : '⏳ Gemini rate limit; give me a minute and send it again.',
       digestEmpty: (period) => `🗓️ Weekly digest (${period}): no apps reported data yet. Connect finance or fitness to get a real summary.`,
       planEdit: () => '✏️ What should I change? Reply in text and I will send a revised plan.',
-      securePrompt: (k) => `🔒 Send ${secretName(k, 'en')} in your next message. The model will not see it; I delete the message after reading it. (5 min; "cancel" to stop)`,
+      securePrompt: (k, d) => `🔒 Send ${secretName(k, 'en', d)} in your next message. The model will not see it; I delete the message after reading it. (5 min; "cancel" to stop)`,
       secureBadFormat: (k) => `⚠️ That doesn't look right (${formatOf(k, 'en')}). Send it again, or "cancel".`,
       secureExpired: () => '⌛ That request expired, so I did not use your message (it was deleted).',
     };
@@ -106,7 +114,7 @@ export function createVoice(p: PersonaConfig): Voice {
           : `⏳ Gemini nos pide paciencia, ${who}. Inténtelo de nuevo en un minuto.`,
       digestEmpty: (period) => `🗓️ Resumen semanal (${period}), ${who}: ninguna app ha reportado datos aún.`,
       planEdit: () => `✏️ ¿Qué cambio, ${who}? Respóndame por escrito y le enviaré el plan corregido.`,
-      securePrompt: (k) => `🔒 Envíe ${secretName(k, 'es')}, ${who}. No lo verá el modelo y borraré su mensaje en cuanto lo lea. (5 min; "cancelar" para detener)`,
+      securePrompt: (k, d) => `🔒 Envíe ${secretName(k, 'es', d)}, ${who}. No lo verá el modelo y borraré su mensaje en cuanto lo lea. (5 min; "cancelar" para detener)`,
       secureBadFormat: (k) => `⚠️ Eso no parece correcto, ${who} (${formatOf(k, 'es')}). Envíelo de nuevo, o "cancelar".`,
       secureExpired: () => `⌛ La solicitud expiró, ${who}; no usé su mensaje (lo borré).`,
     };
@@ -123,7 +131,7 @@ export function createVoice(p: PersonaConfig): Voice {
         : `⏳ Gemini asks for patience, ${who}. Do try again in a minute.`,
     digestEmpty: (period) => `🗓️ Weekly digest (${period}), ${who}: no app has reported data yet.`,
     planEdit: () => `✏️ What shall I change, ${who}? Reply in text and I'll send a revised plan.`,
-    securePrompt: (k) => `🔒 Kindly send ${secretName(k, 'en')}, ${who}. The model will not see it, and I shall delete your message once read. (5 min; "cancel" to stop)`,
+    securePrompt: (k, d) => `🔒 Kindly send ${secretName(k, 'en', d)}, ${who}. The model will not see it, and I shall delete your message once read. (5 min; "cancel" to stop)`,
     secureBadFormat: (k) => `⚠️ That does not look right, ${who} (${formatOf(k, 'en')}). Kindly send it again, or "cancel".`,
     secureExpired: () => `⌛ That request has expired, ${who}; I did not use your message (it was deleted).`,
   };

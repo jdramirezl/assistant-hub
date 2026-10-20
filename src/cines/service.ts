@@ -26,6 +26,7 @@ import {
   HARD_CAP_MXN,
   HOLD_TOOL,
   NOT_ARMED,
+  PAYMENT_KINDS,
   RELEASE_TOOL,
   STATUS_TOOL,
   SECURE_FORMAT,
@@ -35,6 +36,10 @@ import {
   holdIdOf,
   holdOf,
   imageUrlOf,
+  paymentChoiceOf,
+  paymentErrorKind,
+  pendingInputOf,
+  promptDetails,
   purchaseArgs,
   purchaseOutcome,
   secureArgs,
@@ -64,8 +69,8 @@ export interface CinesHubDeps {
   sendPhoto?: (chatId: string, bytes: Uint8Array) => Promise<number | void>;
   /** Send a plain message to a chat (the secure-input prompt). */
   sendText?: (chatId: string, text: string) => Promise<void>;
-  /** Persona wording of the secure prompt for a kind. */
-  securePrompt: (kind: SecureKind) => string;
+  /** Persona wording of the secure prompt for a kind (card last four and total from the server's prompt). */
+  securePrompt: (kind: SecureKind, details?: { last4?: string; total?: string }) => string;
   /** "⚠️ That doesn't look right (3–4 digits); send it again" for a kind. */
   secureBadFormat: (kind: SecureKind) => string;
   /** "⌛ The request expired; I did not use your message" */
@@ -90,6 +95,8 @@ export interface CinesHubDeps {
   seatInvalidText?: (seats: string, reason: string) => string;
   /** "⏳ Esperando que apruebe el pago en PayPal en el Mac…" (persona). */
   paypalWaitText?: () => string;
+  /** "⏳ Pagando con su tarjeta en Cinépolis…" while a card purchase runs in the background. */
+  cardWaitText?: () => string;
   /** Show a "working" line in the request's live status message. */
   working?: (text: string) => void;
   sleep?: (ms: number) => Promise<void>;
@@ -104,6 +111,10 @@ export interface PendingSecure {
   expiresAt: number;
   /** True after expiresAt (within LATE_GRACE_MS): only swallow a late secret, do not deliver it. */
   expired?: boolean;
+  /** A payment secret (CVV, arming PIN, bank code): the hub settles the outcome itself, no model call. */
+  purpose?: 'payment';
+  /** The hold being paid (to close or re-offer its purchase card). */
+  holdId?: string;
 }
 
 export interface CallContext {
@@ -111,6 +122,8 @@ export interface CallContext {
   chatId?: string;
   /** The user's message for this request (cinemas they named, filters they asked for). */
   userText?: string;
+  /** The hold a secure-input result belongs to (cines_submit_code has no holdId). */
+  holdId?: string;
 }
 
 /** "14:37" in the cinema's timezone and minutes left. */
@@ -198,6 +211,8 @@ export class CinesHub {
   private readonly cards = new Map<string, { chat: string; messageId?: number; timer?: ReturnType<typeof setTimeout> }>();
   /** Holds whose purchase the hub itself is running (the model's own call is refused). */
   private readonly hubPaying = new Set<string>();
+  /** The card / PayPal the user named in the request that asked for the hold, per chat. */
+  private readonly choices = new Map<string, { cardLast4?: string; method?: 'paypal' }>();
 
   private cardText(h: HoldSummary, extra = ''): string {
     const es = (this.d.lang ?? 'es') === 'es';
@@ -212,6 +227,9 @@ export class CinesHub {
       `💺 ${h.seats.join(', ')}${h.ticketType ? ` · ${h.ticketType}` : ''}`,
       `💰 ${mx(h.totalMxn)} MXN${price}`,
       ...(exp ? [es ? `⌛ Expira ${exp.time} (≈${exp.min} min)` : `⌛ Expires ${exp.time} (≈${exp.min} min)`] : []),
+      h.method === 'paypal'
+        ? es ? '💳 PayPal: apruébelo en la pantalla del Mac.' : '💳 PayPal: approve it on the Mac screen.'
+        : es ? `💳 Tarjeta guardada ${h.cardLast4 ? `*${h.cardLast4}` : '(predeterminada)'}; le pediré el CVV en privado.` : `💳 Saved card ${h.cardLast4 ? `*${h.cardLast4}` : '(default)'}; I will ask for the CVV privately.`,
       ...(extra ? ['', extra] : []),
     ].join('\n');
   }
@@ -272,17 +290,42 @@ export class CinesHub {
     } finally {
       this.hubPaying.delete(holdId);
     }
-    if (((r as Rec | undefined)?.error as Rec | undefined)?.code === 'CINES_PAYMENT_NOT_ARMED' && c?.messageId) {
-      // nothing was charged: the card stays valid until the hold expires
-      await this.d.kv.delete(`cines:card:${holdId}`);
-      const left = h.expiresAt ? Date.parse(h.expiresAt) - this.now() : 0;
-      if (left > 0) {
-        c.timer = setTimeout(() => void this.expireCard(holdId), left);
-        c.timer.unref?.();
-      }
-      await this.d.editCard?.(c.chat, c.messageId, this.cardText(h, es ? '🔒 El pago real no está armado. En el Mac corra: bin/cinesctl arm-payment — y vuelva a tocar Comprar.' : '🔒 Real payment is not armed. On the Mac run: bin/cinesctl arm-payment — then tap Buy again.'), this.cardButtons(h)).catch(() => {});
+    if (((r as Rec | undefined)?.error as Rec | undefined)?.code === 'CINES_PAYMENT_NOT_ARMED') {
+      await this.reofferCard(holdId, es ? '🔒 El pago real no está armado. En el Mac corra: bin/cinesctl arm-payment (o configure un PIN con bin/cinesctl set-arm-pin para autorizar desde aquí) — y vuelva a tocar Comprar.' : '🔒 Real payment is not armed. On the Mac run: bin/cinesctl arm-payment (or set a PIN with bin/cinesctl set-arm-pin to authorize from here) — then tap Buy again.');
     }
     return r;
+  }
+
+  /** Nothing was charged or recorded (not armed, wrong PIN): the card stays valid until the hold expires. */
+  private async reofferCard(holdId: string, line: string): Promise<void> {
+    const c = this.cards.get(holdId);
+    const h = await this.hold(holdId);
+    if (!c?.messageId || !h) return;
+    await this.d.kv.delete(`cines:card:${holdId}`);
+    clearTimeout(c.timer);
+    const left = h.expiresAt ? Date.parse(h.expiresAt) - this.now() : 0;
+    if (left > 0) {
+      c.timer = setTimeout(() => void this.expireCard(holdId), left);
+      c.timer.unref?.();
+    }
+    await this.d.editCard?.(c.chat, c.messageId, this.cardText(h, line), this.cardButtons(h)).catch(() => {});
+  }
+
+  /** The purchase settled (paid / failed / unknown): close its card with the outcome, no buttons. */
+  private async closeCard(holdId: string | undefined, result: unknown): Promise<void> {
+    const c = holdId ? this.cards.get(holdId) : undefined;
+    const h = holdId ? await this.hold(holdId) : undefined;
+    if (!c?.messageId || !h) return;
+    const r = (result ?? {}) as Rec;
+    const e = r.error as Rec | undefined;
+    const es = (this.d.lang ?? 'es') === 'es';
+    let line: string | undefined;
+    if (r.status === 'paid') line = `${es ? '✅ Pagado' : '✅ Paid'}${r.bookingNumber ? `: ${es ? 'reserva' : 'booking'} ${String(r.bookingNumber)}` : ''}${r.dryRun ? (es ? ' (simulado)' : ' (simulated)') : ''}`;
+    else if (e?.code === 'CINES_PAYMENT_UNKNOWN') line = es ? '⚠️ Resultado incierto: revise su correo de Cinépolis y su banco. No liberé los asientos.' : '⚠️ Outcome unknown: check your Cinépolis e-mail and your bank. Seats not released.';
+    else if (e) line = es ? '❌ No se completó el pago; no se reintenta.' : '❌ The payment did not go through; not retried.';
+    if (!line) return;
+    clearTimeout(c.timer);
+    await this.d.editCard?.(c.chat, c.messageId, this.cardText(h, line)).catch(() => {});
   }
 
   /** ❌ on the purchase card: release the hold. */
@@ -354,7 +397,8 @@ export class CinesHub {
    * with cines_validate_seats, so the user never approves a hold that cannot work. Memoized per
    * args: the approval check and the execution share one result.
    */
-  prepareHold(chat: string, input: Rec): Promise<{ args: Rec; preview?: string } | { error: ReturnType<typeof sharedError> }> {
+  prepareHold(chat: string, input: Rec, userText?: string): Promise<{ args: Rec; preview?: string } | { error: ReturnType<typeof sharedError> }> {
+    if (userText) this.choices.set(chat, paymentChoiceOf(userText));
     const key = JSON.stringify(input);
     let p = this.prepared.get(key);
     if (!p) {
@@ -467,6 +511,7 @@ export class CinesHub {
       return { error: { status: 'card_shown', note: 'The user already has the purchase card for this hold (Comprar / Cancelar). Do not call cines_purchase; reply one short line.' } };
     }
     if (tool === HOLD_TOOL) {
+      if (ctx.userText) this.choices.set(chat, paymentChoiceOf(ctx.userText));
       const r = await this.prepareHold(chat, input);
       return 'error' in r ? r : { args: r.args };
     }
@@ -544,21 +589,43 @@ export class CinesHub {
     return { error: { code: String(e.code ?? 'CINES_UNAVAILABLE'), message: String(e.message ?? 'El trabajo en segundo plano falló.'), retryable: false } };
   }
 
-  private async waitForPurchase(jobId = '', unsure = false): Promise<unknown> {
+  private async waitForPurchase(jobId = '', unsure = false, ctx: CallContext = {}, paypal = false): Promise<unknown> {
     const started = this.now();
     // after a timed-out call, only a purchase that started around it counts (not an older one)
     const since = unsure ? started - 5 * 60_000 : -Infinity;
-    const limit = ((this.d.paypalWaitMin ?? 15) + 2) * 60_000;
+    let limit = ((this.d.paypalWaitMin ?? 15) + 2) * 60_000;
     const every = this.d.pollMs ?? 10_000;
     const sleep = this.d.sleep ?? ((ms: number) => new Promise((r) => setTimeout(r, ms)));
-    this.d.working?.(this.d.paypalWaitText?.() ?? '⏳ Esperando que apruebe el pago en PayPal en el Mac…');
-    this.log(`[cines] purchase in progress (PayPal at the Mac); polling every ${Math.round(every / 1000)} s for up to ${Math.round(limit / 60_000)} min`);
+    const es = (this.d.lang ?? 'es') === 'es';
+    const busy = () => (paypal ? (this.d.paypalWaitText?.() ?? '⏳ Esperando que apruebe el pago en PayPal en el Mac…') : (this.d.cardWaitText?.() ?? (es ? '⏳ Pagando con su tarjeta en Cinépolis…' : '⏳ Paying with your card at Cinépolis…')));
+    this.d.working?.(busy());
+    this.log(`[cines] purchase in progress (${paypal ? 'PayPal at the Mac' : 'card'}); polling every ${Math.round(every / 1000)} s for up to ${Math.round(limit / 60_000)} min`);
     let polls = 0;
+    /** Challenges this poller opened (a CVV/PIN asked after the in_progress), and which are still open. */
+    const opened = new Set<string>();
+    let waitingFor: string | undefined;
     while (this.now() - started < limit) {
       await sleep(every);
       polls++;
       const st = (await this.d.toolbox.execute(STATUS_TOOL, {}, { raw: true })) as Rec;
       if (st?.error) continue; // transient: keep waiting
+      // the background job asks for a secret (cines_hold_status.pendingInput): secure mode from here
+      const open = pendingInputOf(st).filter((r) => PAYMENT_KINDS.has(r.kind));
+      for (const req of open) {
+        if (opened.has(req.requestId)) continue;
+        opened.add(req.requestId);
+        this.log(`[cines] secure input from cines_hold_status (${req.kind})`);
+        await this.openSecure(req, ctx.chatId, { holdId: ctx.holdId });
+        waitingFor = req.requestId;
+        this.d.working?.(this.waitingText(req.kind));
+        // the user has the challenge's whole TTL (≤ 5 min) to answer, then the charge itself
+        const ttl = Math.min(SECURE_TTL_MS, Math.max(0, (req.expiresAt ? Date.parse(req.expiresAt) : this.now() + SECURE_TTL_MS) - this.now()));
+        limit = Math.max(limit, this.now() - started + ttl + 3 * 60_000);
+      }
+      if (waitingFor && !open.some((r) => r.requestId === waitingFor)) {
+        waitingFor = undefined; // answered (or lapsed): back to "paying"
+        this.d.working?.(busy());
+      }
       const job = jobOf(st, jobId);
       if (job?.status === 'failed') {
         const e = this.jobFailed(job, polls, 'purchase');
@@ -598,7 +665,11 @@ export class CinesHub {
     const jobId = String((result as Rec | undefined)?.jobId ?? '');
     const unsure = (result as Rec | undefined)?.transport === true; // our call timed out: the server may have done it
     if (tool === HOLD_TOOL && (result as Rec | undefined)?.status === 'in_progress') result = await this.waitForHold(input, jobId, unsure);
-    else if ((tool === PURCHASE_TOOL || tool === SECURE_TOOL) && (result as Rec | undefined)?.status === 'in_progress') result = await this.waitForPurchase(jobId, unsure);
+    else if ((tool === PURCHASE_TOOL || tool === SECURE_TOOL) && (result as Rec | undefined)?.status === 'in_progress') {
+      const hid = holdIdOf(input) ?? ctx.holdId;
+      const paypal = input.method === 'paypal' || (await this.hold(hid))?.method === 'paypal';
+      result = await this.waitForPurchase(jobId, unsure, { ...ctx, holdId: hid }, paypal);
+    }
     if (tool === PURCHASE_TOOL) {
       const e = (result as Rec | undefined)?.error as Rec | undefined;
       if (e && NOT_ARMED.test(String(e.message ?? ''))) {
@@ -609,12 +680,38 @@ export class CinesHub {
         return { error: { code: 'CINES_PAYMENT_NOT_ARMED', message: String(e.message), retryable: false } };
       }
     }
+    const payHold = tool === PURCHASE_TOOL ? holdIdOf(input) : tool === SECURE_TOOL ? ctx.holdId : undefined;
+    const perr = (result as Rec | undefined)?.error as Rec | undefined;
+    if ((tool === PURCHASE_TOOL || tool === SECURE_TOOL) && perr) {
+      const kind = paymentErrorKind(String(perr.code ?? ''), String(perr.message ?? ''));
+      const es = (this.d.lang ?? 'es') === 'es';
+      if (kind === 'unknown') {
+        this.log('[cines] payment outcome uncertain (not retried, hold kept)');
+        result = { error: { ...perr, code: 'CINES_PAYMENT_UNKNOWN', retryable: false } };
+      } else if (kind === '3ds') {
+        this.log('[cines] card refused: the bank asks for 3-D Secure (nothing charged)');
+        result = { error: { ...perr, code: 'CINES_CARD_3DS', retryable: false } };
+      } else if (kind === 'pin') {
+        // a wrong / too-early / disabled PIN: nothing recorded or charged, the hold stays
+        if (payHold) {
+          await this.d.kv.delete(`cines:attempt:${payHold}`);
+          await this.reofferCard(payHold, `🔒 ${String(perr.message)} ${es ? 'Puede volver a tocar Comprar.' : 'You can tap Buy again.'}`);
+        }
+        this.log('[cines] arming PIN refused (nothing charged)');
+        result = { error: { ...perr, code: 'CINES_ARM_PIN', retryable: false } };
+      }
+    }
+    if ((tool === PURCHASE_TOOL || tool === SECURE_TOOL) && (purchaseOutcome(result) || ((result as Rec | undefined)?.error && ((result as Rec).error as Rec).code !== 'CINES_ARM_PIN'))) {
+      await this.closeCard(payHold, result);
+    }
     let out = result;
     this.remember(ctx.chatId ?? 'local', tool, result);
     if (tool === 'cines_best_showtime' && !(result as Rec | undefined)?.error) out = await this.withNamedCinemas(input, result as Rec, ctx);
     const h = holdOf(result);
     if (h && (tool === HOLD_TOOL || tool === SECURE_TOOL)) {
       h.serverApprovalRequired = (result as Rec).purchaseApprovalRequired === true;
+      // what to pay with, from the user's words when they asked for the hold (before the ✅)
+      Object.assign(h, this.choices.get(ctx.chatId ?? 'local') ?? paymentChoiceOf(ctx.userText));
       this.holds.set(h.holdId, h);
       await this.d.kv.set(`cines:hold:${h.holdId}`, h, HOLD_TTL_MS);
       // the HUB (not the model) offers the purchase: a summary card with Comprar / Cancelar
@@ -634,14 +731,14 @@ export class CinesHub {
       const n = await this.d.kv.incr(COUNTER, 1);
       this.log(`[cines] purchase paid (${n} so far)`);
     }
-    if (tool === PURCHASE_TOOL && (result as Rec | undefined)?.error) {
+    if ((tool === PURCHASE_TOOL || tool === SECURE_TOOL) && (result as Rec | undefined)?.error) {
       this.log(`[cines] purchase failed: ${String(((result as Rec).error as Rec).code)} (not retried)`);
       out = { ...(result as Rec), error: { ...((result as Rec).error as Rec), retryable: false } };
     }
     const url = imageUrlOf(result);
     if (url) out = { ...(out as Rec), imageUrl: undefined, image: await this.sendImage(url, ctx.chatId) };
     const req = secureRequestOf(result);
-    if (req) out = await this.openSecure(req, ctx.chatId);
+    if (req) out = await this.openSecure(req, ctx.chatId, { holdId: payHold });
     return out;
   }
 
@@ -687,7 +784,14 @@ export class CinesHub {
     await this.d.kv.delete(`cines:secure:${chatId}`);
   }
 
-  private async openSecure(req: SecureRequest, chatId: string | undefined): Promise<Rec> {
+  /** "🔒 Esperando el CVV de su tarjeta…" (status line while a payment secret is pending). */
+  private waitingText(kind: SecureKind): string {
+    const es = (this.d.lang ?? 'es') === 'es';
+    const what = { cvv: es ? 'el CVV de su tarjeta' : 'your card CVV', arm_pin: es ? 'su PIN de compras' : 'your purchase PIN', otp_3ds: es ? 'el código de su banco' : 'your bank code' }[kind as string];
+    return `🔒 ${es ? 'Esperando' : 'Waiting for'} ${what ?? (es ? 'su código' : 'your code')}…`;
+  }
+
+  private async openSecure(req: SecureRequest, chatId: string | undefined, extra: { holdId?: string } = {}): Promise<Rec> {
     if (!chatId || !this.d.sendText) {
       return { status: 'secure_input_unavailable', note: 'This step needs a code the user types privately, which only works in Telegram. Tell the user.' };
     }
@@ -697,10 +801,10 @@ export class CinesHub {
     }
     const server = req.expiresAt ? Date.parse(req.expiresAt) : NaN;
     const expiresAt = Math.min(this.now() + SECURE_TTL_MS, Number.isFinite(server) ? server : Infinity);
-    const p: PendingSecure = { requestId: req.requestId, kind: req.kind, expiresAt };
+    const p: PendingSecure = { requestId: req.requestId, kind: req.kind, expiresAt, ...(PAYMENT_KINDS.has(req.kind) ? { purpose: 'payment' as const } : {}), ...(extra.holdId ? { holdId: extra.holdId } : {}) };
     await this.d.kv.set(`cines:secure:${chatId}`, p, expiresAt - this.now() + LATE_GRACE_MS);
     if (req.imageUrl) await this.sendImage(req.imageUrl, chatId);
-    await this.d.sendText(chatId, this.d.securePrompt(req.kind));
+    await this.d.sendText(chatId, this.d.securePrompt(req.kind, promptDetails(req.prompt)));
     this.log(`[cines] secure input requested (${req.kind})`);
     return {
       status: 'waiting_for_secure_input',
@@ -714,7 +818,7 @@ export class CinesHub {
    * the agent gets instead of the user's message (never the secret), or undefined when there
    * is nothing to resume (e.g. a bad format: the user is asked again).
    */
-  async deliver(chatId: string, value: string, p: PendingSecure): Promise<{ agentText?: string; userText?: string }> {
+  async deliver(chatId: string, value: string, p: PendingSecure): Promise<{ agentText?: string; userText?: string; payment?: { result: unknown } }> {
     if (p.expired) {
       // a late reply: never forward it; tell the user, and the agent that the step lapsed
       await this.d.kv.delete(`cines:secure:${chatId}`);
@@ -725,14 +829,21 @@ export class CinesHub {
     if (fmt && !fmt.re.test(secret)) return { userText: this.d.secureBadFormat(p.kind) }; // still pending, server not called
     await this.d.kv.delete(`cines:secure:${chatId}`);
     const raw = await this.d.toolbox.execute(SECURE_TOOL, secureArgs(p, secret), { raw: true });
-    const scrub = (v: unknown) => JSON.parse(JSON.stringify(v ?? null).split(secret).join('•••')) as unknown;
+    // whole tokens only: a 3-digit CVV must not mangle "*1234" or a total
+    const token = new RegExp(`(?<![0-9A-Za-z])${secret.replace(/[^0-9A-Za-z]/g, '')}(?![0-9A-Za-z])`, 'g');
+    const scrub = (v: unknown) => JSON.parse(JSON.stringify(v ?? null).replace(token, '•••')) as unknown;
     const err = (raw as Rec | undefined)?.error as Rec | undefined;
     if (err?.code === 'CINES_BAD_REQUEST' && /formato|format/i.test(String(err.message))) {
       // the server keeps the request open on a bad format: ask again, no model call
       await this.d.kv.set(`cines:secure:${chatId}`, p, Math.max(1, p.expiresAt - this.now()));
       return { userText: `⚠️ ${String(err.message)}` };
     }
-    const out = await this.afterResult(SECURE_TOOL, {}, scrub(raw), { chatId });
+    const out = await this.afterResult(SECURE_TOOL, {}, scrub(raw), { chatId, holdId: p.holdId });
+    if (p.purpose === 'payment') {
+      // a payment secret: the hub reports the outcome itself (status line, purchase card); no model call
+      this.log(`[cines] ${p.kind} delivered; result ${String((out as Rec)?.status ?? ((out as Rec)?.error as Rec | undefined)?.code ?? '?')}`);
+      return { payment: { result: out } };
+    }
     return { agentText: `[hub] The user sent the ${p.kind} privately (you do not see it). The operation continued; result: ${JSON.stringify(out)}` };
   }
 }

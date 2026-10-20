@@ -239,7 +239,7 @@ describe('cines through Telegram (fake cines-mx-mcp)', () => {
     expect(card).toMatch(/\$198 MXN/);
     await press('cines:b:');
     // the server got the hub's total and userApproved, not the model's
-    await tg.waitFor(() => /CVV/.test(tg.outgoingText(ME)), 10_000);
+    await tg.waitFor(() => /🔒 Envíe el CVV/.test(tg.outgoingText(ME)), 10_000);
     expect(cines.calls.find((c) => c.tool === 'cines_purchase')!.args).toMatchObject({ expectedTotal: 198, userApproved: true });
     expect(tg.outgoingText(ME)).toMatch(/🔒 Envíe el CVV de su tarjeta, Amo Julián\. No lo verá el modelo/);
     const cvvMsg = textUpdate(ME, CVV);
@@ -247,8 +247,10 @@ describe('cines through Telegram (fake cines-mx-mcp)', () => {
     await tg.waitFor(() => /🔒 Envíe el código que le envió su banco/.test(tg.outgoingText(ME)), 10_000);
     const otpMsg = textUpdate(ME, OTP);
     tg.push(otpMsg);
-    // the agent resumes with the redacted result (as a hub note, not the user's message)
-    await tg.waitFor(() => sm.calls.some((c) => /sent the otp_3ds privately[\s\S]*BK001/.test(JSON.stringify(c.prompt))), 10_000);
+    // a payment secret is settled by the hub itself: its status line, no model call after the codes
+    const before = sm.calls.length;
+    await tg.waitFor(() => /✅ 🎟️ Compra confirmada: reserva BK001 · \$198 MXN/.test(tg.outgoingText(ME)), 10_000);
+    expect(sm.calls.length).toBe(before);
     expect(cines.secrets).toEqual([CVV, OTP]);
     expect(cines.actions.map((a) => a.op)).toEqual(['hold', 'purchase']);
     // both secret messages were deleted from the chat
@@ -268,7 +270,7 @@ describe('cines through Telegram (fake cines-mx-mcp)', () => {
   it('a bad format asks again without the model; "cancelar" stops; a pending request expires', async () => {
     const { sm, hub } = await buyFlow({ purchaseInputs: ['cvv'] });
     await press('cines:b:');
-    await tg.waitFor(() => /CVV/.test(tg.outgoingText(ME)), 10_000);
+    await tg.waitFor(() => /🔒 Envíe el CVV/.test(tg.outgoingText(ME)), 10_000);
     const calls = sm.calls.length;
     tg.push(textUpdate(ME, '12'));
     await tg.waitFor(() => /no parece correcto/.test(tg.outgoingText(ME)));
@@ -302,7 +304,7 @@ describe('cines through Telegram (fake cines-mx-mcp)', () => {
   it('a bad format is checked by the hub (the server is not called); a late reply after expiry is swallowed', async () => {
     const { sm, hub } = await buyFlow({ purchaseInputs: ['cvv'] });
     await press('cines:b:');
-    await tg.waitFor(() => /CVV/.test(tg.outgoingText(ME)), 10_000);
+    await tg.waitFor(() => /🔒 Envíe el CVV/.test(tg.outgoingText(ME)), 10_000);
     tg.push(textUpdate(ME, '12ab'));
     await tg.waitFor(() => /no parece correcto/.test(tg.outgoingText(ME)));
     expect(cines.calls.map((c) => c.tool)).not.toContain('cines_submit_code');

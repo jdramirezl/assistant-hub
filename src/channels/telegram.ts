@@ -52,7 +52,7 @@ export interface TelegramDeps {
   preAgent?: (chatId: string, text: string) => Promise<{ reply?: string; agentText?: string } | undefined>;
 }
 
-type Pending = { requestId: string; kind: string; expiresAt: number; expired?: boolean };
+type Pending = { requestId: string; kind: string; expiresAt: number; expired?: boolean; purpose?: 'payment'; holdId?: string };
 export interface SecureInputPort {
   /** Pending request; `expired` = lapsed recently (only a late secret is swallowed). */
   pending(chatId: string): Promise<Pending | undefined>;
@@ -284,7 +284,10 @@ export function createTelegramChannel(config: HubConfig, deps: TelegramDeps = {}
       if (event.actionId.startsWith('cines:')) {
         const userId = event.user?.userId;
         if (!userId || !config.telegram.allowedUserIds.includes(String(userId))) return log(`[telegram] ignoring cines button from non-allowlisted user ${userId}`);
-        return deps.onCinesAction?.(event.actionId, String(userId));
+        // not awaited: a purchase can run for minutes (PayPal, a CVV asked mid-way) and the user's
+        // next message (the secure reply) must not queue behind it
+        void deps.onCinesAction?.(event.actionId, String(userId))?.catch((e: Error) => log(`[telegram] cines button failed: ${e.message.split('\n')[0]}`));
+        return;
       }
       if (!event.actionId.startsWith('plan:')) {
         const chatId = event.user?.userId ? String(event.user.userId) : undefined;

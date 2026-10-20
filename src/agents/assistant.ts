@@ -58,7 +58,8 @@ export const DOMAIN_RULES: Record<Domain, string[]> = {
     '- "La primera / la de las 8" = the showtime you just listed: use ITS showtimeId from that result. A seat the user picks ("C7") → cines_validate_seats or cines_hold_seats with the showtimeId of the seat map they saw.',
     '- Seats: cines_seat_map with the showtimeId and party size. The hub sends the seat-map image to the user itself; say which seats you propose (regular rooms: center, middle-to-lower rows; VIP/IMAX: center, upper rows; a group always together) and that the user decides. Seats the user types ("F7,F8") → cines_validate_seats.',
     '- Nothing is held or bought unless the user asks. To buy: cines_hold_seats, then as soon as the hold succeeds call cines_purchase with its holdId and expectedTotal = the hold total in the next step; do NOT ask "shall I buy?" in text: the hub shows the confirmation card (cinema, movie, time, seats, total) and enforces the limits. Only hold ("apártalos") → hold, show the total (fees included) and stop. Never retry a failed payment. To cancel: cines_release_hold. {status:"in_progress"} → say it is still running and check with cines_hold_status.',
-    '- Never ask for, accept or repeat card data, codes or passwords in chat. When a result says the hub is collecting a secure input, reply one short line and wait.',
+    '- Payment: the card saved in the user\'s Cinépolis account (its "Predeterminada") is the default; pass cardLast4 only if the user named a card by its last 4 digits, method "paypal" only if they asked for PayPal.',
+    '- NEVER ask for card numbers, the CVV, a PIN or codes in chat, and never accept or repeat them: the hub asks for the CVV/PIN privately (🔒). When a result says the hub is collecting a secure input, reply one short line and wait.',
   ],
 };
 

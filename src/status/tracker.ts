@@ -92,7 +92,7 @@ export class StatusTracker {
     this.workingTimer = setTimeout(() => this.ensureWorking(), this.d.workingAfterMs ?? WORKING_AFTER_MS);
     this.workingTimer.unref?.();
     this.slowTimer = setTimeout(() => {
-      if (this.finished || this.awaiting || /PayPal/.test(this.activityText ?? '')) return;
+      if (this.finished || this.awaiting || /PayPal|CVV|PIN|tarjeta|card/.test(this.activityText ?? '')) return;
       this.d.log?.('[status] still running after 90 s');
       void this.show(this.msgs.working(this.msgs.slow()), true);
     }, this.d.slowAfterMs ?? SLOW_AFTER_MS);
