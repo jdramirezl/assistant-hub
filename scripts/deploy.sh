@@ -44,13 +44,17 @@ if [[ "$SKIP_TESTS" == 0 ]]; then
 fi
 run npm run build
 
-hub_state="$(install_agent "$HUB_LABEL" "$REPO/launchd/$HUB_LABEL.plist.tmpl")"
-install_agent "$BACKUP_LABEL" "$REPO/launchd/$BACKUP_LABEL.plist.tmpl" >/dev/null
+# (errexit does not reach into $(…): check the status explicitly)
+hub_state="$(install_agent "$HUB_LABEL" "$REPO/launchd/$HUB_LABEL.plist.tmpl")" || die "could not install $HUB_LABEL"
+install_agent "$BACKUP_LABEL" "$REPO/launchd/$BACKUP_LABEL.plist.tmpl" >/dev/null || die "could not install $BACKUP_LABEL"
 if [[ "$hub_state" == unchanged ]]; then
   say "restarting $HUB_LABEL"
   run launchctl kickstart -k "$GUI_DOMAIN/$HUB_LABEL"
 else
   say "plist changed; service reloaded"
 fi
+# a bootout/kickstart over ssh has left the label unregistered: make sure launchd has it
+ensure_loaded "$HUB_LABEL"
+ensure_loaded "$BACKUP_LABEL"
 wait_healthy
 say "deployed $after"

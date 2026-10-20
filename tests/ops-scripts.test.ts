@@ -162,3 +162,75 @@ describe('backup.sh', () => {
     expect(res.stdout).toMatch(/nothing to back up/);
   });
 });
+
+describe('launchd registration (deploy over ssh lost the label)', () => {
+  /**
+   * A fake launchctl on PATH: state in a dir; `bootstrap` fails `failBootstraps` times (like
+   * "Bootstrap failed: 5: Input/output error" right after an async bootout); `print` succeeds
+   * only for registered labels. A fake curl never gets healthy.
+   */
+  function fakeLaunchd(failBootstraps: number, registered: string[] = []) {
+    const root = mkdtempSync(join(tmpdir(), 'launchd-'));
+    const bin = join(root, 'bin');
+    const state = join(root, 'state');
+    mkdirSync(bin);
+    mkdirSync(state);
+    for (const l of registered) writeFileSync(join(state, l), '');
+    writeFileSync(join(root, 'fails'), String(failBootstraps));
+    writeFileSync(
+      join(bin, 'launchctl'),
+      `#!/bin/bash
+echo "$*" >> "${root}/calls"
+label() { basename "\${1##*/}" .plist; }
+case "$1" in
+  print) [[ -f "${state}/$(label "$2")" ]] && { echo "    state = running"; echo "    pid = 4242"; echo "    last exit code = 0"; exit 0; }; echo "Could not find service" >&2; exit 113 ;;
+  bootout) rm -f "${state}/$(label "$2")" ;;
+  bootstrap) n=$(cat "${root}/fails"); if (( n > 0 )); then echo $((n - 1)) > "${root}/fails"; echo "Bootstrap failed: 5: Input/output error" >&2; exit 5; fi; touch "${state}/$(label "$3")" ;;
+  *) ;;
+esac
+`,
+    );
+    writeFileSync(join(bin, 'curl'), '#!/bin/sh\nexit 7\n');
+    chmodSync(join(bin, 'launchctl'), 0o755);
+    chmodSync(join(bin, 'curl'), 0o755);
+    return { root, bin, plists: join(root, 'LaunchAgents'), calls: () => (existsSync(join(root, 'calls')) ? readFileSync(join(root, 'calls'), 'utf8') : '') };
+  }
+  const bash = (f: ReturnType<typeof fakeLaunchd>, script: string) =>
+    spawnSync('bash', ['-c', `set -euo pipefail; source "${join(REPO, 'scripts/lib.sh')}"; ${script}`], {
+      encoding: 'utf8',
+      env: { ...process.env, PATH: `${f.bin}:${process.env.PATH}`, PLIST_DIR: f.plists, NODE_BIN: fakeNode(), LAUNCHCTL_SLEEP: '0', LAUNCHCTL_TRIES: '3', HEALTH_WAIT_S: '1', LOG_DIR: join(f.root, 'logs') },
+    });
+  const TMPL = TEMPLATES[0]!;
+
+  it('a failed bootstrap is retried until launchctl print shows the label', () => {
+    const f = fakeLaunchd(2, ['com.jdrami.assistant-hub']);
+    // plist differs from the loaded one → bootout + bootstrap
+    const res = bash(f, `install_agent com.jdrami.assistant-hub "${TMPL}"`);
+    expect(res.status, res.stderr).toBe(0);
+    expect(res.stdout.trim()).toBe('changed');
+    expect(f.calls().match(/^bootstrap /gm)).toHaveLength(3);
+    expect(res.stderr).toMatch(/attempt 1\/3 failed: Bootstrap failed: 5/);
+    expect(res.stderr).toMatch(/registered \(attempt 3\)/);
+  });
+
+  it('gives up with a clear error (non-zero) instead of reporting success', () => {
+    const f = fakeLaunchd(9);
+    const res = bash(f, `x="$(install_agent com.jdrami.assistant-hub "${TMPL}")" || { echo "install failed"; exit 1; }`);
+    expect(res.status).toBe(1);
+    expect(res.stderr).toMatch(/could not register com\.jdrami\.assistant-hub with launchd; try: launchctl bootstrap gui\/\d+ /);
+  });
+
+  it('ensure_loaded re-bootstraps a label launchd lost; health timeout prints launchd state', () => {
+    const f = fakeLaunchd(1);
+    mkdirSync(f.plists, { recursive: true });
+    writeFileSync(join(f.plists, 'com.jdrami.assistant-hub.plist'), '<plist/>');
+    const res = bash(f, 'ensure_loaded com.jdrami.assistant-hub && wait_healthy || true');
+    expect(res.stderr).toMatch(/is not registered with launchd; bootstrapping it again/);
+    expect(f.calls().match(/^bootstrap /gm)).toHaveLength(2);
+    expect(res.stderr).toMatch(/did not become healthy in 1s/);
+    expect(res.stdout + res.stderr).toMatch(/launchd state of com\.jdrami\.assistant-hub[\s\S]*state = running[\s\S]*pid = 4242/);
+    // and when it is gone, it says so
+    const gone = bash(fakeLaunchd(0), 'wait_healthy || true');
+    expect(gone.stderr).toMatch(/is NOT registered with launchd/);
+  });
+});

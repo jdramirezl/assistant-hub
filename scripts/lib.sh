@@ -14,6 +14,10 @@ HEALTH_URL="http://127.0.0.1:4111/health"
 DRY_RUN="${DRY_RUN:-0}"
 ASSUME_YES="${ASSUME_YES:-0}"
 GUI_DOMAIN="gui/$(id -u)"
+# launchd retries (tests shorten them)
+LAUNCHCTL_TRIES="${LAUNCHCTL_TRIES:-5}"
+LAUNCHCTL_SLEEP="${LAUNCHCTL_SLEEP:-2}"
+HEALTH_WAIT_S="${HEALTH_WAIT_S:-60}"
 
 say() { printf '\033[1m==>\033[0m %s\n' "$*"; }
 warn() { printf '\033[33mwarning:\033[0m %s\n' "$*" >&2; }
@@ -68,6 +72,54 @@ use_node() {
 
 agent_loaded() { launchctl print "$GUI_DOMAIN/$1" >/dev/null 2>&1; }
 
+# bootout is asynchronous: wait until launchd has really dropped the label (else the next
+# bootstrap fails with "5: Input/output error" and the service stays unregistered).
+unload_agent() {
+  local label="$1" i
+  agent_loaded "$label" || return 0
+  launchctl bootout "$GUI_DOMAIN/$label" >&2 || true
+  for ((i = 0; i < LAUNCHCTL_TRIES * 5; i++)); do
+    agent_loaded "$label" || return 0
+    sleep 0.2
+  done
+  warn "$label still registered after bootout"
+}
+
+# Bootstrap with retry, and only report success once `launchctl print` shows the label.
+bootstrap_agent() {
+  local label="$1" target="$2" i out
+  for ((i = 1; i <= LAUNCHCTL_TRIES; i++)); do
+    out="$(launchctl bootstrap "$GUI_DOMAIN" "$target" 2>&1)" || true
+    if agent_loaded "$label"; then
+      launchctl enable "$GUI_DOMAIN/$label" >&2 || true
+      [[ $i -gt 1 ]] && say "$label registered (attempt $i)" >&2
+      return 0
+    fi
+    warn "bootstrap $label attempt $i/$LAUNCHCTL_TRIES failed${out:+: $out}"
+    sleep "$LAUNCHCTL_SLEEP"
+  done
+  die "could not register $label with launchd; try: launchctl bootstrap $GUI_DOMAIN $target"
+}
+
+# After a restart: the label must be registered (re-bootstrap it if launchd lost it).
+ensure_loaded() {
+  local label="$1" target="$PLIST_DIR/$1.plist"
+  [[ "$DRY_RUN" == 1 ]] && return 0
+  agent_loaded "$label" && return 0
+  warn "$label is not registered with launchd; bootstrapping it again"
+  bootstrap_agent "$label" "$target"
+}
+
+# What launchd thinks of the label (for a failed health check).
+agent_state() {
+  local label="$1"
+  if agent_loaded "$label"; then
+    launchctl print "$GUI_DOMAIN/$label" 2>&1 | grep -E '^\s*(state|pid|last exit code|runs|path|program) =' | sed 's/^/    /' >&2 || true
+  else
+    warn "$label is NOT registered with launchd (launchctl print found nothing)"
+  fi
+}
+
 # Render a template into ~/Library/LaunchAgents and (re)load it if it changed.
 # Prints "changed" or "unchanged".
 install_agent() {
@@ -90,16 +142,15 @@ install_agent() {
   mkdir -p "$PLIST_DIR"
   mv "$new" "$target"
   chmod 644 "$target"
-  agent_loaded "$label" && launchctl bootout "$GUI_DOMAIN/$label" >&2 || true
-  launchctl bootstrap "$GUI_DOMAIN" "$target" >&2
-  launchctl enable "$GUI_DOMAIN/$label" >&2
+  unload_agent "$label"
+  bootstrap_agent "$label" "$target"
   echo changed
 }
 
 wait_healthy() {
   [[ "$DRY_RUN" == 1 ]] && { run curl -fsS "$HEALTH_URL"; return 0; }
   local i
-  for i in $(seq 1 60); do
+  for i in $(seq 1 "$HEALTH_WAIT_S"); do
     if curl -fsS -o /dev/null --max-time 2 "$HEALTH_URL"; then
       say "healthy: $HEALTH_URL (after ${i}s)"
       # The Mastra API has no auth: it must only listen on loopback.
@@ -110,7 +161,9 @@ wait_healthy() {
     fi
     sleep 1
   done
-  warn "service did not become healthy in 60s; see $LOG_DIR/hub.err.log"
+  warn "service did not become healthy in ${HEALTH_WAIT_S}s; see $LOG_DIR/hub.err.log"
+  say "launchd state of $HUB_LABEL:"
+  agent_state "$HUB_LABEL"
   tail -n 30 "$LOG_DIR/hub.err.log" 2>/dev/null || true
   return 1
 }
