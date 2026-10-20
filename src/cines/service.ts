@@ -204,14 +204,14 @@ export class CinesHub {
   resolveShowtime(chat: string, given: unknown): { id: string; substituted?: boolean } | { error: ReturnType<typeof sharedError> } {
     const id = typeof given === 'string' ? given.trim() : '';
     const s = this.shownFor(chat);
-    if (!s.ids.size || s.ids.has(id)) return id ? { id } : { error: sharedError('CINES_BAD_REQUEST', 'showtimeId is required (copy it from the latest cines_best_showtime / cines_seat_map result).') };
+    if (!s.ids.size || s.ids.has(id)) return id ? { id } : { error: sharedError('MODEL_ARG', 'showtimeId is required (copy it from the latest cines_best_showtime / cines_seat_map result).') };
     const pick = s.lastMap?.id ?? (s.ids.size === 1 ? [...s.ids.keys()][0] : undefined);
     if (pick) {
       this.log(`[cines] showtimeId ${id || '(none)'} was never shown to the user; using ${pick} (the one in play)`);
       return { id: pick, substituted: true };
     }
     const list = [...s.ids.values()].map((x) => `${x.id} (${x.label})`).join('; ');
-    return { error: sharedError('CINES_BAD_REQUEST', `showtimeId ${id || '(none)'} is not one the user was shown. Copy it verbatim from the results: ${list}.`) };
+    return { error: sharedError('MODEL_ARG', `showtimeId ${id || '(none)'} is not one the user was shown. Copy it verbatim from the results: ${list}.`) };
   }
 
   /** What the hold card shows for these args (sync; after prepareHold). */
@@ -255,11 +255,18 @@ export class CinesHub {
    * those seats (the normal approval card); invalid → the server's reason for the user
    * (plus the preview image). undefined when this is not a seat pick after a seat map.
    */
-  async seatPick(chat: string, text: string): Promise<{ agentText?: string; reply?: string } | undefined> {
+  async seatPick(chat: string, text: string, opts: { othersRunning?: () => boolean; maxWaitMs?: number } = {}): Promise<{ agentText?: string; reply?: string } | undefined> {
     const seats = seatPickOf(text);
     if (!seats) return undefined;
+    // the seat map's run may still be open (its reply not sent yet): wait for it, then decide
+    const until = this.now() + (opts.maxWaitMs ?? 90_000);
+    if (!this.shownFor(chat).lastMap && opts.othersRunning?.()) this.log(`[cines] seat pick ${seats.join(',')} while another run is open; waiting for it`);
+    while (!this.shownFor(chat).lastMap && opts.othersRunning?.() && this.now() < until) await new Promise((r) => setTimeout(r, 250));
     const map = this.shownFor(chat).lastMap;
-    if (!map) return undefined;
+    if (!map) {
+      this.log(`[cines] seat pick ${seats.join(',')} but no seat map in play; the agent handles it`);
+      return undefined;
+    }
     const label = this.shownFor(chat).ids.get(map.id)?.label ?? map.id;
     const list = seats.join(',');
     const v = (await this.d.toolbox.execute('cines_validate_seats', { showtimeId: map.id, seats: list, tickets: seats.length }, { raw: true })) as Rec;

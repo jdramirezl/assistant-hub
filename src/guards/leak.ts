@@ -75,6 +75,32 @@ export function planShownThisTurn(prompt: Msg[]): boolean {
   );
 }
 
+/** user_message of tool failures this turn that no later call of the same tool fixed. */
+export function finalFailureCauses(prompt: Msg[]): string[] {
+  const lastUser = prompt.map((m) => m.role).lastIndexOf('user');
+  const rs: { tool: string; cause?: string; ok: boolean }[] = [];
+  for (const m of prompt.slice(lastUser + 1)) {
+    if (m.role !== 'tool' || !Array.isArray(m.content)) continue;
+    for (const r of m.content as { type?: string; toolName?: string; output?: { value?: unknown } }[]) {
+      if (r.type !== 'tool-result' || !r.toolName) continue;
+      const v = (r.output?.value ?? {}) as { error?: unknown; user_message?: unknown };
+      rs.push({ tool: r.toolName, ok: !(v && typeof v === 'object' && 'error' in v), cause: typeof v?.user_message === 'string' ? v.user_message : undefined });
+    }
+  }
+  return rs.filter((x, i) => !x.ok && x.cause && !rs.slice(i + 1).some((y) => y.tool === x.tool && y.ok)).map((x) => x.cause!);
+}
+
+const words = (s: string) => new Set(s.toLowerCase().normalize('NFD').replace(/\p{Diacritic}/gu, '').match(/\p{L}{4,}/gu) ?? []);
+/** The reply just restates a failure cause (no question, mostly the same words). */
+export function restatesFailure(text: string, causes: string[]): boolean {
+  if (!text.trim() || /\?/.test(text) || text.length > 400) return false;
+  const t = words(text);
+  return causes.some((c) => {
+    const w = [...words(c)];
+    return w.length >= 3 && w.filter((x) => t.has(x)).length / w.length >= 0.6;
+  });
+}
+
 export function withLeakGuard(model: unknown, log: (m: string) => void = () => {}): unknown {
   const m = model as StreamModel;
   if (!m || typeof m.doStream !== 'function') return model;
@@ -89,6 +115,11 @@ export function withLeakGuard(model: unknown, log: (m: string) => void = () => {
     }
     if (text.trim() && planShownThisTurn(prompt)) {
       log('[guard] plan card shown: the card is the message; dropped the model text');
+      return { ...first, stream: replay(withText(parts, '')) };
+    }
+    // the status line already shows this failure (❌ + cause + action): no duplicate message
+    if (text.trim() && restatesFailure(text, finalFailureCauses(prompt))) {
+      log('[guard] reply only restates the failure shown in the status line; dropped it');
       return { ...first, stream: replay(withText(parts, '')) };
     }
     if (!leaks(text)) return { ...first, stream: replay(parts) };

@@ -25,6 +25,7 @@ export const ERROR_TABLE: Record<string, Entry> = {
   SESSION_LOST: { es: ['{app} se reinició a mitad de la operación', 'Vuelva a enviarlo; ya me reconecté.'], en: ['{app} restarted mid-operation', 'Send it again; I have reconnected.'] },
   TOOL_ERROR: { es: ['{app} devolvió un error inesperado', 'Inténtelo de nuevo; si se repite, avíseme con el código de abajo.'], en: ['{app} returned an unexpected error', 'Try again; if it repeats, tell me the code below.'] },
   INTERNAL_ERROR: { es: ['{app} tuvo un error interno', 'Inténtelo de nuevo en un momento.'], en: ['{app} had an internal error', 'Try again in a moment.'] },
+  MODEL_ARG: { es: ['hubo un dato interno mal formado', 'Vuelva a pedírmelo.'], en: ['an internal argument was malformed', 'Ask me again.'] },
   PLAN_INCOMPLETE: { es: ['el plan no incluía todo', 'Lo estoy rehaciendo; espere el plan corregido.'], en: ['the plan was incomplete', 'I am redoing it; wait for the revised plan.'] },
   // MyFitnessPal (Mason)
   MFP_UNAVAILABLE: { es: ['MyFitnessPal no responde', 'Lo reintento solo; vuelva a enviarlo en unos minutos.'], en: ['MyFitnessPal is not responding', 'I keep retrying; send it again in a few minutes.'] },

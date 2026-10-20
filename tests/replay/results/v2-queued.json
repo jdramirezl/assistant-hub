@@ -1,0 +1,81 @@
+{
+ "label": "v2-queued",
+ "at": "2026-10-20T19:57:46.977Z",
+ "results": [
+  {
+   "id": "expense-partial",
+   "calls": 2,
+   "rateLimited": 0,
+   "inputTokens": 9574,
+   "cachedTokens": 2002,
+   "outputTokens": 861,
+   "toolsSentAvg": 15,
+   "systemCharsAvg": 4836,
+   "actions": [
+    "finance.create EgresoNormal 18000 COP Nequi/Disponible 2026-10-20",
+    "finance.create EgresoNormal 5000 COP Nequi/Disponible 2026-10-20"
+   ],
+   "cards": [],
+   "ok": true,
+   "reply": "Muy bien, Amo Julián, he registrado el almuerzo y el café, pero respecto a la camisa: no hay saldo suficiente en ese bolsillo. ¿Lo cargo a otra cuenta o bolsillo?",
+   "status": "⚠️ Guardé 2 de 3 gastos. Falló: Ropa $262.000 — no hay saldo suficiente en ese bolsillo. ¿Lo cargo a otra cuenta o bolsillo?\n<code>VALIDATION_ERROR · req 3ac433</code>",
+   "ms": 31051
+  },
+  {
+   "id": "cines-seats",
+   "calls": 5,
+   "rateLimited": 0,
+   "inputTokens": 22883,
+   "cachedTokens": 7999,
+   "outputTokens": 353,
+   "toolsSentAvg": 14,
+   "systemCharsAvg": 6053,
+   "actions": [],
+   "cards": [],
+   "ok": true,
+   "reply": "Para su comodidad, Amo Julián, sugiero los asientos **F7 y F8**. Le he enviado el mapa de la sala; indíqueme si son de su agrado.",
+   "status": "⏳ Preparando el mapa de asientos…",
+   "ms": 42755
+  },
+  {
+   "id": "cines-pick-seat",
+   "calls": 7,
+   "rateLimited": 0,
+   "inputTokens": 31500,
+   "cachedTokens": 13985,
+   "outputTokens": 449,
+   "toolsSentAvg": 14,
+   "systemCharsAvg": 6053,
+   "actions": [
+    "cines.hold hold_1 570-1002 C7 $99"
+   ],
+   "cards": [
+    "tool:cines_hold_seats"
+   ],
+   "ok": true,
+   "reply": "Amo Julián, he apartado el asiento C7 para usted. El total es de $99 MXN (incluye cargos).",
+   "status": "✅ 1 apartado de asientos",
+   "ms": 63836
+  },
+  {
+   "id": "cines-c7",
+   "calls": 7,
+   "rateLimited": 0,
+   "inputTokens": 31705,
+   "cachedTokens": 13986,
+   "outputTokens": 654,
+   "toolsSentAvg": 14,
+   "systemCharsAvg": 6053,
+   "actions": [
+    "cines.hold hold_1 419-48705 C7 $102"
+   ],
+   "cards": [
+    "tool:cines_hold_seats"
+   ],
+   "ok": true,
+   "reply": "Asiento C7 apartado en Plaza Carso para Clayface. Total: $102 MXN.",
+   "status": "✅ 1 apartado de asientos",
+   "ms": 63335
+  }
+ ]
+}

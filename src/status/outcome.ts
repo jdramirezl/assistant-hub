@@ -88,6 +88,8 @@ export function summarizeOutcome(events: ToolOutcome[], isWrite: (tool: string) 
   writes.forEach((e, i) => {
     const err = e.thrown ? { code: 'TOOL_ERROR', message: e.thrown } : errorOf(e.result);
     const key = nounKey(e);
+    // the model's own bad argument (placeholder, invented id, wrong year): bounced back to it, never shown
+    if (err?.code === 'MODEL_ARG') return;
     if (err) {
       // a validation error the model fixed (same tool succeeded later) is not a failure
       const label = labelOf(e, lang);
@@ -175,7 +177,7 @@ export function summarizeOutcome(events: ToolOutcome[], isWrite: (tool: string) 
   const ok = (x: ToolOutcome) => !x.thrown && !errorOf(x.result);
   for (const e of reads) {
     const err = e.thrown ? { code: 'TOOL_ERROR', message: e.thrown } : errorOf(e.result);
-    if (!err || err.code === 'VALIDATION_ERROR') continue;
+    if (!err || err.code === 'VALIDATION_ERROR' || err.code === 'MODEL_ARG') continue;
     const app = appOfTool(e.tool);
     if (events.slice(events.indexOf(e) + 1).some((x) => appOfTool(x.tool) === app && ok(x))) continue;
     if (failures.some((f) => f.why.code === err.code)) continue;

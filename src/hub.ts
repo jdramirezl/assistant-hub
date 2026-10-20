@@ -173,6 +173,7 @@ export function createHub(config: HubConfig, deps: HubDeps = {}): Hub {
   const voice = createVoice(config.persona);
   /** Requests whose status message is still open (debug entry point waits for 0). */
   let openRequests = 0;
+  const openByChat = new Map<string, number>();
   const msgs = new StatusMessages(config.persona);
   const version = hubVersion(deps.env ?? process.env);
   const client = createDbClient(config);
@@ -214,7 +215,8 @@ export function createHub(config: HubConfig, deps: HubDeps = {}): Hub {
           }
         }
         const ph = placeholderArg(given);
-        const invalid = (message: string) => Promise.resolve({ error: { error: { code: 'VALIDATION_ERROR', message, retryable: false } } });
+        // errors about the MODEL's own arguments (placeholders, wrong years): for the model only
+        const invalid = (message: string) => Promise.resolve({ error: { error: { code: 'MODEL_ARG', message, retryable: false } } });
         if (ph) return invalid(`${ph} is a placeholder, not a real value. Copy the real value verbatim from the latest tool result (never invent ids).`);
         let input = given;
         if (tool.startsWith('cines_')) {
@@ -401,8 +403,12 @@ export function createHub(config: HubConfig, deps: HubDeps = {}): Hub {
     status: tgApi
       ? (chatId, requestId) => {
           openRequests++;
+          openByChat.set(chatId, (openByChat.get(chatId) ?? 0) + 1);
           return new StatusTracker({
-            onFinish: () => void (openRequests = Math.max(0, openRequests - 1)),
+            onFinish: () => {
+              openRequests = Math.max(0, openRequests - 1);
+              openByChat.set(chatId, Math.max(0, (openByChat.get(chatId) ?? 1) - 1));
+            },
             api: {
               send: (c, html) => tgApi.sendHtml(c, html),
               edit: (c, id, html) => tgApi.editHtml(c, id, html),
@@ -427,7 +433,9 @@ export function createHub(config: HubConfig, deps: HubDeps = {}): Hub {
       if (event.kind === 'approval') log(`[approval] card: ${event.toolName}`);
       return cinesApprovalCard(event, cinesHub, config.persona.language) ?? genericApprovalCard(event, config.persona.language, { kcal: (a) => nutrition.estimateLogKcal(a) });
     },
-    preAgent: (chatId, text) => cinesHub.seatPick(chatId, text),
+    // a pick typed while the seat-map run is still open waits for it (the map is remembered as
+    // soon as cines_seat_map returns; the wait covers a pick sent before that)
+    preAgent: (chatId, text) => cinesHub.seatPick(chatId, text, { othersRunning: () => (openByChat.get(chatId) ?? 0) > 1 }),
     secureInput: {
       pending: (chatId) => cinesHub.pending(chatId),
       cancel: (chatId) => cinesHub.cancelSecure(chatId),

@@ -119,3 +119,38 @@ describe('bug 4: a failed tool carries its real cause for the model', () => {
     expect(JSON.stringify(sm.calls[1]!.prompt)).toMatch(/user_message.*no encontré esa película, cine o función/);
   });
 });
+
+describe('queued live issues (seat pick during the map run, duplicate failure text)', () => {
+  it('a seat pick waits for the open seat-map run, then takes the fast path', async () => {
+    const { CinesHub } = await import('../src/cines/service.js');
+    const calls: string[] = [];
+    const kv = { get: async () => null, set: async () => {}, delete: async () => {}, setIfNotExists: async () => true, incr: async () => 1 };
+    const hubc = new CinesHub({
+      kv: kv as never,
+      toolbox: { execute: async (n: string) => (calls.push(n), { ok: true, showtimeId: '570-2201', seats: ['C7'] }) },
+      securePrompt: () => '',
+      secureBadFormat: () => '',
+      secureExpired: () => '',
+    });
+    let running = true;
+    const p = hubc.seatPick('42', 'Elige C7', { othersRunning: () => running, maxWaitMs: 5000 });
+    await new Promise((r) => setTimeout(r, 300));
+    await hubc.afterResult('cines_seat_map', {}, { showtimeId: '570-2201', proposal: ['D6'] }, { chatId: '42' });
+    running = false;
+    const r = await p;
+    expect(r?.agentText).toMatch(/"showtimeId":"570-2201","seats":"C7"/);
+    expect(calls).toEqual(['cines_validate_seats']);
+  });
+
+  it('a reply that only restates the failure is dropped (the ❌ status carries it)', async () => {
+    const { restatesFailure, finalFailureCauses } = await import('../src/guards/leak.js');
+    const prompt = [
+      { role: 'user', content: [{ type: 'text', text: 'aparta C7' }] },
+      { role: 'tool', content: [{ type: 'tool-result', toolName: 'cines_hold_seats', output: { type: 'json', value: { error: { code: 'CINES_SCHEMA_CHANGED' }, user_message: 'Cinépolis cambió su sitio. Hay que actualizar cines-mx-mcp; no lo reintento.' } } }] },
+    ];
+    const causes = finalFailureCauses(prompt as never);
+    expect(restatesFailure('Me temo que Cinépolis cambió su sitio y hay que actualizar cines-mx-mcp, Amo Julián.', causes)).toBe(true);
+    expect(restatesFailure('Cinépolis cambió su sitio. ¿Quiere que intente otra función?', causes)).toBe(false); // a question stays
+    expect(restatesFailure('Le propongo D6.', causes)).toBe(false);
+  });
+});
