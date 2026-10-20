@@ -94,7 +94,7 @@ export class StatusMessages {
   outcome(o: Outcome, requestId?: string): StatusText | undefined {
     const es = this.es;
     const more = o.needInfo.length ? ` · ❓ ${o.needInfo.join(', ')}` : '';
-    if (o.kind === 'done') return { text: `✅ ${o.done.join(' · ')}${more}` };
+    if (o.kind === 'done') return { text: /^(Apartado|Held) /.test(o.done[0] ?? '') && o.done.length === 1 ? `🎟️ ${o.done[0]}${more}` : `✅ ${o.done.join(' · ')}${more}` };
     if (o.kind === 'none') return o.needInfo.length ? { text: `❓ ${o.needInfo.join(', ')}` } : undefined;
     const f = o.failures[0]!;
     // purchases: their own lines, never the generic failure wording

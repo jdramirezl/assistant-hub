@@ -1,0 +1,116 @@
+{
+ "label": "v2-card",
+ "at": "2026-10-20T20:40:33.030Z",
+ "results": [
+  {
+   "id": "cines-pick-seat",
+   "calls": 7,
+   "rateLimited": 0,
+   "inputTokens": 31740,
+   "cachedTokens": 11984,
+   "outputTokens": 470,
+   "toolsSentAvg": 14,
+   "systemCharsAvg": 6053,
+   "actions": [
+    "cines.hold hold_1 570-1002 C7 $99",
+    "cines.purchase hold_1 $99 dry-run"
+   ],
+   "cards": [
+    "tool:cines_hold_seats",
+    "purchase-card"
+   ],
+   "ok": true,
+   "reply": "🎟️ Asientos apartados — ¿confirmo la compra?\n🎬 Dune: Mesías\n📍 Cinépolis Parque Toreo · 2026-10-19 20:30 · subtitulada 2D\n💺 C7 · Admision General\n💰 $99 MXN (boletos $92 + cargos $7)\n⌛ Expira 14:47 (≈9 min)\n\n✅ Compra aprobada; pagando…",
+   "status": "✅ 🎟️ Compra confirmada: reserva DRYRUN-001 · $99 MXN (simulada)",
+   "ms": 34463
+  },
+  {
+   "id": "cines-paypal",
+   "calls": 2,
+   "rateLimited": 0,
+   "inputTokens": 8815,
+   "cachedTokens": 4006,
+   "outputTokens": 260,
+   "toolsSentAvg": 14,
+   "systemCharsAvg": 6053,
+   "actions": [
+    "cines.hold hold_1 570-1002 F7 $99",
+    "cines.purchase hold_1 $99 dry-run"
+   ],
+   "cards": [
+    "tool:cines_hold_seats",
+    "purchase-card"
+   ],
+   "ok": true,
+   "reply": "🎟️ Asientos apartados — ¿confirmo la compra?\n🎬 Dune: Mesías\n📍 Cinépolis Parque Toreo · 2026-10-19 20:30 · subtitulada 2D\n💺 F7 · Admision General\n💰 $99 MXN (boletos $92 + cargos $7)\n⌛ Expira 14:48 (≈9 min)\n\n✅ Compra aprobada; pagando…",
+   "status": "✅ 🎟️ Compra confirmada: reserva DRYRUN-001 · $99 MXN (simulada)",
+   "ms": 20659
+  },
+  {
+   "id": "cines-hold-slow",
+   "calls": 2,
+   "rateLimited": 0,
+   "inputTokens": 8702,
+   "cachedTokens": 4005,
+   "outputTokens": 194,
+   "toolsSentAvg": 14,
+   "systemCharsAvg": 6053,
+   "actions": [
+    "cines.hold hold_1 570-1002 F7 $99",
+    "cines.purchase hold_1 $99 dry-run"
+   ],
+   "cards": [
+    "tool:cines_hold_seats",
+    "purchase-card"
+   ],
+   "ok": true,
+   "reply": "🎟️ Asientos apartados — ¿confirmo la compra?\n🎬 ?\n📍 Cinépolis Parque Toreo · 2026-10-19 20:30 · subtitulada 2D\n💺 F7 · Admision General\n💰 $99 MXN (boletos $92 + cargos $7)\n⌛ Expira 14:48 (≈9 min)\n\n✅ Compra aprobada; pagando…",
+   "status": "✅ 🎟️ Compra confirmada: reserva DRYRUN-001 · $99 MXN (simulada)",
+   "ms": 18890
+  },
+  {
+   "id": "cines-hold-timeout",
+   "calls": 2,
+   "rateLimited": 0,
+   "inputTokens": 8701,
+   "cachedTokens": 4005,
+   "outputTokens": 204,
+   "toolsSentAvg": 14,
+   "systemCharsAvg": 6053,
+   "actions": [
+    "cines.hold hold_1 570-1002 B7 $99",
+    "cines.purchase hold_1 $99 dry-run"
+   ],
+   "cards": [
+    "tool:cines_hold_seats",
+    "purchase-card"
+   ],
+   "ok": true,
+   "reply": "🎟️ Asientos apartados — ¿confirmo la compra?\n🎬 ?\n📍 Cinépolis Parque Toreo · 2026-10-19 20:30 · subtitulada 2D\n💺 B7 · Admision General\n💰 $99 MXN (boletos $92 + cargos $7)\n⌛ Expira 14:48 (≈9 min)\n\n✅ Compra aprobada; pagando…",
+   "status": "✅ 🎟️ Compra confirmada: reserva DRYRUN-001 · $99 MXN (simulada)",
+   "ms": 22175
+  },
+  {
+   "id": "cines-buy",
+   "calls": 4,
+   "rateLimited": 0,
+   "inputTokens": 17660,
+   "cachedTokens": 8002,
+   "outputTokens": 521,
+   "toolsSentAvg": 14,
+   "systemCharsAvg": 6053,
+   "actions": [
+    "cines.hold hold_1 570-1002 F7,F8 $198",
+    "cines.purchase hold_1 $198 dry-run"
+   ],
+   "cards": [
+    "tool:cines_hold_seats",
+    "purchase-card"
+   ],
+   "ok": true,
+   "reply": "Amo Julián, la simulación de compra ha sido exitosa (reserva DRYRUN-001 por $198 MXN).",
+   "status": "❓ 🔒 esperando su código",
+   "ms": 24435
+  }
+ ]
+}

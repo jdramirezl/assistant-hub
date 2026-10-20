@@ -80,6 +80,12 @@ export interface CinesHubDeps {
   holdPollMs?: number;
   holdWaitMs?: number;
   holdWaitText?: () => string;
+  /** Hub purchase card (Telegram): send (returns message id) and edit (buttons optional). */
+  sendCard?: (chatId: string, text: string, keyboard: { text: string; callback_data: string }[][]) => Promise<number>;
+  editCard?: (chatId: string, messageId: number, text: string, keyboard?: { text: string; callback_data: string }[][]) => Promise<void>;
+  /** After 3 purchases: run the purchase of a just-held hold (like pressing Comprar). */
+  autoBuy?: (chatId: string, holdId: string) => Promise<void>;
+  lang?: 'es' | 'en';
   /** "❓ C7 no se puede: …" for an invalid seat pick (persona). */
   seatInvalidText?: (seats: string, reason: string) => string;
   /** "⏳ Esperando que apruebe el pago en PayPal en el Mac…" (persona). */
@@ -105,6 +111,14 @@ export interface CallContext {
   chatId?: string;
   /** The user's message for this request (cinemas they named, filters they asked for). */
   userText?: string;
+}
+
+/** "14:37" in the cinema's timezone and minutes left. */
+export function expiryOf(iso: string, now: number): { time: string; min: number } | undefined {
+  const t = Date.parse(iso);
+  if (!Number.isFinite(t)) return undefined;
+  const time = new Intl.DateTimeFormat('en-GB', { timeZone: 'America/Mexico_City', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }).format(t);
+  return { time, min: Math.max(0, Math.round((t - now) / 60_000)) };
 }
 
 /** lastJob of cines_hold_status when it is OUR background job (same jobId). */
@@ -176,6 +190,111 @@ export class CinesHub {
       note_named:
         'at_named_cinemas lists ALL showtimes that day at the cinemas the user named (no window/vip/format filter). Answer about those cinemas from it: say what exists (also times just outside their preferred window). Never say "only dubbed" or "none" unless at_named_cinemas shows it.',
     };
+  }
+
+  /* ---------------------------------------------------------------- the purchase card */
+
+  /** Holds with a hub purchase card (or an auto-purchase): message id per hold. */
+  private readonly cards = new Map<string, { chat: string; messageId?: number; timer?: ReturnType<typeof setTimeout> }>();
+  /** Holds whose purchase the hub itself is running (the model's own call is refused). */
+  private readonly hubPaying = new Set<string>();
+
+  private cardText(h: HoldSummary, extra = ''): string {
+    const es = (this.d.lang ?? 'es') === 'es';
+    const mx = (n: number) => `$${Math.round(n * 100) / 100}`;
+    const lf = [h.language === 'SUB' ? (es ? 'subtitulada' : 'subtitled') : h.language === 'ESP' ? (es ? 'doblada' : 'dubbed') : h.language, h.format].filter(Boolean).join(' ');
+    const exp = h.expiresAt ? expiryOf(h.expiresAt, this.now()) : undefined;
+    const price = h.unitMxn !== undefined && h.chargesMxn !== undefined ? ` (${es ? 'boletos' : 'tickets'} ${mx(h.totalMxn - h.chargesMxn)} + ${es ? 'cargos' : 'fees'} ${mx(h.chargesMxn)})` : '';
+    return [
+      es ? '🎟️ Asientos apartados — ¿confirmo la compra?' : '🎟️ Seats held — shall I buy them?',
+      `🎬 ${h.movie || '?'}`,
+      `📍 ${[h.cinema, h.when, lf].filter(Boolean).join(' · ')}`,
+      `💺 ${h.seats.join(', ')}${h.ticketType ? ` · ${h.ticketType}` : ''}`,
+      `💰 ${mx(h.totalMxn)} MXN${price}`,
+      ...(exp ? [es ? `⌛ Expira ${exp.time} (≈${exp.min} min)` : `⌛ Expires ${exp.time} (≈${exp.min} min)`] : []),
+      ...(extra ? ['', extra] : []),
+    ].join('\n');
+  }
+  private cardButtons(h: HoldSummary) {
+    const es = (this.d.lang ?? 'es') === 'es';
+    return [[{ text: `${es ? '✅ Comprar' : '✅ Buy'} $${h.totalMxn}`, callback_data: `cines:b:${h.holdId}` }, { text: es ? '❌ Cancelar' : '❌ Cancel', callback_data: `cines:r:${h.holdId}` }]];
+  }
+
+  /** After a hold: the purchase card, or (after 3 purchases, within the cap) the purchase itself. */
+  private async offerPurchase(h: HoldSummary, chat: string): Promise<'card' | 'auto' | undefined> {
+    if (!this.d.sendCard) return undefined;
+    if (this.cards.has(h.holdId)) return 'card';
+    // a hold read back from cines_hold_status has no movie: take it from the showtime the user saw
+    if (!h.movie && h.showtimeId) {
+      const label = this.shownFor(chat).ids.get(h.showtimeId)?.label;
+      if (label) h.movie = label.split(' · ')[0] ?? '';
+    }
+    const auto = (await this.successes()) >= ALWAYS_CONFIRM && !h.serverApprovalRequired && h.totalMxn > 0 && h.totalMxn <= HARD_CAP_MXN;
+    if (auto && this.d.autoBuy) {
+      this.cards.set(h.holdId, { chat });
+      this.log(`[cines] hold ${h.holdId}: covered by the hold approval (${ALWAYS_CONFIRM}+ purchases); buying`);
+      setTimeout(() => void this.d.autoBuy!(chat, h.holdId), 0);
+      return 'auto';
+    }
+    const messageId = await this.d.sendCard(chat, this.cardText(h), this.cardButtons(h)).catch((e: Error) => (this.log(`[cines] purchase card not sent: ${e.message}`), undefined));
+    if (messageId === undefined) return undefined;
+    const entry: { chat: string; messageId?: number; timer?: ReturnType<typeof setTimeout> } = { chat, messageId };
+    const ms = h.expiresAt ? Date.parse(h.expiresAt) - this.now() : 9 * 60_000;
+    entry.timer = setTimeout(() => void this.expireCard(h.holdId), Math.max(1000, ms));
+    entry.timer.unref?.();
+    this.cards.set(h.holdId, entry);
+    this.log(`[cines] purchase card shown for ${h.holdId} ($${h.totalMxn})`);
+    return 'card';
+  }
+
+  private async expireCard(holdId: string): Promise<void> {
+    const c = this.cards.get(holdId);
+    if (!c?.messageId || !(await this.d.kv.setIfNotExists(`cines:card:${holdId}`, 'expired', HOLD_TTL_MS))) return;
+    const es = (this.d.lang ?? 'es') === 'es';
+    await this.d.editCard?.(c.chat, c.messageId, es ? '⌛ El apartado expiró; Cinépolis liberó los asientos.' : '⌛ The hold expired; Cinépolis released the seats.').catch(() => {});
+    await this.d.toolbox.execute(RELEASE_TOOL, { holdId }, { raw: true }).catch(() => undefined);
+    this.log(`[cines] purchase card for ${holdId} expired`);
+  }
+
+  /** ✅ on the purchase card (or the auto-purchase): pay exactly this hold. Returns the result. */
+  async buyFromCard(holdId: string): Promise<unknown> {
+    const h = await this.hold(holdId);
+    const c = this.cards.get(holdId);
+    if (!h) return { error: { code: 'CINES_HOLD_EXPIRED', message: 'Ese apartado ya no está activo.', retryable: false } };
+    if (!(await this.d.kv.setIfNotExists(`cines:card:${holdId}`, 'buy', HOLD_TTL_MS))) return undefined; // double tap / expired
+    clearTimeout(c?.timer);
+    const es = (this.d.lang ?? 'es') === 'es';
+    if (c?.messageId) await this.d.editCard?.(c.chat, c.messageId, this.cardText(h, es ? '✅ Compra aprobada; pagando…' : '✅ Purchase approved; paying…')).catch(() => {});
+    this.hubPaying.add(holdId);
+    let r: unknown;
+    try {
+      r = await this.d.toolbox.execute(PURCHASE_TOOL, { holdId, expectedTotal: h.totalMxn });
+    } finally {
+      this.hubPaying.delete(holdId);
+    }
+    if (((r as Rec | undefined)?.error as Rec | undefined)?.code === 'CINES_PAYMENT_NOT_ARMED' && c?.messageId) {
+      // nothing was charged: the card stays valid until the hold expires
+      await this.d.kv.delete(`cines:card:${holdId}`);
+      const left = h.expiresAt ? Date.parse(h.expiresAt) - this.now() : 0;
+      if (left > 0) {
+        c.timer = setTimeout(() => void this.expireCard(holdId), left);
+        c.timer.unref?.();
+      }
+      await this.d.editCard?.(c.chat, c.messageId, this.cardText(h, es ? '🔒 El pago real no está armado. En el Mac corra: bin/cinesctl arm-payment — y vuelva a tocar Comprar.' : '🔒 Real payment is not armed. On the Mac run: bin/cinesctl arm-payment — then tap Buy again.'), this.cardButtons(h)).catch(() => {});
+    }
+    return r;
+  }
+
+  /** ❌ on the purchase card: release the hold. */
+  async releaseFromCard(holdId: string): Promise<unknown> {
+    const c = this.cards.get(holdId);
+    if (!(await this.d.kv.setIfNotExists(`cines:card:${holdId}`, 'release', HOLD_TTL_MS))) return undefined;
+    clearTimeout(c?.timer);
+    const r = await this.d.toolbox.execute(RELEASE_TOOL, { holdId });
+    const es = (this.d.lang ?? 'es') === 'es';
+    if (c?.messageId) await this.d.editCard?.(c.chat, c.messageId, es ? '❌ Cancelado: asientos liberados. No se cobró nada.' : '❌ Cancelled: seats released. Nothing was charged.').catch(() => {});
+    this.log(`[cines] purchase card: hold ${holdId} released by the user`);
+    return r;
   }
 
   /* ---------------------------------------------------------------- showtimes in play */
@@ -328,6 +447,8 @@ export class CinesHub {
    * unknown hold or one over the cap (they are refused anyway, with the card first).
    */
   async purchaseNeedsApproval(input: Rec): Promise<boolean> {
+    // the hub's own purchase card (or auto-purchase) handles this hold: no second approval card
+    if (this.cards.has(String(input.holdId ?? ''))) return false;
     if ((await this.successes()) < ALWAYS_CONFIRM) return true;
     const h = await this.hold(holdIdOf(input));
     // the hold itself was approved (gated): it covers this purchase, unless the server still
@@ -339,8 +460,12 @@ export class CinesHub {
    * Checks before a money tool reaches the server. Returns the args to send, or a
    * shared-shape error (the server is not called). Runs after the approval (if any).
    */
-  async beforeCall(tool: string, input: Rec, ctx: CallContext = {}): Promise<{ args: Rec } | { error: ReturnType<typeof sharedError> }> {
+  async beforeCall(tool: string, input: Rec, ctx: CallContext = {}): Promise<{ args: Rec } | { error: unknown }> {
     const chat = ctx.chatId ?? 'local';
+    const hid = String(input.holdId ?? '');
+    if (tool === PURCHASE_TOOL && this.cards.has(hid) && !this.hubPaying.has(hid)) {
+      return { error: { status: 'card_shown', note: 'The user already has the purchase card for this hold (Comprar / Cancelar). Do not call cines_purchase; reply one short line.' } };
+    }
     if (tool === HOLD_TOOL) {
       const r = await this.prepareHold(chat, input);
       return 'error' in r ? r : { args: r.args };
@@ -490,13 +615,19 @@ export class CinesHub {
     const h = holdOf(result);
     if (h && (tool === HOLD_TOOL || tool === SECURE_TOOL)) {
       h.serverApprovalRequired = (result as Rec).purchaseApprovalRequired === true;
-      // the server's `next` says "show the summary"; the HUB shows it (the purchase card)
-      out = {
-        ...(result as Rec),
-        next: `If the user asked to BUY, call cines_purchase now with holdId "${h.holdId}" and expectedTotal ${h.totalMxn} (the hub shows the confirmation card; do not ask in text). If they only asked to hold, show the total and stop.`,
-      };
       this.holds.set(h.holdId, h);
       await this.d.kv.set(`cines:hold:${h.holdId}`, h, HOLD_TTL_MS);
+      // the HUB (not the model) offers the purchase: a summary card with Comprar / Cancelar
+      const offered = ctx.chatId ? await this.offerPurchase(h, ctx.chatId) : undefined;
+      out = {
+        ...(result as Rec),
+        next:
+          offered === 'card'
+            ? 'The hub has shown the user the purchase card (summary + Comprar / Cancelar). Reply ONE short line; do NOT call cines_purchase.'
+            : offered === 'auto'
+              ? 'The hub is completing the purchase now (covered by the hold approval). Reply ONE short line; do NOT call cines_purchase.'
+              : `If the user asked to BUY, call cines_purchase now with holdId "${h.holdId}" and expectedTotal ${h.totalMxn}. If they only asked to hold, show the total and stop.`,
+      };
     }
     const outcome = purchaseOutcome(result);
     if (outcome === 'paid' && (tool === PURCHASE_TOOL || tool === SECURE_TOOL)) {

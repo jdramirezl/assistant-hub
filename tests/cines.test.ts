@@ -230,14 +230,14 @@ describe('cines through Telegram (fake cines-mx-mcp)', () => {
     const OTP = 'Q8Z4K2';
     const { sm, logs, cfg, hub } = await buyFlow({ purchaseInputs: ['cvv', 'otp_3ds'] });
     // the purchase card is a summary, not tool args
-    await tg.waitFor(() => /Confirmar compra/.test(tg.outgoingText(ME)), 10_000);
+    await tg.waitFor(() => /confirmo la compra/.test(tg.outgoingText(ME)), 10_000);
     const card = tg.outgoingText(ME);
     expect(card).toMatch(/Dune: Mesías/);
     expect(card).toMatch(/Parque Toreo/);
     expect(card).toMatch(/20:30/);
     expect(card).toMatch(/F7, F8/);
     expect(card).toMatch(/\$198 MXN/);
-    await press('tool_approve:call-1');
+    await press('cines:b:');
     // the server got the hub's total and userApproved, not the model's
     await tg.waitFor(() => /CVV/.test(tg.outgoingText(ME)), 10_000);
     expect(cines.calls.find((c) => c.tool === 'cines_purchase')!.args).toMatchObject({ expectedTotal: 198, userApproved: true });
@@ -267,7 +267,7 @@ describe('cines through Telegram (fake cines-mx-mcp)', () => {
 
   it('a bad format asks again without the model; "cancelar" stops; a pending request expires', async () => {
     const { sm, hub } = await buyFlow({ purchaseInputs: ['cvv'] });
-    await press('tool_approve:call-1');
+    await press('cines:b:');
     await tg.waitFor(() => /CVV/.test(tg.outgoingText(ME)), 10_000);
     const calls = sm.calls.length;
     tg.push(textUpdate(ME, '12'));
@@ -293,15 +293,15 @@ describe('cines through Telegram (fake cines-mx-mcp)', () => {
 
   it('❌ on the purchase card releases the hold', async () => {
     await buyFlow();
-    await tg.waitFor(() => /Confirmar compra/.test(tg.outgoingText(ME)), 10_000);
-    await press('tool_deny:call-1');
+    await tg.waitFor(() => /confirmo la compra/.test(tg.outgoingText(ME)), 10_000);
+    await press('cines:r:');
     await tg.waitFor(() => cines.actions.some((a) => a.op === 'release'), 10_000);
     expect(cines.actions.map((a) => a.op)).toEqual(['hold', 'release']);
   }, 30_000);
 
   it('a bad format is checked by the hub (the server is not called); a late reply after expiry is swallowed', async () => {
     const { sm, hub } = await buyFlow({ purchaseInputs: ['cvv'] });
-    await press('tool_approve:call-1');
+    await press('cines:b:');
     await tg.waitFor(() => /CVV/.test(tg.outgoingText(ME)), 10_000);
     tg.push(textUpdate(ME, '12ab'));
     await tg.waitFor(() => /no parece correcto/.test(tg.outgoingText(ME)));
@@ -317,21 +317,20 @@ describe('cines through Telegram (fake cines-mx-mcp)', () => {
     expect(JSON.stringify(sm.calls.map((c) => c.prompt))).not.toMatch(/(?<!\d)4821(?!\d)/); // (timestamps may contain the digits)
   }, 30_000);
 
-  it('a failed payment is never retried, even if the model calls it again', async () => {
+  it('a failed payment is never retried, even if the model calls it again or Comprar is tapped twice', async () => {
     const script: Turn[] = [
       { tool: 'cines_hold_seats', args: { showtimeId: '570-1002', seats: 'F7' } },
-      (p) => ({ tool: 'cines_purchase', args: { holdId: (JSON.parse(lastToolResult(p)).value ?? JSON.parse(lastToolResult(p))).holdId, expectedTotal: 99 } }),
-      { tool: 'cines_purchase', args: { holdId: 'hold_1', expectedTotal: 99 } },
-      (p) => ({ text: `final: ${/never retried/.test(lastToolResult(p)) ? 'never retried' : 'otro'}` }),
+      { tool: 'cines_purchase', args: { holdId: 'hold_1', expectedTotal: 99 } }, // refused: the card handles it
+      { text: 'Le dejé la compra lista.' },
     ];
     await boot(script, { phase3: true, paymentFails: true });
     tg.push(textUpdate(ME, 'compra F7 para la de las 20:30'));
     await press('tool_approve:call-0');
-    await press('tool_approve:call-1');
-    await press('tool_approve:call-2');
-    await tg.waitFor(() => /final:/.test(tg.outgoingText(ME)), 10_000);
+    const b = await press('cines:b:');
+    await tg.waitFor(() => /❌ El pago no se completó/.test(tg.outgoingText(ME)), 10_000);
+    tg.push(callbackUpdate(ME, { message_id: b.messageId }, b.data)); // second tap
+    await new Promise((r) => setTimeout(r, 800));
     expect(cines.calls.filter((c) => c.tool === 'cines_purchase')).toHaveLength(1);
-    expect(tg.outgoingText(ME)).toMatch(/never retried/);
   }, 30_000);
 
   it('after 3 successful purchases (persisted across restarts) the hold approval covers the purchase', async () => {
@@ -348,7 +347,7 @@ describe('cines through Telegram (fake cines-mx-mcp)', () => {
 
     await buyFlow({ successes: 3 }, dataDir); // restart on the same data dir; hold card pressed
     await tg.waitFor(() => /BK001/.test(tg.outgoingText(ME)), 10_000); // paid without a purchase card
-    expect(tg.outgoingText(ME)).not.toMatch(/Confirmar compra/);
+    expect(tg.outgoingText(ME)).not.toMatch(/confirmo la compra/);
     expect(cines.actions.map((a) => a.op)).toEqual(['hold', 'purchase']);
   }, 30_000);
 
@@ -360,7 +359,7 @@ describe('cines through Telegram (fake cines-mx-mcp)', () => {
     for (const id of ['a', 'b', 'c']) await first.hub.cines.afterResult('cines_purchase', {}, { status: 'paid', purchaseId: id, total: 1 });
     for (const c of cleanups.splice(0).reverse()) await c();
     await buyFlow({ successes: 1 }, dataDir);
-    await tg.waitFor(() => /Confirmar compra/.test(tg.outgoingText(ME)), 10_000);
+    await tg.waitFor(() => /confirmo la compra/.test(tg.outgoingText(ME)), 10_000);
   }, 30_000);
 
   it('CINES_PURCHASE_DRY_RUN=1 sends every purchase as dryRun and does not count it', async () => {
@@ -378,7 +377,7 @@ describe('cines through Telegram (fake cines-mx-mcp)', () => {
     await hub.start();
     tg.push(textUpdate(ME, 'compra F7 para la de las 20:30'));
     await press('tool_approve:call-0');
-    await press('tool_approve:call-1');
+    await press('cines:b:');
     await tg.waitFor(() => /DRYRUN-001/.test(tg.outgoingText(ME)), 10_000);
     expect(cines.calls.find((c) => c.tool === 'cines_purchase')!.args).toMatchObject({ dryRun: true, expectedTotal: 99, userApproved: true });
     expect(await hub.cines.successes()).toBe(0);

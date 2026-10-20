@@ -289,8 +289,12 @@ export function createHub(config: HubConfig, deps: HubDeps = {}): Hub {
     paypalWaitText: () => msgs.paypalWait(),
     seatInvalidText: (seats, reason) => msgs.seatInvalid(seats, reason),
     working: (text) => usageContext.getStore()?.status?.setActivity(text),
+    lang: config.persona.language,
+    autoBuy: (chatId: string, holdId: string) => cinesCard(`cines:b:${holdId}`, chatId),
     ...(tgApi
       ? {
+          sendCard: (chatId: string, text: string, keyboard: { text: string; callback_data: string }[][]) => tgApi.send(chatId, text, keyboard),
+          editCard: (chatId: string, id: number, text: string, keyboard?: { text: string; callback_data: string }[][]) => tgApi.editKeyboard(chatId, id, text, keyboard),
           sendPhoto: (chatId: string, bytes: Uint8Array) => tgApi.sendPhoto(chatId, bytes),
           sendText: async (chatId: string, text: string) => void (await tgApi.send(chatId, text)),
         }
@@ -399,13 +403,8 @@ export function createHub(config: HubConfig, deps: HubDeps = {}): Hub {
   });
   const weeklyDigest = createDigestWorkflow(digest, config.timezone);
 
-  const telegram = createTelegramChannel(config, {
-    ...deps.telegram,
-    kv,
-    voice,
-    gate: async (requestId) => ((await budget.check()).ok ? undefined : toPlain(msgs.budget(requestId))),
-    status: tgApi
-      ? (chatId, requestId) => {
+  const makeTracker = tgApi
+      ? (chatId: string, requestId: string) => {
           openRequests++;
           openByChat.set(chatId, (openByChat.get(chatId) ?? 0) + 1);
           return new StatusTracker({
@@ -429,8 +428,16 @@ export function createHub(config: HubConfig, deps: HubDeps = {}): Hub {
             ...(deps.statusTimings ?? {}),
           });
         }
-      : undefined,
+      : undefined;
+
+  const telegram = createTelegramChannel(config, {
+    ...deps.telegram,
+    kv,
+    voice,
+    gate: async (requestId) => ((await budget.check()).ok ? undefined : toPlain(msgs.budget(requestId))),
+    status: makeTracker,
     onPlanAction: (actionId, userId) => plans.handleAction(actionId, userId),
+    onCinesAction: (actionId, chatId) => cinesCard(actionId, chatId),
     commands: { usage: () => usageReport(), estado: () => estadoReport() },
     transcribe,
     approvalCard: (event) => {
@@ -455,6 +462,23 @@ export function createHub(config: HubConfig, deps: HubDeps = {}): Hub {
     ...(telegram ? { channels: { telegram } } : {}),
     server: { host: config.server.host, port: config.server.port },
   });
+
+  /** Purchase-card button (or auto-purchase): run it with its own live status message. */
+  async function cinesCard(actionId: string, chatId: string): Promise<void> {
+    const m = actionId.match(/^cines:([br]):(.+)$/);
+    if (!m) return;
+    const holdId = m[2]!;
+    const requestId = newRequestId();
+    const tracker = makeTracker?.(chatId, requestId);
+    await withUsageScope({ requestId, intent: 'cines', media: 'text', kind: 'resume', chatId, domains: ['cines'], status: tracker }, async () => {
+      tracker?.start();
+      const tool = m[1] === 'b' ? PURCHASE_TOOL : 'cines_release_hold';
+      log(`[cines] purchase card: ${m[1] === 'b' ? 'Comprar' : 'Cancelar'} ${holdId}`);
+      const r = m[1] === 'b' ? await cinesHub.buyFromCard(holdId) : await cinesHub.releaseFromCard(holdId);
+      if (r !== undefined) tracker?.onToolEvent({ kind: 'result', toolCallId: `card-${requestId}`, toolName: tool, displayName: tool, argsSummary: '', args: { holdId }, result: r, resultText: '', durationMs: 0, isError: false });
+      await tracker?.finish();
+    });
+  }
 
   async function estadoReport(): Promise<string> {
     const now = (deps.now ?? Date.now)();

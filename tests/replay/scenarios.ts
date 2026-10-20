@@ -427,6 +427,8 @@ export const SCENARIOS: Scenario[] = [
         cines.calls.filter((t) => t === 'cines_hold_status').length >= 2 || 'did not poll',
         /Apartando en Cinépolis/.test(outgoing) || 'no hold waiting status',
         cines.actions.some((x) => x.op === 'hold') || 'no hold',
+        /confirmo la compra[\s\S]*\$99 MXN/.test(outgoing) || 'no purchase card after the hold',
+        cines.actions.some((x) => x.op === 'purchase') || 'no purchase after Comprar',
       ),
   },
   {
@@ -440,6 +442,8 @@ export const SCENARIOS: Scenario[] = [
         cines.actions.some((x) => x.op === 'hold') || 'no hold',
         !/no responde|MCP_UNAVAILABLE/.test(outgoing) || 'reported as unavailable',
         cines.calls.filter((t) => t === 'cines_hold_seats').length === 1 || 'hold re-called',
+        /confirmo la compra[\s\S]*\$99 MXN/.test(outgoing) || 'no purchase card after the hold',
+        cines.actions.some((x) => x.op === 'purchase') || 'no purchase after Comprar',
       ),
   },
   {
@@ -449,8 +453,8 @@ export const SCENARIOS: Scenario[] = [
     ok: ({ cines, cards, outgoing, logs }) =>
       both(
         cines.actions.map((a) => a.op).join(',') === 'hold,purchase' || `cines actions: ${cines.actions.map((a) => a.op).join(',') || 'none'}`,
-        cards.length >= 2 || `approval cards pressed: ${cards.length}`,
-        /Confirmar compra[\s\S]*\$198 MXN/.test(outgoing) || 'no purchase summary card',
+        (cards.includes('tool:cines_hold_seats') && cards.includes('purchase-card')) || `cards pressed: ${cards.join(',')}`,
+        /confirmo la compra[\s\S]*\$198 MXN[\s\S]*⌛ Expira/.test(outgoing) || 'no purchase summary card',
         cines.secrets.join() === 'Q8Z4K2' || `secrets: ${cines.secrets.length}`,
         !logs.join('\n').includes('Q8Z4K2') || 'secret in logs',
         !logs.some((l) => l.startsWith('LEAK')) || 'secret sent to Gemini',

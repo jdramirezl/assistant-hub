@@ -4,6 +4,7 @@
  * model fixed itself (a later success of the same tool) are not failures.
  */
 import { appName, appOfTool, candidatesOf, errorOf, explain, type Explained, type Lang } from './errors.js';
+import { expiryOf } from '../cines/service.js';
 
 type Rec = Record<string, unknown>;
 export interface ToolOutcome {
@@ -120,9 +121,19 @@ export function summarizeOutcome(events: ToolOutcome[], isWrite: (tool: string) 
     }
     const r = (e.result ?? {}) as Rec;
     // not an outcome yet: waiting for a code, still running, or nothing to do
-    if (typeof r.status === 'string' && /^(needs_|waiting|in_progress|secure_input|none$|shown_to_user$|nothing_to_delete$)/.test(r.status)) {
+    if (typeof r.status === 'string' && /^(needs_|waiting|in_progress|secure_input|none$|shown_to_user$|nothing_to_delete$|card_shown$)/.test(r.status)) {
       if (/needs_|waiting|secure_input_busy/.test(r.status)) needInfo.push(lang === 'es' ? '🔒 esperando su código' : '🔒 waiting for your code');
       else if (r.status === 'in_progress') needInfo.push(lang === 'es' ? 'sigue en curso' : 'still running');
+      return;
+    }
+    if (e.tool === 'cines_hold_seats' && r.status === 'held' && typeof r.holdId === 'string') {
+      const es = lang === 'es';
+      const seats = [r.seats ?? []].flat().join(', ');
+      const total = typeof r.total === 'number' ? r.total : r.totalMxn;
+      const exp = typeof r.expiresAt === 'string' ? expiryOf(r.expiresAt, Date.now()) : undefined;
+      done.push(`${es ? 'Apartado' : 'Held'} ${seats}${typeof total === 'number' ? ` · $${total}` : ''}${exp ? ` · ${es ? 'expira' : 'expires'} ${exp.time}` : ''}`);
+      g(key).ok++;
+      g(key).total++;
       return;
     }
     if (e.tool === 'cines_purchase' && r.status === 'paid') {
@@ -168,7 +179,7 @@ export function summarizeOutcome(events: ToolOutcome[], isWrite: (tool: string) 
   for (const [meal, m] of meals) done.push(`${MEALS[meal]?.[lang] ?? meal}: ${plural(m.n, NOUN.log_meal![lang][0], NOUN.log_meal![lang][1])}, ${Math.round(m.kcal)} kcal`);
   for (const [k, v] of groups) {
     if (k === 'log_meal' || k === 'fitness_log_food' || k === 'cines_purchase' || v.ok === 0) continue;
-    if (k === 'cines_hold_seats' && groups.get('cines_purchase')?.ok) continue; // the purchase line says it all
+    if (k === 'cines_hold_seats') continue; // its own line (above)
     const n = NOUN[k]![lang];
     done.push(`${plural(v.ok, n[0], n[1])}${v.sum ? `, ${money(v.sum, v.currency)}` : ''}`);
   }

@@ -166,14 +166,14 @@ async function runScenario(s: Scenario, pacer: ReturnType<typeof pacedFetch>, ap
         const kb = (call.body.reply_markup as { inline_keyboard?: { callback_data?: string; text?: string }[][] } | undefined)?.inline_keyboard;
         for (const btn of kb?.flat() ?? []) {
           const data = btn.callback_data ?? '';
-          const isApprove = /tool_approve:|plan:a:/.test(data);
+          const isApprove = /tool_approve:|plan:a:|cines:b:/.test(data);
           if (!isApprove || pressed.has(data)) continue;
           pressed.add(data);
           const msgId = Number(call.body.message_id ?? (call.result as { message_id?: number } | undefined)?.message_id ?? 0);
           const text = String(call.body.text ?? (call.body.rich_message as { markdown?: string } | undefined)?.markdown ?? '');
           // approval cards no longer show tool names: the hub logs which tool each card is for
           const toolCards = logs.map((l) => l.match(/\[approval\] card: (\w+)/)?.[1]).filter(Boolean);
-          cards.push(data.includes('plan:a:') ? `plan(${(text.match(/(\d+) (acciones|actions|entradas|entries)/) ?? [])[1] ?? '?'})` : `tool:${toolCards[toolCardsPressed++] ?? '?'}`);
+          cards.push(data.includes('cines:b:') ? 'purchase-card' : data.includes('plan:a:') ? `plan(${(text.match(/(\d+) (acciones|actions|entradas|entries)/) ?? [])[1] ?? '?'})` : `tool:${toolCards[toolCardsPressed++] ?? '?'}`);
           tg.push(callbackUpdate(ME, { message_id: msgId, text }, data));
           found = true;
           await settle();

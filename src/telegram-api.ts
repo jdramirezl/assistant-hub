@@ -62,4 +62,9 @@ export class TelegramApi {
   async remove(chatId: string, messageId: number): Promise<void> {
     await this.call('deleteMessage', { chat_id: chatId, message_id: messageId });
   }
+
+  /** Replace a message's text; buttons replaced by `keyboard` (none when omitted). */
+  async editKeyboard(chatId: string, messageId: number, text: string, keyboard?: InlineButton[][]): Promise<void> {
+    await this.call('editMessageText', { chat_id: chatId, message_id: messageId, text, reply_markup: { inline_keyboard: keyboard ?? [] } });
+  }
 }

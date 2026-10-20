@@ -35,6 +35,8 @@ export interface TelegramDeps {
   voice?: Voice;
   /** Batch-plan buttons (plan:<a|e|c>:<id>); everything else goes to the built-in approvals. */
   onPlanAction?: (actionId: string, userId: string | undefined, notify: (text: string) => Promise<void>) => Promise<void>;
+  /** Hub purchase-card buttons (cines:b:<holdId> / cines:r:<holdId>). */
+  onCinesAction?: (actionId: string, chatId: string) => Promise<void>;
   /** Slash commands answered by the hub without the model (e.g. /usage); return the reply text. */
   commands?: Record<string, () => Promise<string>>;
   /** Voice-note transcription before the agent (omit: the audio goes to the agent as a file). */
@@ -279,6 +281,11 @@ export function createTelegramChannel(config: HubConfig, deps: TelegramDeps = {}
       await withUsageScope({ requestId: newRequestId(), intent: 'chat', media: 'text', kind: 'chat' }, () => defaultHandler());
     },
     onAction: async (event, defaultHandler) => {
+      if (event.actionId.startsWith('cines:')) {
+        const userId = event.user?.userId;
+        if (!userId || !config.telegram.allowedUserIds.includes(String(userId))) return log(`[telegram] ignoring cines button from non-allowlisted user ${userId}`);
+        return deps.onCinesAction?.(event.actionId, String(userId));
+      }
       if (!event.actionId.startsWith('plan:')) {
         const chatId = event.user?.userId ? String(event.user.userId) : undefined;
         // an approval resumes the same conversation: keep its topic's tools (fewer tokens)

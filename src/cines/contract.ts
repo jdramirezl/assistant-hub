@@ -62,6 +62,11 @@ export interface HoldSummary {
   totalMxn: number;
   expiresAt?: string;
   ticketType?: string;
+  showtimeId?: string;
+  language?: string;
+  format?: string;
+  unitMxn?: number;
+  chargesMxn?: number;
   /** The server's own first-3 rule for this purchase (from the hold result). */
   serverApprovalRequired?: boolean;
 }
@@ -87,6 +92,7 @@ export function holdOf(result: unknown): HoldSummary | undefined {
   if (!r || r.status !== 'held' || typeof r.holdId !== 'string' || typeof r.total !== 'number') return undefined;
   return {
     holdId: r.holdId,
+    showtimeId: typeof r.showtimeId === 'string' ? r.showtimeId : undefined,
     cinema: String(r.cinema ?? r.cinemaName ?? ''),
     movie: String(r.movie ?? ''),
     when: whenOf(r),
@@ -94,6 +100,10 @@ export function holdOf(result: unknown): HoldSummary | undefined {
     totalMxn: r.total,
     ticketType: typeof r.ticketType === 'string' ? r.ticketType : undefined,
     expiresAt: typeof r.expiresAt === 'string' ? r.expiresAt : undefined,
+    language: typeof r.language === 'string' ? r.language : typeof r.lang === 'string' ? r.lang : undefined,
+    format: typeof r.format === 'string' ? r.format : undefined,
+    unitMxn: typeof r.unitMxn === 'number' ? r.unitMxn : undefined,
+    chargesMxn: typeof r.chargesMxn === 'number' ? r.chargesMxn : undefined,
   };
 }
 

@@ -219,8 +219,13 @@ Telegram shows ONE message: the plan grouped by section (meal / account), with
   "cancelar" stops; a late reply up to 10 min after expiry is still deleted and not used.
 - **Purchase rules (code, not prompt):**
   - `cines_hold_seats` and `cines_purchase` are approval-gated; `cines_release_hold` never is.
-  - The first 3 successful purchases always show a summary card (cinema, movie, time, seats,
-    total MXN) with ✅/❌. After that, the hold's approval covers the purchase of that hold.
+  - After a successful hold the HUB (not the model) sends the purchase card: cinema · movie ·
+    date time · language/format · seats · ticket type · total (tickets + fees) · expiry, with
+    [✅ Comprar $N] [❌ Cancelar]. Comprar → `cines_purchase` (total and approval set by the hub);
+    Cancelar → `cines_release_hold`; at expiry the card says "⌛ El apartado expiró" and the hold is
+    released. Not armed → the card stays valid with the arm command. The status line reads
+    "🎟️ Apartado B8 · $99 · expira 14:37". After 3 successful purchases (within the cap) the
+    hold approval covers the purchase: the hub buys right away, no card.
   - Hard cap **$1,000 MXN** per purchase, checked against the total of the hold the hub saw (never
     the model's number); over it the call is refused before reaching the server.
   - The hub sets `expectedTotal` (the hold's `total`, fees included) and `userApproved` itself; the

@@ -72,7 +72,7 @@ async function buy(opts: FakeCinesOptions) {
   closers.push(() => hub.stop());
   await hub.start();
   tg.push(textUpdate(ME, "compra el F7 para Dune hoy en la noche"));
-  for (const needle of ["tool_approve:call-1", "tool_approve:call-2"]) {
+  for (const needle of ["tool_approve:call-1", "cines:b:"]) {
     await tg.waitFor(() => !!findButton(tg, needle), 10_000);
     const b = findButton(tg, needle)!;
     tg.push(callbackUpdate(ME, { message_id: b.messageId }, b.data));
@@ -183,7 +183,7 @@ describe("a hold that takes > 40 s: in_progress → the hub polls cines_hold_sta
     });
     expect(
       tg.calls.some((c) =>
-        /Confirmar compra[\s\S]*\$99 MXN/.test(
+        /confirmo la compra[\s\S]*\$99 MXN/.test(
           String(c.body.text ?? "").replace(/\\/g, ""),
         ),
       ),
@@ -268,7 +268,7 @@ describe('a hold slower than the MCP timeout (the live hold_ac2cffa16eab)', () =
     await tg.waitFor(() => !!findButton(tg, 'tool_approve:'), 10_000);
     const b = findButton(tg, 'tool_approve:')!;
     tg.push(callbackUpdate(ME, { message_id: b.messageId }, b.data));
-    await tg.waitFor(() => status().some((x) => /^✅ 1 apartado de asientos/.test(x)), 10_000);
+    await tg.waitFor(() => status().some((x) => /^🎟️ Apartado B7 · \$99 · expira \d\d:\d\d/.test(x)), 10_000);
     expect(status()).toContain('⏳ Apartando en Cinépolis…');
     expect(status().join('\n')).not.toMatch(/no responde|MCP_UNAVAILABLE|❌/);
     // the model saw a normal "held" result (it can now call cines_purchase → the card)
@@ -292,5 +292,43 @@ describe('a hold slower than the MCP timeout (the live hold_ac2cffa16eab)', () =
     expect(await tb.execute('cines_hold_seats', { showtimeId: '570-1002', seats: 'B7' })).toMatchObject({ error: { code: 'MCP_UNAVAILABLE' } });
     expect(tb.status().cines).toMatchObject({ state: 'up' });
     expect(logs.join('\n')).toMatch(/timed out .*server stays up/);
+  });
+});
+
+describe('the hub purchase card (deterministic, no model)', () => {
+  it('shows the summary + Comprar/Cancelar after a hold; expiry edits it and releases; a model purchase call is refused', async () => {
+    const { CinesHub } = await import('../src/cines/service.js');
+    const sent: { text: string; kb: unknown }[] = [];
+    const edits: string[] = [];
+    const executed: string[] = [];
+    const store = new Map<string, unknown>();
+    const kv = {
+      get: async (k: string) => store.get(k) ?? null,
+      set: async (k: string, v: unknown) => void store.set(k, v),
+      delete: async (k: string) => void store.delete(k),
+      setIfNotExists: async (k: string, v: unknown) => (store.has(k) ? false : (store.set(k, v), true)),
+      incr: async () => 1,
+    };
+    const hubc = new CinesHub({
+      kv: kv as never,
+      toolbox: { execute: async (n: string) => (executed.push(n), { status: 'released' }) },
+      securePrompt: () => '',
+      secureBadFormat: () => '',
+      secureExpired: () => '',
+      lang: 'es',
+      sendCard: async (_c, text, kb) => (sent.push({ text, kb }), 77),
+      editCard: async (_c, _id, text) => void edits.push(text),
+    });
+    const held = { status: 'held', holdId: 'hold_9', cinema: 'Cinépolis Parque Toreo', movie: 'Clayface', startsAt: '2026-10-23T18:30:00-06:00', seats: ['B8'], ticketType: 'Admision General', unitMxn: 92, chargesMxn: 7, total: 99, currency: 'MXN', expiresAt: new Date(Date.now() + 1200).toISOString(), language: 'SUB', format: '2D' };
+    const out = (await hubc.afterResult('cines_hold_seats', {}, held, { chatId: '42' })) as { next: string };
+    expect(out.next).toMatch(/hub has shown the user the purchase card/);
+    expect(sent[0]!.text).toMatch(/Clayface[\s\S]*Cinépolis Parque Toreo · 2026-10-23 18:30 · subtitulada 2D[\s\S]*B8 · Admision General[\s\S]*\$99 MXN \(boletos \$92 \+ cargos \$7\)[\s\S]*⌛ Expira \d\d:\d\d/);
+    expect(JSON.stringify(sent[0]!.kb)).toMatch(/✅ Comprar \$99.*cines:b:hold_9.*❌ Cancelar.*cines:r:hold_9/);
+    expect(await hubc.purchaseNeedsApproval({ holdId: 'hold_9' })).toBe(false); // no second approval card
+    expect(await hubc.beforeCall('cines_purchase', { holdId: 'hold_9', expectedTotal: 99 }, { chatId: '42' })).toMatchObject({ error: { status: 'card_shown' } });
+    await new Promise((r) => setTimeout(r, 1500));
+    expect(edits.at(-1)).toMatch(/⌛ El apartado expiró/);
+    expect(executed).toContain('cines_release_hold');
+    expect(await hubc.buyFromCard('hold_9')).toBeUndefined(); // expired: Comprar no longer works
   });
 });
