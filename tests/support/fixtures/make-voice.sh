@@ -16,3 +16,7 @@ make voice-dinner-en.wav Samantha "For dinner I had a plate of rice and a grille
 # Was an opaque recording that Gemini heard as "almuerzo y cena" / "una taza de maicena";
 # regenerated with an unambiguous meal word (the scenario: a dinner voice note).
 make voice-meal.wav      Paulina "Para la cena comí una porción de arroz y una pechuga de pollo a la plancha."
+# Mixed note (food + 3 expenses from one pocket), like the user's first real voice note.
+make voice-mixed.wav     Paulina "Hoy almorcé arroz con pollo. Pagué dieciocho mil del almuerzo, cinco mil de un café y doce mil de un taxi, todo del bolsillo Disponible de Nequi."
+# Multi-item snack with a 0-kcal item (gum), like the user's second real voice note.
+make voice-snack-items.wav Paulina "De merienda me comí una manzana, un yogur griego, un puñado de almendras, un café negro y un chicle Fini de sandía."

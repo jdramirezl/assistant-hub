@@ -95,6 +95,9 @@ export const FOODS: Record<string, Food[]> = {
   salad: [{ name: 'Green salad', servings: [{ label: '1 cup', kcal: 15 }, { label: '1 bowl', kcal: 35 }] }],
   banana: [{ name: 'Banana, medium', servings: [{ label: '1 medium', kcal: 105 }, { label: '100 g', kcal: 89 }] }],
   oat: [{ name: 'Oatmeal, cooked', servings: [{ label: '1 cup', kcal: 166 }, { label: '100 g', kcal: 71 }] }],
+  apple: [{ name: 'Apple, medium', servings: [{ label: '1 medium', kcal: 95 }, { label: '100 g', kcal: 52 }] }],
+  almond: [{ name: 'Almonds', servings: [{ label: '1 oz (28 g)', kcal: 164 }, { label: '1 handful (28 g)', kcal: 164 }, { label: '100 g', kcal: 579 }] }],
+  gum: [{ name: 'Fini watermelon gum candy', servings: [{ label: '1 piece', kcal: 0 }] }],
   yogurt: [{ name: 'Greek yogurt, plain', servings: [{ label: '1 container (170 g)', kcal: 100 }, { label: '100 g', kcal: 59 }] }],
   cheese: [{ name: 'Cheese, mozzarella', servings: [{ label: '1 slice (28 g)', kcal: 85 }, { label: '100 g', kcal: 300 }] }],
   lasagna: [{ name: 'Lasagna, family tray', servings: [{ label: '1 tray', kcal: 1700 }, { label: '1 cup', kcal: 300 }] }],
@@ -106,7 +109,7 @@ export const FOODS: Record<string, Food[]> = {
     { name: 'Chicken sandwich', servings: [{ label: '1 sandwich', kcal: 450 }] },
   ],
 };
-const SYNONYMS: Record<string, string> = { eggs: 'egg', huevo: 'egg', huevos: 'egg', tostada: 'toast', tostadas: 'toast', pan: 'bread', cafe: 'coffee', 'café': 'coffee', arroz: 'rice', pollo: 'chicken', ensalada: 'salad', banano: 'banana', avena: 'oat', oatmeal: 'oat', yogur: 'yogurt', queso: 'cheese', lasana: 'lasagna', 'lasaña': 'lasagna', jugo: 'juice', arepas: 'arepa' };
+const SYNONYMS: Record<string, string> = { eggs: 'egg', huevo: 'egg', huevos: 'egg', tostada: 'toast', tostadas: 'toast', pan: 'bread', cafe: 'coffee', 'café': 'coffee', arroz: 'rice', pollo: 'chicken', ensalada: 'salad', banano: 'banana', avena: 'oat', oatmeal: 'oat', yogur: 'yogurt', queso: 'cheese', lasana: 'lasagna', 'lasaña': 'lasagna', jugo: 'juice', arepas: 'arepa', manzana: 'apple', almendras: 'almond', almonds: 'almond', chicle: 'gum', candy: 'gum' };
 
 export interface DiaryEntry {
   meal: string;

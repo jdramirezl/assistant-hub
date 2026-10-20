@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { Pacer } from '../src/llm/pacer.js';
+import { Pacer, estimateTokens } from '../src/llm/pacer.js';
 import { createRateLimitedFetch, rateLimitContext } from '../src/llm/rate-limit.js';
 
 describe('Pacer', () => {
@@ -31,18 +31,54 @@ describe('Pacer', () => {
 });
 
 describe('fetch with pacer', () => {
-  it('waits instead of sending, and tells the chat when the wait is long', async () => {
+  it('a pacer wait is not an error: a calm "one moment" (not the 429 wording)', async () => {
     let now = 0;
     const pacer = new Pacer({ now: () => now, sleep: async (ms) => void (now += ms), limits: { 'gemini-x': { rpm: 1, tpm: 1e9 } } });
     const base = vi.fn(async () => new Response('{}', { status: 200 }));
     const f = createRateLimitedFetch({ fetch: base, pacer, log: () => {} });
     const said: string[] = [];
-    await rateLimitContext.run({ notify: async (t) => void said.push(t), format: (s) => `⏳ ${s}s` }, async () => {
+    await rateLimitContext.run({ notify: async (t) => void said.push(t), format: (s) => `429 ${s}s`, waiting: () => '⏳ un momento' }, async () => {
       await f('https://g/models/gemini-x:generateContent', { body: '{}' });
       await f('https://g/models/gemini-x:generateContent', { body: '{}' });
     });
     expect(base).toHaveBeenCalledTimes(2);
     expect(now).toBeGreaterThanOrEqual(60_000);
-    expect(said).toEqual(['⏳ 60s']);
+    expect(said).toEqual(['⏳ un momento']);
+  });
+
+  it('short pacer waits are silent', async () => {
+    let now = 0;
+    const pacer = new Pacer({ now: () => now, sleep: async (ms) => void (now += ms), limits: { 'gemini-x': { rpm: 1, tpm: 1e9 } } });
+    const f = createRateLimitedFetch({ fetch: async () => new Response('{}', { status: 200 }), pacer, log: () => {} });
+    const said: string[] = [];
+    await rateLimitContext.run({ notify: async (t) => void said.push(t), waiting: () => 'wait' }, async () => {
+      await f('https://g/models/gemini-x:generateContent', { body: '{}' });
+      now += 55_000; // next slot in 5 s
+      await f('https://g/models/gemini-x:generateContent', { body: '{}' });
+    });
+    expect(said).toEqual([]);
+  });
+
+  it('a 1 MB voice note does not count as text tokens, and does not delay the next call', async () => {
+    const audio = Buffer.alloc(1_006_152, 7).toString('base64'); // ~1.34 MB of base64
+    const body = JSON.stringify({ contents: [{ role: 'user', parts: [{ text: 'Transcribe this voice note.' }, { inlineData: { mimeType: 'audio/ogg', data: audio } }] }] });
+    expect(body.length / 4).toBeGreaterThan(300_000); // what the old estimate counted
+    expect(estimateTokens(body)).toBeLessThan(3_000);
+    let now = 0;
+    const pacer = new Pacer({ now: () => now, sleep: async (ms) => void (now += ms) });
+    const usage = (n: number) => new Response(JSON.stringify({ usageMetadata: { promptTokenCount: n } }), { status: 200 });
+    const f = createRateLimitedFetch({ fetch: async () => usage(1288), pacer, log: () => {} });
+    await f('https://g/models/gemini-3.5-flash-lite:generateContent', { body });
+    await f('https://g/models/gemini-3.5-flash-lite:generateContent', { body: JSON.stringify({ contents: [{ parts: [{ text: 'x'.repeat(40_000) }] }] }) });
+    expect(now).toBe(0); // no wait
+  });
+
+  it('the window is corrected with the billed tokens once the response arrives', async () => {
+    let now = 0;
+    const pacer = new Pacer({ now: () => now, sleep: async (ms) => void (now += ms), limits: { 'gemini-x': { rpm: 100, tpm: 100_000 } } });
+    const f = createRateLimitedFetch({ fetch: async () => new Response(JSON.stringify({ usageMetadata: { promptTokenCount: 500 } }), { status: 200 }), pacer, log: () => {} });
+    await f('https://g/models/gemini-x:generateContent', { body: 'y'.repeat(360_000) }); // estimate 90K, billed 500
+    await new Promise((r) => setTimeout(r, 10));
+    expect(pacer.delayFor('gemini-x', 90_000)).toBe(0); // the 90K estimate no longer blocks
   });
 });

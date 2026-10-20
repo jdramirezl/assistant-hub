@@ -1,4 +1,5 @@
 import { createServer, type Server } from 'node:http';
+import { Readable } from 'node:stream';
 import type { AddressInfo } from 'node:net';
 import { z } from 'zod';
 import { createTool } from '@mastra/core/tools';
@@ -39,11 +40,13 @@ export interface FakeMason {
   calls: { tool: string; input: Record<string, unknown> }[];
   /** After this many successful deletes, every call fails with an expired session. */
   expireSessionAfterDeletes?: number;
+  /** Simulate a Mason restart: the server forgets every MCP session (same port). */
+  restart(): void;
   close(): Promise<void>;
 }
 
 export async function startFakeMason(initial: DiaryEntry[] = []): Promise<FakeMason> {
-  const state: FakeMason = { url: '', diary: [...initial], calls: [], close: async () => {} };
+  const state: FakeMason = { url: '', diary: [...initial], calls: [], restart: () => {}, close: async () => {} };
   const drafts = new Map<string, { query: string; quantity: number; meal: string; options: (typeof CATALOG)[string] }>();
   let deletes = 0;
   const today = '2026-10-19';
@@ -186,8 +189,29 @@ export async function startFakeMason(initial: DiaryEntry[] = []): Promise<FakeMa
     }),
   };
 
-  const mcp = new MCPServer({ id: 'mason', name: 'mason', version: '0.4.1-fake', tools });
-  const server: Server = createServer((req, res) => {
+  let mcp = new MCPServer({ id: 'mason', name: 'mason', version: '0.4.1-fake', tools });
+  // like `mfpctl restart`: same port, every MCP session forgotten. Mason (FastMCP) is
+  // stateful; after a restart, requests from a client that has not re-initialized get
+  // HTTP 400 + JSON-RPC -32600 "Session not found", exactly like Mason.
+  let stale = false;
+  state.restart = () => {
+    stale = true;
+    mcp = new MCPServer({ id: 'mason', name: 'mason', version: '0.4.1-fake', tools });
+  };
+  const server: Server = createServer(async (req, res) => {
+    const chunks: Buffer[] = [];
+    for await (const c of req) chunks.push(c as Buffer);
+    const raw = Buffer.concat(chunks);
+    if (stale) {
+      // a new connection starts with a handshake/discovery request, not a tool call
+      if (!/"method"\s*:\s*"tools\/call"/.test(raw.toString('utf8'))) stale = false;
+      else {
+        res.writeHead(400, { 'content-type': 'application/json' });
+        return void res.end(JSON.stringify({ jsonrpc: '2.0', id: 'server-error', error: { code: -32600, message: 'Session not found' } }));
+      }
+    }
+    const replay = Object.assign(Readable.from([raw]), { headers: req.headers, method: req.method, url: req.url, socket: req.socket });
+    req = replay as unknown as typeof req;
     void mcp.startHTTP({ url: new URL(req.url ?? '/', 'http://127.0.0.1'), httpPath: '/mcp', req, res });
   });
   await new Promise<void>((r) => server.listen(0, '127.0.0.1', r));

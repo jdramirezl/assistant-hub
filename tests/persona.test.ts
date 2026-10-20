@@ -54,6 +54,7 @@ describe('voice (notices)', () => {
   it('plain voice keeps the original wording', () => {
     const v = createVoice(plain);
     expect(v.startup('mac', apps)).toMatch(/^✅ I'm up on mac\./);
-    expect(v.rateLimit(9)).toBe('⏳ rate limit, retrying in 9s');
+    expect(v.rateLimit(9)).toBe('⏳ Gemini rate limit, retrying in 9s');
+    expect(v.waiting(30)).not.toMatch(/retry|limit/i);
   });
 });

@@ -235,6 +235,27 @@ export const SCENARIOS: Scenario[] = [
     ok: ({ actions }) => (logs(actions, 'Breakfast').length === 1 && has(actions, /Oatmeal.*= 166 kcal/)) || actions.map((x) => x.detail).join('; ') || 'nothing logged',
   },
   {
+    id: 'voice-mixed',
+    // food + 3 expenses from one pocket in one voice note (the first real voice note on the server)
+    turns: [{ voice: 'voice-mixed.wav' }],
+    ok: ({ actions, today, reply }) => {
+      const c = fin(actions, 'create').map((x) => x.detail).sort();
+      const want = [18000, 5000, 12000].map((n) => `EgresoNormal ${n} COP ${nequi} ${today}`).sort();
+      // "arroz con pollo" is one dish: logging it or asking which one are both fine
+      return both(logs(actions, 'Lunch').length >= 1 || /\?/.test(reply) || 'lunch neither logged nor asked', JSON.stringify(c) === JSON.stringify(want) || `movements: ${c.join('; ') || 'none'}`);
+    },
+  },
+  {
+    id: 'voice-snack-items',
+    // 5 items incl. a 0-kcal one (gum): log_meal must accept kcal_estimate 0
+    turns: [{ voice: 'voice-snack-items.wav' }],
+    ok: ({ actions }) => {
+      const l = logs(actions, 'Snacks');
+      // coffee may be asked (black vs with milk); the rest must be logged, gum included at 0 kcal
+      return (l.length >= 4 && has(l, /Apple/) && has(l, /yogurt/i) && has(l, /gum.*= 0 kcal/i)) || actions.map((x) => x.detail).join('; ') || 'nothing logged';
+    },
+  },
+  {
     id: 'cines-listings',
     turns: ['¿qué hay en el Toreo hoy?'],
     ok: ({ cines, reply, actions }) => both(called(cines.calls, 'cines_listings'), /dune/i.test(reply) || `reply: ${reply.slice(0, 80)}`, noFinanceOrMfp(actions)),

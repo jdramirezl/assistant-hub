@@ -22,7 +22,7 @@ export const ItemSchema = z.object({
   query: z.string().min(1).describe('Food in ENGLISH, as MyFitnessPal names it (e.g. "egg", "whole wheat bread", "arepa")'),
   quantity: z.number().positive().describe('How many units the user said (2 eggs → 2; 150 g → 150)'),
   unit: z.string().min(1).describe('The user\'s unit: "unit"/"piece" for countable items (egg, arepa, banana), or slice, cup, g, ml, tbsp, serving…'),
-  kcal_estimate: z.number().positive().describe('YOUR estimate of the kcal for the whole item (quantity × unit), before looking it up'),
+  kcal_estimate: z.number().min(0).describe('YOUR estimate of the kcal for the whole item (quantity × unit), before looking it up; 0 is fine (water, gum, black coffee, diet soda)'),
   meal: z.enum(['breakfast', 'lunch', 'dinner', 'snacks']),
 });
 export const LogMealInput = z.object({
@@ -177,7 +177,7 @@ export function createLogMeal(toolbox: MealToolbox, log: (m: string) => void = (
     }
     if (!pick) {
       const shown = (cands.length ? cands : options.flatMap((o) => o.servings.slice(0, 1).map((s) => ({ option: o.option, name: o.name, serving: s.serving, label: s.label, servings: 1, kcal: Math.round(Number(s.calories ?? 0)), pinned: false }))))
-        .sort((a, b) => Math.abs(Math.log(a.kcal / item.kcal_estimate)) - Math.abs(Math.log(b.kcal / item.kcal_estimate)))
+        .sort((a, b) => Math.abs(Math.log((a.kcal + 1) / (item.kcal_estimate + 1))) - Math.abs(Math.log((b.kcal + 1) / (item.kcal_estimate + 1))))
         .slice(0, 3);
       out.ambiguous.push({
         query: item.query,

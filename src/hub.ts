@@ -106,6 +106,16 @@ export function toolsForDomains<T>(tools: Record<string, T>, domains: readonly D
   );
 }
 
+/** Finance tools that take accountId + pocketId: the hub fills accountId from the pocket. */
+const POCKET_TOOLS: ReadonlySet<string> = new Set(['finance_create_movement']);
+
+/** accountId becomes optional in the schema (shown to the model and validated) when pocketId exists. */
+export function optionalAccountId(s: Record<string, unknown>): Record<string, unknown> {
+  const props = s.properties as Record<string, unknown> | undefined;
+  if (!props?.pocketId || !Array.isArray(s.required)) return s;
+  return { ...s, required: (s.required as string[]).filter((r) => r !== 'accountId') };
+}
+
 /** Tell the user when an app comes back only after a real outage, not a blip. */
 const RECOVERY_NOTICE_MS = 10 * 60_000;
 
@@ -138,7 +148,9 @@ export function createHub(config: HubConfig, deps: HubDeps = {}): Hub {
     hooks: {
       approval: (tool) => (tool === 'fitness_log_food' ? (input) => nutrition.needsConfirmation(input) : undefined),
       approvalOverride: (tool) => (tool === PURCHASE_TOOL ? (input) => cines!.purchaseNeedsApproval(input) : undefined),
-      beforeCall: (tool, input) => (MONEY_TOOLS.has(tool) ? cines!.beforeCall(tool, input) : undefined),
+      beforeCall: (tool, input) => (MONEY_TOOLS.has(tool) ? cines!.beforeCall(tool, input) : POCKET_TOOLS.has(tool) ? withOwningAccount(input) : undefined),
+      // the hub fills accountId from the pocket, so the model may omit it
+      schema: (tool, s) => (POCKET_TOOLS.has(tool) ? optionalAccountId(s) : s),
       afterResult: (tool, input, result, { raw }) => {
         let out = result;
         if (tool.startsWith('fitness_')) {
@@ -176,7 +188,15 @@ export function createHub(config: HubConfig, deps: HubDeps = {}): Hub {
       : {}),
   });
   const cinesHub = cines;
-  const financeDir = new FinanceDirectory(toolbox, { now: deps.now, timezone: config.timezone, available: async () => (await toolbox.getTools(), toolbox.status().finance?.state === 'up') });
+  const withOwningAccount = async (input: Record<string, unknown>): Promise<{ args: Record<string, unknown> } | { error: unknown }> => {
+    const args: Record<string, unknown> = await financeDir.fillAccount(input);
+    if (args.accountId) {
+      if (!input.accountId) log('[finance] accountId filled from the pocket');
+      return { args };
+    }
+    return { error: { error: { code: 'VALIDATION_ERROR', message: 'accountId is required: use the accountId listed with the pocket under "## Now" (or pass a pocketId of that account).', retryable: false } } };
+  };
+  const financeDir: FinanceDirectory = new FinanceDirectory(toolbox, { now: deps.now, timezone: config.timezone, available: async () => (await toolbox.getTools(), toolbox.status().finance?.state === 'up') });
   const localNow = deps.localNow ?? deps.now ?? Date.now;
   const logMeal = createLogMeal(toolbox, log, {
     mealHint: (date) => mealHint(usageContext.getStore()?.text, { date, timezone: config.timezone, now: localNow() }),

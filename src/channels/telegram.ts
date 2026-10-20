@@ -168,7 +168,7 @@ function guarded(
     const notify = async (text: string) => void (await thread.post(text));
     const media = mediaOf(message.attachments ?? []);
     await withUsageScope({ requestId: newRequestId(), intent: 'chat', media, kind: 'chat' }, () =>
-      rateLimitContext.run({ notify, format: voice?.rateLimit }, async () => {
+      rateLimitContext.run({ notify, format: voice?.rateLimit, waiting: voice?.waiting }, async () => {
         const scope = usageContext.getStore()!;
         scope.chatId = chatId;
         if (resumed) {
@@ -179,6 +179,8 @@ function guarded(
           return defaultHandler(thread, message);
         }
         // a transcribed voice note is routed like the text it says
+        // a voice note takes a while (transcription + answer): say it arrived instead of silence
+        if (media === 'voice' && voice) await thread.post(voice.voiceAck()).catch(() => {});
         const t = media === 'voice' && transcribe ? await transcribeInPlace(message, transcribe, log) : undefined;
         const routed = t ? 'text' : media;
         scope.text = message.text ?? '';
@@ -238,7 +240,7 @@ export function createTelegramChannel(config: HubConfig, deps: TelegramDeps = {}
       }
       const notify = async (text: string) => void (await event.thread?.post(text));
       await withUsageScope({ requestId: newRequestId(), intent: 'plan', media: 'text', kind: 'plan' }, () =>
-        rateLimitContext.run({ notify, format: deps.voice?.rateLimit }, () =>
+        rateLimitContext.run({ notify, format: deps.voice?.rateLimit, waiting: deps.voice?.waiting }, () =>
           deps.onPlanAction ? deps.onPlanAction(event.actionId, String(userId), notify) : Promise.resolve(),
         ),
       );

@@ -1,0 +1,186 @@
+{
+ "label": "v2-prodfix",
+ "at": "2026-10-20T07:28:04.777Z",
+ "results": [
+  {
+   "id": "eggs-toast",
+   "calls": 2,
+   "rateLimited": 0,
+   "inputTokens": 11742,
+   "cachedTokens": 3648,
+   "outputTokens": 326,
+   "toolsSentAvg": 21,
+   "systemCharsAvg": 3923,
+   "actions": [
+    "mfp.log Breakfast: Egg, whole, large × 2 [1 large egg] = 144 kcal",
+    "mfp.log Breakfast: Toast, white bread × 1 [1 slice] = 75 kcal"
+   ],
+   "cards": [],
+   "ok": true,
+   "reply": "Muy bien, Amo Julián. Enseguida lo anoto.\n\nDesayuno: 2 items, 219 kcal.",
+   "ms": 8154
+  },
+  {
+   "id": "voice-expense",
+   "calls": 3,
+   "rateLimited": 0,
+   "inputTokens": 9303,
+   "cachedTokens": 2005,
+   "outputTokens": 812,
+   "toolsSentAvg": 10,
+   "systemCharsAvg": 2959,
+   "actions": [
+    "finance.create EgresoNormal 35000 COP Nequi/Disponible 2026-10-20"
+   ],
+   "cards": [],
+   "ok": true,
+   "reply": "Como ordene, Amo Julián. He registrado el gasto.\n\n- **Taxi al aeropuerto:** $35.000 COP (Nequi)",
+   "ms": 10331
+  },
+  {
+   "id": "voice-meal",
+   "calls": 3,
+   "rateLimited": 0,
+   "inputTokens": 12033,
+   "cachedTokens": 7298,
+   "outputTokens": 444,
+   "toolsSentAvg": 14,
+   "systemCharsAvg": 2654,
+   "actions": [
+    "mfp.log Dinner: Rice, white, cooked × 1 [1 cup] = 205 kcal",
+    "mfp.log Dinner: Chicken breast, grilled × 1 [1 breast (172 g)] = 284 kcal"
+   ],
+   "cards": [],
+   "ok": true,
+   "reply": "Muy bien, Amo Julián. Me encargo de registrarlo con la debida precisión.\n\nCena: 2 items, 489 kcal\n- Rice, white, cooked (1 cup): 205 kcal\n- Chicken breast, grilled (1 breast): 284 kcal",
+   "ms": 9076
+  },
+  {
+   "id": "voice-breakfast",
+   "calls": 3,
+   "rateLimited": 0,
+   "inputTokens": 11920,
+   "cachedTokens": 3668,
+   "outputTokens": 326,
+   "toolsSentAvg": 14,
+   "systemCharsAvg": 2654,
+   "actions": [
+    "mfp.log Breakfast: Egg, whole, large × 2 [1 large egg] = 144 kcal",
+    "mfp.log Breakfast: Arepa, white corn × 1 [1 arepa (100 g)] = 220 kcal"
+   ],
+   "cards": [],
+   "ok": true,
+   "reply": "Muy bien, Amo Julián. Enseguida le preparo el registro matutino.\n\nDesayuno: 2 items, 364 kcal.",
+   "ms": 31957
+  },
+  {
+   "id": "snacks",
+   "calls": 2,
+   "rateLimited": 0,
+   "inputTokens": 11543,
+   "cachedTokens": 3648,
+   "outputTokens": 130,
+   "toolsSentAvg": 21,
+   "systemCharsAvg": 3923,
+   "actions": [
+    "mfp.log Snacks: Banana, medium × 1 [1 medium] = 105 kcal",
+    "mfp.log Snacks: Greek yogurt, plain × 1 [1 container (170 g)] = 100 kcal"
+   ],
+   "cards": [],
+   "ok": true,
+   "reply": "A sus órdenes, amo Julián. \n\n**Snacks:** 2 items, 205 kcal (Banano: 105 kcal, Yogur griego: 100 kcal).",
+   "ms": 8592
+  },
+  {
+   "id": "expense-yesterday",
+   "calls": 2,
+   "rateLimited": 0,
+   "inputTokens": 8722,
+   "cachedTokens": 2001,
+   "outputTokens": 465,
+   "toolsSentAvg": 15,
+   "systemCharsAvg": 4381,
+   "actions": [
+    "finance.create EgresoNormal 60000 COP Bancolombia/Principal 2026-10-19"
+   ],
+   "cards": [],
+   "ok": true,
+   "reply": "Muy bien, Amo Julián, he anotado sus provisiones de ayer.\n\n- Egreso: $60.000 COP (mercado) — Bancolombia (Principal) — 2026-10-19",
+   "ms": 8085
+  },
+  {
+   "id": "expense-nequi",
+   "calls": 2,
+   "rateLimited": 0,
+   "inputTokens": 8658,
+   "cachedTokens": 2001,
+   "outputTokens": 377,
+   "toolsSentAvg": 15,
+   "systemCharsAvg": 4381,
+   "actions": [
+    "finance.create EgresoNormal 25000 COP Nequi/Disponible 2026-10-20"
+   ],
+   "cards": [],
+   "ok": true,
+   "reply": "Como ordene, Amo Julián. He registrado los 25.000 COP de su almuerzo en Nequi.",
+   "ms": 8393
+  },
+  {
+   "id": "mixed",
+   "calls": 2,
+   "rateLimited": 0,
+   "inputTokens": 17969,
+   "cachedTokens": 12043,
+   "outputTokens": 568,
+   "toolsSentAvg": 34,
+   "systemCharsAvg": 5524,
+   "actions": [
+    "mfp.log Lunch: Arepa, white corn × 1 [1 arepa (100 g)] = 220 kcal",
+    "finance.create EgresoNormal 18000 COP Nequi/Disponible 2026-10-20"
+   ],
+   "cards": [],
+   "ok": true,
+   "reply": "Enseguida, Amo Julián.\n\n- Almuerzo: 1 item, 220 kcal (Arepa, white corn)\n- Gasto: $18.000 COP (Nequi)",
+   "ms": 8886
+  },
+  {
+   "id": "voice-snack-items",
+   "calls": 3,
+   "rateLimited": 0,
+   "inputTokens": 12532,
+   "cachedTokens": 3692,
+   "outputTokens": 682,
+   "toolsSentAvg": 14,
+   "systemCharsAvg": 2654,
+   "actions": [
+    "mfp.log Snacks: Apple, medium × 1 [1 medium] = 95 kcal",
+    "mfp.log Snacks: Greek yogurt, plain × 1 [1 container (170 g)] = 100 kcal",
+    "mfp.log Snacks: Almonds × 1 [1 handful (28 g)] = 164 kcal",
+    "mfp.log Snacks: Fini watermelon gum candy × 1 [1 piece] = 0 kcal"
+   ],
+   "cards": [],
+   "ok": true,
+   "reply": "Muy bien, Amo Julián. He registrado la manzana, el yogur griego, las almendras y el chicle en la merienda (359 kcal en total).\n\nPara el café negro, ¿cuál prefiere?\n1. Coffee, black (2 kcal, 1 cup)\n2. Coffee with milk (60 kcal, 1 cup)",
+   "ms": 10623
+  },
+  {
+   "id": "voice-mixed",
+   "calls": 3,
+   "rateLimited": 0,
+   "inputTokens": 19535,
+   "cachedTokens": 14057,
+   "outputTokens": 1411,
+   "toolsSentAvg": 23,
+   "systemCharsAvg": 3721,
+   "actions": [
+    "finance.create EgresoNormal 18000 COP Nequi/Disponible 2026-10-20",
+    "finance.create EgresoNormal 5000 COP Nequi/Disponible 2026-10-20",
+    "finance.create EgresoNormal 12000 COP Nequi/Disponible 2026-10-20"
+   ],
+   "cards": [],
+   "ok": true,
+   "reply": "Amo Julián, los gastos de 18.000 COP, 5.000 COP y 12.000 COP han sido registrados en Nequi. Respecto al arroz con pollo, la opción disponible es «Rice, white, cooked» (1 taza, 205 kcal). ¿Desea que la registre con esa opción o prefiere buscar otra alternativa?",
+   "ms": 11447
+  }
+ ]
+}

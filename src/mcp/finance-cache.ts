@@ -20,6 +20,8 @@ export class FinanceDirectory {
   private text?: string;
   private at = -Infinity;
   private inflight?: Promise<string | undefined>;
+  /** pocketId → accountId, from the last successful load. */
+  private owner = new Map<string, string>();
 
   constructor(
     private readonly toolbox: ListToolbox,
@@ -40,6 +42,28 @@ export class FinanceDirectory {
     return (await this.inflight) ?? '';
   }
 
+  /** The account a pocket belongs to (loads the cache if needed); undefined if unknown. */
+  async accountOf(pocketId: string): Promise<string | undefined> {
+    if (!this.owner.has(pocketId)) {
+      if (this.text === undefined) await this.prompt().catch(() => '');
+      if (!this.owner.has(pocketId)) {
+        this.invalidate(); // maybe a new pocket: refresh once
+        await this.prompt().catch(() => '');
+      }
+    }
+    return this.owner.get(pocketId);
+  }
+
+  /**
+   * finance_create_movement with a pocketId but no accountId (the model often forgets it):
+   * fill the pocket's owning account from the cache, deterministically, before validation.
+   */
+  async fillAccount(args: Rec): Promise<Rec> {
+    if (args.accountId || typeof args.pocketId !== 'string') return args;
+    const accountId = await this.accountOf(args.pocketId);
+    return accountId ? { ...args, accountId } : args;
+  }
+
   private async load(now: number): Promise<string | undefined> {
     const [acc, poc] = await Promise.all([
       this.toolbox.execute('finance_list_accounts', {}, { raw: true }),
@@ -52,8 +76,9 @@ export class FinanceDirectory {
     const lines = [`Finance accounts and pockets (as of ${time}; use these ids directly, no need to list them; balances may be stale after writes elsewhere):`];
     for (const a of accounts) {
       lines.push(`- ${a.name} (${a.currency}${a.type ? `, ${a.type}` : ''}) id=${a.id}${a.balance !== undefined ? ` balance=${a.balance}` : ''}`);
-      for (const p of pockets.filter((x) => x.accountId === a.id)) lines.push(`  - pocket ${p.name} id=${p.id}${p.balance !== undefined ? ` balance=${p.balance}` : ''}`);
+      for (const p of pockets.filter((x) => x.accountId === a.id)) lines.push(`  - pocket ${p.name} id=${p.id} accountId=${a.id}${p.balance !== undefined ? ` balance=${p.balance}` : ''}`);
     }
+    this.owner = new Map(pockets.filter((p) => typeof p.id === 'string' && typeof p.accountId === 'string').map((p) => [p.id as string, p.accountId as string]));
     this.text = lines.join('\n');
     this.at = now;
     return this.text;

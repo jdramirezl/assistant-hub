@@ -34,7 +34,12 @@ type Apps = Record<string, ServerStatus>;
 export interface Voice {
   startup(host: string, apps: Apps): string;
   back(app: string, minutes: number): string;
+  /** A real 429 from Gemini: we wait and retry. */
   rateLimit(seconds: number): string;
+  /** The hub is pacing its own calls (not an error). */
+  waiting(seconds: number): string;
+  /** A voice note arrived; transcription + answer can take a few seconds. */
+  voiceAck(): string;
   rateLimitGiveUp(daily: boolean): string;
   digestEmpty(period: string): string;
   planEdit(): string;
@@ -74,7 +79,9 @@ export function createVoice(p: PersonaConfig): Voice {
     return {
       startup: (host, apps) => [`✅ I'm up on ${host}.`, ...appLines(apps, 'en')].join('\n'),
       back: (app, min) => `✅ ${app} is back (it was unreachable for ${min} min).`,
-      rateLimit: (s) => `⏳ rate limit, retrying in ${s}s`,
+      rateLimit: (s) => `⏳ Gemini rate limit, retrying in ${s}s`,
+      waiting: () => '⏳ One moment, processing your message…',
+      voiceAck: () => '🎙️ Got it, processing your voice note…',
       rateLimitGiveUp: (daily) =>
         daily
           ? '⏳ Gemini daily free-tier limit reached; I will be able to answer again tomorrow.'
@@ -90,7 +97,9 @@ export function createVoice(p: PersonaConfig): Voice {
     return {
       startup: (host, apps) => [`✅ A su servicio, ${who}. En línea en ${host}.`, ...appLines(apps, 'es')].join('\n'),
       back: (app, min) => `✅ ${app} ha vuelto, ${who} (estuvo fuera ${min} min).`,
-      rateLimit: (s) => `⏳ Google nos pide un momento, ${who}. Reintento en ${s} s.`,
+      rateLimit: (s) => `⏳ Límite de Gemini, ${who}. Reintento en ${s} s.`,
+      waiting: () => `⏳ Un momento, ${who}, estoy procesando su mensaje…`,
+      voiceAck: () => `🎙️ Recibido, ${who}. Estoy procesando su nota de voz…`,
       rateLimitGiveUp: (daily) =>
         daily
           ? `⏳ Me temo que agotamos el cupo diario gratuito de Gemini, ${who}. Volveré a responder mañana.`
@@ -105,7 +114,9 @@ export function createVoice(p: PersonaConfig): Voice {
   return {
     startup: (host, apps) => [`✅ At your service, ${who}. Online on ${host}.`, ...appLines(apps, 'en')].join('\n'),
     back: (app, min) => `✅ ${app} has returned, ${who} (it was away for ${min} min).`,
-    rateLimit: (s) => `⏳ Google asks us to wait a moment, ${who}. Retrying in ${s} s.`,
+    rateLimit: (s) => `⏳ Gemini's rate limit, ${who}. Retrying in ${s} s.`,
+    waiting: () => `⏳ One moment, ${who}, I am processing your message…`,
+    voiceAck: () => `🎙️ Received, ${who}. Processing your voice note…`,
     rateLimitGiveUp: (daily) =>
       daily
         ? `⏳ I'm afraid we've used up Gemini's free daily quota, ${who}. I shall answer again tomorrow.`

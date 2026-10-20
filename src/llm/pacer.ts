@@ -22,7 +22,7 @@ export interface PacerOptions {
 
 export class Pacer {
   private readonly windows = new Map<string, { t: number; tokens: number }[]>();
-  private queue: Promise<void> = Promise.resolve();
+  private queue: Promise<unknown> = Promise.resolve();
   private readonly now: () => number;
   private readonly sleep: (ms: number) => Promise<void>;
 
@@ -48,8 +48,11 @@ export class Pacer {
     return Math.max(0, wait);
   }
 
-  /** Wait for a slot (serialized so concurrent callers don't overshoot), then reserve it. */
-  acquire(model: string, tokens: number, onWait?: (ms: number) => void): Promise<void> {
+  /**
+   * Wait for a slot (serialized so concurrent callers don't overshoot), then reserve it.
+   * Returns the reservation; call `settle(actual)` with the billed input tokens once known.
+   */
+  acquire(model: string, tokens: number, onWait?: (ms: number) => void): Promise<{ settle(actual: number): void }> {
     const run = async () => {
       for (;;) {
         const wait = this.delayFor(model, tokens);
@@ -57,15 +60,39 @@ export class Pacer {
         onWait?.(wait);
         await this.sleep(wait + 25);
       }
-      this.windows.get(model)!.push({ t: this.now(), tokens });
+      const entry = { t: this.now(), tokens };
+      this.windows.get(model)!.push(entry);
+      return {
+        settle: (actual: number) => {
+          if (Number.isFinite(actual) && actual >= 0) entry.tokens = actual;
+        },
+      };
     };
     const p = this.queue.then(run, run);
-    this.queue = p.catch(() => undefined);
+    this.queue = p.then(
+      () => undefined,
+      () => undefined,
+    );
     return p;
   }
 }
 
-/** Rough prompt-token estimate from the request body (≈ 4 chars per token). */
+/** Tokens Gemini bills per inline media part, roughly (audio ≈ 32/s; a ~40 s note ≈ 1.3K). */
+export const MEDIA_PART_TOKENS: Record<string, number> = { audio: 1_500, image: 300, video: 5_000, application: 2_000 };
+/** Base64 payload of an inline part (Gemini `inlineData.data`); never counted as text. */
+const INLINE_DATA = /"data"\s*:\s*"[A-Za-z0-9+/=_-]{256,}"/g;
+const MEDIA_TYPE = /"mimeType"\s*:\s*"(audio|image|video|application)\//g;
+
+/**
+ * Rough prompt-token estimate from the request body: ≈ 4 chars per token of TEXT, plus a
+ * constant per inline media part. Base64 media is NOT text: a 1 MB voice note is ~1.3 MB of
+ * base64 (≈ 335K "tokens" by length) but Gemini bills ~1.3K for it.
+ */
 export function estimateTokens(body: unknown): number {
-  return typeof body === 'string' ? Math.ceil(body.length / 4) : 1000;
+  if (typeof body !== 'string') return 1000;
+  if (body.length < 4096) return Math.ceil(body.length / 4);
+  const text = body.replace(INLINE_DATA, '"data":""');
+  let media = 0;
+  if (text.length !== body.length) for (const m of text.matchAll(MEDIA_TYPE)) media += MEDIA_PART_TOKENS[m[1]!] ?? 1_000;
+  return Math.ceil(text.length / 4) + media;
 }

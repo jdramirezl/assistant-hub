@@ -101,7 +101,7 @@ async function runScenario(s: Scenario, pacer: ReturnType<typeof pacedFetch>, ap
   // like the real server today: real payment disabled; the hub sends dryRun (CINES_PURCHASE_DRY_RUN)
   const cines = await startFakeCines({ phase3: true, realPaymentDisabled: true, ...(s.cines ?? {}) });
   const tg = await new MockTelegram().start();
-  for (const f of ['receipt.png', 'voice-expense.wav', 'voice-meal.wav', 'voice-breakfast.wav', 'voice-snack.wav', 'voice-dinner-en.wav']) {
+  for (const f of ['receipt.png', 'voice-expense.wav', 'voice-meal.wav', 'voice-breakfast.wav', 'voice-snack.wav', 'voice-dinner-en.wav', 'voice-mixed.wav', 'voice-snack-items.wav']) {
     tg.addFile(f, { path: `files/${f}`, mime: f.endsWith('.png') ? 'image/png' : 'audio/wav', bytes: readFileSync(join(FIXTURES, f)) });
   }
   const dataDir = mkdtempSync(join(tmpdir(), 'replay-'));

@@ -8,9 +8,14 @@ import { estimateTokens, type Pacer } from './pacer.js';
  */
 export const rateLimitContext = new AsyncLocalStorage<{
   notify: (text: string) => Promise<void>;
-  /** Wording for the waiting notice (persona); default "⏳ rate limit, retrying in Ns". */
+  /** Wording for a real 429 (persona); default "⏳ rate limit, retrying in Ns". */
   format?: (seconds: number) => string;
+  /** Wording for a client-side pacing wait (not an error); default "⏳ One moment, processing…". */
+  waiting?: (seconds: number) => string;
 }>();
+
+/** Pacer waits shorter than this are silent (the user only sees "typing…"). */
+export const SILENT_WAIT_MS = 10_000;
 
 export const MAX_WAIT_MS = 60_000;
 
@@ -60,17 +65,21 @@ export function createRateLimitedFetch(opts: RateLimitedFetchOptions = {}): type
     const url = String(input instanceof Request ? input.url : input);
     const model = url.match(/models\/([^:/?]+)/)?.[1] ?? 'unknown';
     for (let attempt = 0; ; attempt++) {
+      let slot: { settle(actual: number): void } | undefined;
       if (opts.pacer) {
-        await opts.pacer.acquire(model, estimateTokens(init?.body), (ms) => {
-          if (ms < 8_000 || notified) return;
+        slot = await opts.pacer.acquire(model, estimateTokens(init?.body), (ms) => {
+          // our own pacing, not an error: a calm "one moment" (or nothing for short waits)
+          if (ms < SILENT_WAIT_MS || notified) return;
           const ctx = rateLimitContext.getStore();
           if (!ctx) return;
           notified = true;
           const s = Math.ceil(ms / 1000);
-          void ctx.notify(ctx.format?.(s) ?? `⏳ rate limit, retrying in ${s}s`).catch(() => {});
+          void ctx.notify(ctx.waiting?.(s) ?? '⏳ One moment, processing your message…').catch(() => {});
         });
       }
       const res = await base(input, init);
+      // replace the estimate with the tokens Gemini actually billed (non-blocking)
+      if (slot && res.ok) void billedInputTokens(res).then((n) => n !== undefined && slot!.settle(n), () => {});
       try {
         opts.observe?.({ url: String(input instanceof Request ? input.url : input), init, res, attempt });
       } catch {
@@ -106,6 +115,20 @@ export function createRateLimitedFetch(opts: RateLimitedFetchOptions = {}): type
       await sleep(waitMs);
     }
   }) as typeof fetch;
+}
+
+/** promptTokenCount (+ tool-use prompt tokens) from a Gemini response, JSON or SSE. */
+async function billedInputTokens(res: Response): Promise<number | undefined> {
+  const text = await res.clone().text();
+  let last: { promptTokenCount?: number; toolUsePromptTokenCount?: number } | undefined;
+  for (const m of text.matchAll(/"usageMetadata"\s*:\s*(\{[^{}]*\})/g)) {
+    try {
+      last = JSON.parse(m[1]!);
+    } catch {
+      /* partial */
+    }
+  }
+  return last?.promptTokenCount !== undefined ? last.promptTokenCount + (last.toolUsePromptTokenCount ?? 0) : undefined;
 }
 
 /** Chat-facing text for a model/run error (Telegram formatError). */

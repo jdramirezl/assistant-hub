@@ -1,6 +1,7 @@
 import { MCPClient } from '@mastra/mcp';
 import { createTool, type Tool } from '@mastra/core/tools';
 import { noopLogger } from '@mastra/core/logger';
+import { toStandardSchema } from '@mastra/schema-compat/adapters/json-schema';
 import { assertTransportSecurity, resolveHeaders, resolveUrl, type Registry } from './registry.js';
 import { requiresApproval } from '../approvals.js';
 import { mapToolErrorText, sharedError, unavailableError, type ErrorStyle } from './errors.js';
@@ -27,6 +28,8 @@ export interface ToolHooks {
   approvalOverride?(tool: string): ((input: Record<string, unknown>) => boolean | Promise<boolean>) | undefined;
   /** Last checks before the server is called: new args, or a shared-shape error (not called). */
   beforeCall?(tool: string, input: Record<string, unknown>): Promise<{ args: Record<string, unknown> } | { error: unknown }> | undefined;
+  /** Adjust a tool's JSON Schema before it is shown to the model and validated (e.g. a field the hub fills). */
+  schema?(tool: string, schema: Record<string, unknown>): Record<string, unknown>;
   /** Inspect/transform a tool's normalized result (may be async). */
   afterResult?(tool: string, input: Record<string, unknown>, result: unknown, opts: { raw: boolean }): unknown;
 }
@@ -76,8 +79,22 @@ export const RETRY_MAX_MS = 10 * 60_000;
 /** On an incoming message, retry a down server if the last attempt is at least this old. */
 export const ON_DEMAND_GAP_MS = 15_000;
 
+/**
+ * The server forgot our MCP session (it restarted: `mfpctl restart`, the weekly refresh…).
+ * Streamable HTTP servers answer "Session not found" (JSON-RPC -32600, HTTP 400/404) BEFORE
+ * dispatching the call, so re-initializing and retrying once is safe, also for writes.
+ */
+export const SESSION_LOST = /session not found|no valid session|unknown session|session (?:has )?expired|"code"\s*:\s*-32600|\bHTTP 404\b|status(?:Code)?[ :=]+404/i;
+
+/** JSON Schema formats accepted without validation (they are hints for the model). */
+const SCHEMA_FORMATS = Object.fromEntries(
+  ['uuid', 'date', 'date-time', 'time', 'duration', 'email', 'uri', 'uri-reference', 'url', 'hostname', 'ipv4', 'ipv6', 'regex', 'int32', 'int64', 'float', 'double', 'byte', 'binary', 'password'].map((f) => [f, true]),
+) as Record<string, true>;
+
 interface ServerSlot {
   client?: MCPClient;
+  /** Raw MCP tools of the CURRENT client (wrapped tools resolve them at call time). */
+  raw: Record<string, AnyTool>;
   tools: Record<string, AnyTool>;
   annotations: Record<string, ToolAnnotations | undefined>;
   status: ServerStatus;
@@ -183,6 +200,7 @@ export class McpToolbox {
     for (const [name, entry] of Object.entries(this.registry.servers)) {
       const skip = this.skipReason(name, entry);
       this.slots[name] = {
+        raw: {},
         tools: {},
         annotations: {},
         status: { state: 'skipped', reason: skip ?? 'connecting' },
@@ -251,13 +269,18 @@ export class McpToolbox {
       return;
     }
     const tools: Record<string, AnyTool> = {};
+    const rawTools: Record<string, AnyTool> = {};
     const annotations: Record<string, ToolAnnotations | undefined> = {};
     for (const [key, tool] of Object.entries(raw as Record<string, AnyTool>)) {
       if (!key.startsWith(`${name}_`)) continue;
       const pub = publicToolName(name, key.slice(name.length + 1), entry.toolPrefix);
+      // the raw MCP tool validates its input too: same schema, with the formats declared
+      (tool as { inputSchema?: unknown }).inputSchema = this.schemaFor(pub, (tool as { inputSchema?: unknown }).inputSchema, false);
+      rawTools[pub] = tool;
       tools[pub] = this.wrap(pub, name, tool, entry.errorStyle);
       annotations[pub] = (tool as { mcp?: { annotations?: ToolAnnotations } }).mcp?.annotations;
     }
+    slot.raw = rawTools;
     slot.tools = tools;
     slot.annotations = annotations;
     const downFor = slot.downSince !== undefined ? this.now() - slot.downSince : undefined;
@@ -310,12 +333,51 @@ export class McpToolbox {
     }
   }
 
+  /**
+   * Call the CURRENT client's tool; if the server lost our session, re-initialize once and
+   * retry the same call once (the server rejected it before running anything).
+   */
+  private async callWithSessionRetry(server: string, name: string, fallback: AnyTool, input: unknown, ctx: unknown): Promise<unknown> {
+    const slot = this.slots[server];
+    const run = (tool: AnyTool) => (tool.execute as (i: unknown, c: unknown) => Promise<unknown>)(input, ctx);
+    const client = slot?.client;
+    try {
+      return await run(slot?.raw[name] ?? fallback);
+    } catch (err) {
+      // retry once when the server lost our session, or when another call already replaced
+      // the dead client (our request was on the old session, which the server rejects
+      // before dispatch, so nothing ran)
+      const replaced = !!slot && slot.client !== client;
+      if (!slot || (!replaced && !SESSION_LOST.test((err as Error).message ?? ''))) throw err;
+      if (!replaced) {
+        this.log(`[mcp] ${server}: session lost (server restarted?); reconnecting and retrying ${name} once`);
+        await this.connect(server); // parallel calls share one reconnect (in-flight dedup)
+      } else if (slot.inflight) await slot.inflight;
+      const fresh = slot.raw[name];
+      if (!fresh || slot.status.state !== 'up') throw err;
+      return run(fresh);
+    }
+  }
+
+  /**
+   * The tool's input schema, rebuilt from its JSON Schema: (1) with the hub's adjustments, and
+   * (2) with the JSON Schema string formats MCP servers use (uuid, date…) declared, so Ajv does
+   * not log "unknown format ignored" on every call. Formats are hints only, as before.
+   */
+  private schemaFor(name: string, schema: unknown, adjust = true): unknown {
+    const json = (schema as { getSchema?: () => unknown } | undefined)?.getSchema?.();
+    if (!json || typeof json !== 'object') return schema;
+    let s = structuredClone(json) as Record<string, unknown>;
+    if (adjust) s = this.opts.hooks?.schema?.(name, s) ?? s;
+    return toStandardSchema(s as never, { ajvOptions: { formats: SCHEMA_FORMATS } });
+  }
+
   private wrap(name: string, server: string, tool: AnyTool, style: ErrorStyle): AnyTool {
     const t = tool as AnyTool & { mcp?: { annotations?: ToolAnnotations } };
     return createTool({
       id: name,
       description: t.description ?? name,
-      inputSchema: t.inputSchema as never,
+      inputSchema: this.schemaFor(name, t.inputSchema) as never,
       mcp: t.mcp as never,
       requireApproval: this.approvalFor(name, t.mcp?.annotations),
       execute: async (given: unknown, ctx: unknown) => {
@@ -324,7 +386,7 @@ export class McpToolbox {
           const before = await this.opts.hooks?.beforeCall?.(name, (given ?? {}) as Record<string, unknown>);
           if (before && 'error' in before) return before.error;
           if (before) input = before.args;
-          const out = normalizeResult(await (t.execute as (i: unknown, c: unknown) => Promise<unknown>)(input, ctx), style);
+          const out = normalizeResult(await this.callWithSessionRetry(server, name, t, input, ctx), style);
           const hook = this.opts.hooks?.afterResult;
           const raw = (ctx as { hubRaw?: boolean } | undefined)?.hubRaw === true; // hub-internal call: full, untrimmed result
           if (!hook) return out;

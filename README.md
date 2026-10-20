@@ -57,6 +57,11 @@ referenced by env var name, never written in the file:
 
 - Tools keep a single app prefix (`finance_*`, `fitness_*`); unprefixed tools get `<server>_`.
 - A server that is down is skipped (the agent is told which app is unavailable) and retried every minute.
+- A server that restarted (e.g. `mfpctl restart`, the weekly refresh) answers "Session not found":
+  the hub re-initializes and retries that call once, transparently (rejected before dispatch, so
+  safe for writes too).
+- `finance_create_movement`: the hub fills `accountId` from the `pocketId` (cached accounts/pockets;
+  each pocket is listed with its `accountId` in the prompt).
 - Plain `http://` is only accepted for loopback hosts; remote servers must use `https://`.
 - Tool errors use the shared shape `{"error":{"code","message","retryable"}}`.
 - Local stub for development: `npm run stub:echo` (serves `echo_say`, `echo_delete`, `echo_fail` on `127.0.0.1:8585`); set its `enabled` to `true` locally.
@@ -200,6 +205,10 @@ startup ping, weekly digest, "app is back" and rate-limit notices. Switch off wi
 - **`log_meal`:** a whole meal in one model step (see above); **finance accounts/pockets** are cached
   by the hub and put in the prompt, so an expense is one tool call.
 - **Pacing:** calls wait for a slot below 14 RPM (flash-lite) / 4 RPM (3.8-flash) instead of hitting 429.
+  Inline media (a voice note's base64) is not counted as text tokens, and each window entry is
+  corrected with the tokens Gemini billed. A pacing wait of 10 s or more says "⏳ Un momento…
+  procesando"; "Límite de Gemini, reintento en N s" is only for real 429s. Voice notes get an
+  immediate "🎙️ Recibido…" acknowledgement.
 
 ## Weekly digest
 
