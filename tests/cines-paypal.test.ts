@@ -268,7 +268,9 @@ describe('a hold slower than the MCP timeout (the live hold_ac2cffa16eab)', () =
     await tg.waitFor(() => !!findButton(tg, 'tool_approve:'), 10_000);
     const b = findButton(tg, 'tool_approve:')!;
     tg.push(callbackUpdate(ME, { message_id: b.messageId }, b.data));
-    await tg.waitFor(() => status().some((x) => /^🎟️ Apartado B7 · \$99 · expira \d\d:\d\d/.test(x)), 10_000);
+    // the hub's purchase card shows the hold (no duplicate "🎟️ Apartado" status line)
+    await tg.waitFor(() => /confirmo la compra[\s\S]*B7/.test(tg.outgoingText(ME)), 10_000);
+    expect(status().join('\n')).not.toMatch(/🎟️ Apartado/);
     expect(status()).toContain('⏳ Apartando en Cinépolis…');
     expect(status().join('\n')).not.toMatch(/no responde|MCP_UNAVAILABLE|❌/);
     // the model saw a normal "held" result (it can now call cines_purchase → the card)

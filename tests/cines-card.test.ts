@@ -101,6 +101,12 @@ describe('saved card: Comprar → CVV via secure input → paid', () => {
     expect(await hub.cines.successes()).toBe(1);
     // the hold's purchase card is the message: the model's own text after it is dropped
     expect(out()).not.toMatch(/Listo, le mostré la compra/);
+    // …and so is the duplicate "🎟️ Apartado F7 · $99" status line
+    expect(status().join('\n')).not.toMatch(/🎟️ Apartado F7/);
+    // Comprar → the card says "⏳ Pagando…", and "Pagado" only after the charge
+    const cardEdits = tg.sent('editMessageText').filter((c) => c.body.parse_mode !== 'HTML').map((c) => String(c.body.text));
+    expect(cardEdits.findIndex((t) => /⏳ Pagando…/.test(t))).toBeLessThan(cardEdits.findIndex((t) => /✅ Pagado/.test(t)));
+    expect(cardEdits.findIndex((t) => /⏳ Pagando…/.test(t))).toBeGreaterThanOrEqual(0);
     // the purchase card itself is closed with the outcome
     expect(tg.sent('editMessageText').map((c) => String(c.body.text)).join('\n')).toMatch(/✅ Pagado: reserva BK001/);
   }, 30_000);

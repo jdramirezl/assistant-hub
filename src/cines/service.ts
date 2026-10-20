@@ -282,7 +282,7 @@ export class CinesHub {
     if (!(await this.d.kv.setIfNotExists(`cines:card:${holdId}`, 'buy', HOLD_TTL_MS))) return undefined; // double tap / expired
     clearTimeout(c?.timer);
     const es = (this.d.lang ?? 'es') === 'es';
-    if (c?.messageId) await this.d.editCard?.(c.chat, c.messageId, this.cardText(h, es ? '✅ Compra aprobada; pagando…' : '✅ Purchase approved; paying…')).catch(() => {});
+    if (c?.messageId) await this.d.editCard?.(c.chat, c.messageId, this.cardText(h, es ? '⏳ Pagando… (si hace falta, le pido el PIN o el CVV abajo)' : '⏳ Paying… (if needed, I ask for the PIN or CVV below)')).catch(() => {});
     this.hubPaying.add(holdId);
     let r: unknown;
     try {

@@ -129,6 +129,8 @@ export function summarizeOutcome(events: ToolOutcome[], isWrite: (tool: string) 
       else if (r.status === 'in_progress') needInfo.push(lang === 'es' ? 'sigue en curso' : 'still running');
       return;
     }
+    // the hub's purchase card already shows the hold (seats, total, expiry): no duplicate status line
+    if (e.tool === 'cines_hold_seats' && r.status === 'held' && r.card === 'shown_to_user') return;
     if (e.tool === 'cines_hold_seats' && r.status === 'held' && typeof r.holdId === 'string') {
       const es = lang === 'es';
       const seats = [r.seats ?? []].flat().join(', ');
