@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
 # Shared helpers for setup-mac.sh and deploy.sh. Source, don't execute.
 # shellcheck shell=bash
+# Variables defined here are used by the scripts that source this file.
+# shellcheck disable=SC2034
 
 REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)"
 HUB_LABEL="com.jdrami.assistant-hub"

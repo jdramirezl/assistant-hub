@@ -32,7 +32,11 @@ before="$(git rev-parse --short HEAD)"
 say "pulling (was $before)"
 run git pull --ff-only
 after="$(git rev-parse --short HEAD)"
-[[ "$before" == "$after" ]] && say "already up to date at $after" || say "updated $before → $after"
+if [[ "$before" == "$after" ]]; then
+  say "already up to date at $after"
+else
+  say "updated $before → $after"
+fi
 
 run npm ci --no-audit --no-fund
 if [[ "$SKIP_TESTS" == 0 ]]; then
