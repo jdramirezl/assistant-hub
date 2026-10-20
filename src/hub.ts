@@ -16,6 +16,7 @@ import { FINANCE_WRITES, FinanceDirectory } from './mcp/finance-cache.js';
 import { ToolCallFilter } from '@mastra/core/processors';
 import { Budget, BudgetGuard } from './budget.js';
 import { createGeminiModels, modelChain, PROVIDER_OPTIONS } from './models.js';
+import type { Pacer } from './llm/pacer.js';
 import { createTranscriber } from './voice/transcribe.js';
 import { mealHint } from './meal.js';
 import { checkDate, sanitizeFilters } from './cines/args.js';
@@ -75,6 +76,13 @@ export interface HubDeps {
   cinesPollMs?: number;
   /** fetch for cines images (tests). */
   cinesFetch?: typeof fetch;
+  /** Client-side pacer for Gemini (debug runs pace well below the free tier). */
+  geminiPacer?: Pacer;
+  /**
+   * Debug entry point (src/debug): writes are blocked unless the current request allows them;
+   * cines_purchase is never allowed.
+   */
+  debug?: { allowWrites(): boolean };
   /** Gemini HTTP fetch (replay/tests): wrapped by the rate limiter and usage observer. */
   geminiFetch?: typeof fetch;
 }
@@ -89,6 +97,8 @@ export interface Hub {
   telegram?: TelegramProvider;
   plans: PlanService;
   cines: CinesHub;
+  /** Requests still running (their status message not closed yet). */
+  openRequests(): number;
   usage: UsageLog;
   /** The /usage report text. */
   usageReport(): Promise<string>;
@@ -96,7 +106,7 @@ export interface Hub {
    * Connect channels (network), catch up a missed digest, and (with `ops`) send the
    * "I'm up" ping and start the healthchecks.io heartbeat. Safe without Telegram.
    */
-  start(opts?: { connectRetries?: number; ops?: boolean }): Promise<void>;
+  start(opts?: { connectRetries?: number; ops?: boolean; catchUp?: boolean }): Promise<void>;
   /** Run the weekly-digest workflow now. */
   runDigest(input?: { trigger?: string; force?: boolean }): Promise<DigestResult | undefined>;
   stop(): Promise<void>;
@@ -161,6 +171,8 @@ export function createHub(config: HubConfig, deps: HubDeps = {}): Hub {
     baseLog(id && id !== 'none' ? `[req ${id}] ${m}` : m);
   };
   const voice = createVoice(config.persona);
+  /** Requests whose status message is still open (debug entry point waits for 0). */
+  let openRequests = 0;
   const msgs = new StatusMessages(config.persona);
   const version = hubVersion(deps.env ?? process.env);
   const client = createDbClient(config);
@@ -193,6 +205,14 @@ export function createHub(config: HubConfig, deps: HubDeps = {}): Hub {
               async (input) => !('error' in (await cines!.prepareHold(usageContext.getStore()?.chatId ?? 'local', input)))
             : undefined,
       beforeCall: (tool, given) => {
+        if (deps.debug) {
+          const refuse = (m: string) => Promise.resolve({ error: { error: { code: 'DEBUG_READ_ONLY', message: m, retryable: false } } });
+          if (tool === PURCHASE_TOOL) return refuse('cines_purchase is never allowed from the debug entry point.');
+          if (isWrite(tool) && tool !== 'log_meal' && tool !== 'clear_day' && !deps.debug.allowWrites()) {
+            log(`[debug] blocked write ${tool} (read-only; pass allowWrites)`);
+            return refuse(`${tool} is a write and this debug request is read-only (allowWrites:false). Nothing was changed.`);
+          }
+        }
         const ph = placeholderArg(given);
         const invalid = (message: string) => Promise.resolve({ error: { error: { code: 'VALIDATION_ERROR', message, retryable: false } } });
         if (ph) return invalid(`${ph} is a placeholder, not a real value. Copy the real value verbatim from the latest tool result (never invent ids).`);
@@ -321,7 +341,7 @@ export function createHub(config: HubConfig, deps: HubDeps = {}): Hub {
   const usage = new UsageLog(client, deps.now);
   const observe = createUsageObserver(usage, { now: deps.now, primaryModel: 'gemini-3.5-flash-lite', onError: (e) => log(`[usage] ${e.message}`) });
   if (!deps.model) log(`[models] Gemini key from ${config.modelKeySource}${config.modelKeySource === 'DEV_GOOGLE_API_KEY' ? ' (dev project)' : ''}`);
-  const gemini = deps.model ? undefined : createGeminiModels(config.googleApiKey, log, observe, deps.geminiFetch);
+  const gemini = deps.model ? undefined : createGeminiModels(config.googleApiKey, log, observe, deps.geminiFetch, deps.geminiPacer);
   const transcribeModel = deps.transcribeModel ?? gemini?.default;
   const transcribe = transcribeModel ? createTranscriber(transcribeModel, { providerOptions: PROVIDER_OPTIONS.default, log, record: (id, u) => budget.record(id, u) }) : undefined;
   const notSaved = () => notSavedText(config.persona.language, config.persona.persona === 'alfred' ? addressOf(config.persona) : config.persona.ownerName);
@@ -379,8 +399,10 @@ export function createHub(config: HubConfig, deps: HubDeps = {}): Hub {
     voice,
     gate: async (requestId) => ((await budget.check()).ok ? undefined : toPlain(msgs.budget(requestId))),
     status: tgApi
-      ? (chatId, requestId) =>
-          new StatusTracker({
+      ? (chatId, requestId) => {
+          openRequests++;
+          return new StatusTracker({
+            onFinish: () => void (openRequests = Math.max(0, openRequests - 1)),
             api: {
               send: (c, html) => tgApi.sendHtml(c, html),
               edit: (c, id, html) => tgApi.editHtml(c, id, html),
@@ -395,7 +417,8 @@ export function createHub(config: HubConfig, deps: HubDeps = {}): Hub {
             now: deps.now,
             onFailure: (f) => recordFailure(kv, f),
             ...(deps.statusTimings ?? {}),
-          })
+          });
+        }
       : undefined,
     onPlanAction: (actionId, userId) => plans.handleAction(actionId, userId),
     commands: { usage: () => usageReport(), estado: () => estadoReport() },
@@ -471,6 +494,7 @@ export function createHub(config: HubConfig, deps: HubDeps = {}): Hub {
     telegram,
     plans,
     cines: cinesHub,
+    openRequests: () => openRequests,
     usage,
     usageReport,
     runDigest,
@@ -485,7 +509,7 @@ export function createHub(config: HubConfig, deps: HubDeps = {}): Hub {
         });
       }
       try {
-        if (await digest.isMissed()) await runDigest({ trigger: 'catch-up' });
+        if (opts.catchUp !== false && (await digest.isMissed())) await runDigest({ trigger: 'catch-up' });
       } catch (err) {
         log(`[digest] catch-up failed: ${(err as Error).message}`);
       }

@@ -38,6 +38,8 @@ export interface TrackerDeps {
   isKnown?: (tool: string) => boolean;
   log?: (m: string) => void;
   onFailure?: (f: FailureRecord) => void | Promise<void>;
+  /** Called once when the request's status closes (debug: "is a request still running?"). */
+  onFinish?: () => void;
   now?: () => number;
   workingAfterMs?: number;
   /** After this long, "⏳ Sigo en ello; Gemini está lento…" (default 90 s). */
@@ -154,6 +156,11 @@ export class StatusTracker {
   async finish(): Promise<void> {
     if (this.finished) return;
     this.finished = true;
+    try {
+      this.d.onFinish?.();
+    } catch {
+      /* never break a request */
+    }
     clearTimeout(this.workingTimer);
     clearTimeout(this.slowTimer);
     let final: StatusText | undefined;

@@ -43,6 +43,25 @@ grep -q '^CINES_MCP_URL=' .env || echo 'CINES_MCP_URL=http://127.0.0.1:8686/mcp'
 npm run dev                                                  # dev hub + @jdrami_hub_dev_bot (long polling)
 ```
 
+### Local test entry point (`npm run debug-server`)
+
+The real Telegram pipeline (router, guards, status layer, cards, photos, live apps) over loopback
+HTTP, with a capture sink instead of Telegram. Its own data dir (`…/assistant-hub/debug/`) and user,
+so the owner's chat memory is untouched.
+
+```bash
+npm run debug-server &                      # needs DEV_GOOGLE_API_KEY (refuses the prod key); 127.0.0.1:4112
+scripts/debug-chat.sh "¿qué comí hoy?"       # compact transcript: status, messages, cards, photo files, req id, Gemini calls
+scripts/debug-chat.sh --write "almorcé arroz" # writes only with --write (allowWrites)
+scripts/debug-chat.sh --press "Aprobar" --write
+```
+
+- Token in `debug/debug-token` (0600), sent as `x-debug-token`; loopback only.
+- Read-only by default: every write tool is refused unless the request has `allowWrites:true`;
+  approval-gated tools also need an explicit `--press`. `cines_purchase` is never allowed.
+- Gemini: paced at `DEBUG_RPM` (default 6/min), at most `DEBUG_REQUEST_CALLS` (8) per request and
+  `DEBUG_DAILY_CALLS` (80) per day.
+
 ## Apps (MCP servers)
 
 Apps are listed in `mcp-servers.json`. Adding an app means adding one entry; secrets are

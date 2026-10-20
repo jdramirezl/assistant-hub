@@ -196,6 +196,7 @@ function guarded(
 
     async function route() {
       const scope = usageContext.getStore()!;
+      log(`[req ${requestId}] [telegram] ${resumed ? 'secure input' : media} message`);
         if (resumed) {
           scope.text = resumed;
           scope.intent = 'cines';
