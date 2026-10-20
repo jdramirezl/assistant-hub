@@ -24,7 +24,9 @@ import { fetchLoopbackPng } from './images.js';
 import {
   HARD_CAP_MXN,
   HOLD_TOOL,
+  NOT_ARMED,
   RELEASE_TOOL,
+  STATUS_TOOL,
   SECURE_FORMAT,
   normalizeSecret,
   PURCHASE_TOOL,
@@ -69,6 +71,15 @@ export interface CinesHubDeps {
   secureExpired: () => string;
   /** Force dryRun on every purchase (setup day / tests): nothing is charged. */
   dryRun?: boolean;
+  /** PayPal approval at the Mac: how long the server waits (CINES_PAYPAL_WAIT_MIN, default 15). */
+  paypalWaitMin?: number;
+  /** Poll interval for an in-progress purchase (default 10 s). */
+  pollMs?: number;
+  /** "⏳ Esperando que apruebe el pago en PayPal en el Mac…" (persona). */
+  paypalWaitText?: () => string;
+  /** Show a "working" line in the request's live status message. */
+  working?: (text: string) => void;
+  sleep?: (ms: number) => Promise<void>;
 }
 
 /** After expiry, a reply that looks like the secret is still swallowed for this long. */
@@ -259,13 +270,64 @@ export class CinesHub {
     return { args: purchaseArgs(input, h, true, { dryRun: this.d.dryRun }) };
   }
 
+  /**
+   * PayPal is approved at the Mac's screen (up to CINES_PAYPAL_WAIT_MIN): the purchase call
+   * returned in_progress. Poll cines_hold_status (no model calls, never re-calling
+   * cines_purchase) until the newest purchase is paid / failed / unknown, or time runs out.
+   */
+  private async waitForPurchase(): Promise<unknown> {
+    const started = this.now();
+    const limit = ((this.d.paypalWaitMin ?? 15) + 2) * 60_000;
+    const every = this.d.pollMs ?? 10_000;
+    const sleep = this.d.sleep ?? ((ms: number) => new Promise((r) => setTimeout(r, ms)));
+    this.d.working?.(this.d.paypalWaitText?.() ?? '⏳ Esperando que apruebe el pago en PayPal en el Mac…');
+    this.log(`[cines] purchase in progress (PayPal at the Mac); polling every ${Math.round(every / 1000)} s for up to ${Math.round(limit / 60_000)} min`);
+    let polls = 0;
+    while (this.now() - started < limit) {
+      await sleep(every);
+      polls++;
+      const st = (await this.d.toolbox.execute(STATUS_TOOL, {}, { raw: true })) as Rec;
+      if (st?.error) continue; // transient: keep waiting
+      const list = (st.purchases as Rec[] | undefined) ?? [];
+      // the server lists the last purchases oldest first: the newest is ours
+      const p = list.at(-1);
+      const s = String(p?.status ?? '');
+      if (s === 'paid') {
+        this.log(`[cines] purchase paid after ${polls} polls`);
+        return { status: 'paid', purchaseId: p!.purchaseId, bookingNumber: p!.bookingNumber, total: p!.total, currency: p!.currency ?? 'MXN', imageUrl: p!.imageUrl, dryRun: p!.dryRun };
+      }
+      if (s === 'failed') {
+        this.log(`[cines] purchase failed after ${polls} polls (not retried)`);
+        return { error: { code: 'CINES_PAYMENT_FAILED', message: String(p!.error ?? 'El pago no se completó.'), retryable: false } };
+      }
+      if (s === 'unknown') {
+        this.log(`[cines] purchase outcome unknown after ${polls} polls (not retried, hold kept)`);
+        return { error: { code: 'CINES_PAYMENT_UNKNOWN', message: String(p!.error ?? 'outcome unknown'), retryable: false } };
+      }
+    }
+    this.log(`[cines] purchase still not settled after ${Math.round(limit / 60_000)} min (not retried)`);
+    return { error: { code: 'CINES_PAYMENT_UNKNOWN', message: 'still in progress after the PayPal wait', retryable: false } };
+  }
+
   /* ---------------------------------------------------------------- results */
 
   /**
    * Inspect a cines result: record holds and purchases, send images, open secure requests.
    * Returns what the model sees.
    */
-  async afterResult(tool: string, input: Rec, result: unknown, ctx: CallContext = {}): Promise<unknown> {
+  async afterResult(tool: string, input: Rec, given: unknown, ctx: CallContext = {}): Promise<unknown> {
+    let result = given;
+    if ((tool === PURCHASE_TOOL || tool === SECURE_TOOL) && (result as Rec | undefined)?.status === 'in_progress') result = await this.waitForPurchase();
+    if (tool === PURCHASE_TOOL) {
+      const e = (result as Rec | undefined)?.error as Rec | undefined;
+      if (e && NOT_ARMED.test(String(e.message ?? ''))) {
+        // refused before anything was recorded: the user may try again once it is armed
+        const holdId = holdIdOf(input);
+        if (holdId) await this.d.kv.delete(`cines:attempt:${holdId}`);
+        this.log('[cines] purchase refused: real payment is not armed on the Mac (nothing charged)');
+        return { error: { code: 'CINES_PAYMENT_NOT_ARMED', message: String(e.message), retryable: false } };
+      }
+    }
     let out = result;
     this.remember(ctx.chatId ?? 'local', tool, result);
     const h = holdOf(result);

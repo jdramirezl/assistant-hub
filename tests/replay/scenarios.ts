@@ -370,6 +370,20 @@ export const SCENARIOS: Scenario[] = [
     },
   },
   {
+    id: 'cines-paypal',
+    // PayPal approved at the Mac: purchase returns in_progress, the hub polls hold_status, then paid with a screenshot
+    cines: { inProgress: { polls: 3, outcome: 'paid' } },
+    turns: ['aparta y compra el F7 para la función 570-1002 de Dune en el Toreo'],
+    ok: ({ cines, photos, status, outgoing }) =>
+      both(
+        cines.calls.filter((t) => t === 'cines_purchase').length === 1 || `purchase calls: ${cines.calls.filter((t) => t === 'cines_purchase').length}`,
+        cines.calls.filter((t) => t === 'cines_hold_status').length >= 3 || 'did not poll hold_status',
+        photos >= 1 || 'no confirmation photo',
+        /Esperando que apruebe el pago en PayPal en el Mac/.test(outgoing) || 'no PayPal waiting status',
+        /^✅ 🎟️ Compra confirmada: reserva DRYRUN-001 · \$99 MXN/.test(status) || `status: ${status || 'none'}`,
+      ),
+  },
+  {
     id: 'cines-buy',
     cines: { purchaseInputs: ['otp_3ds'] },
     turns: ['aparta y compra F7 y F8 para la función 570-1002 de Dune en el Toreo', { secret: 'Q8Z4K2' }],

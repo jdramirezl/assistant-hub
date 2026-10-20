@@ -194,6 +194,13 @@ Telegram shows ONE message: the plan grouped by section (meal / account), with
     model cannot. If the server's hold result still says `purchaseApprovalRequired`, the card is shown.
   - ❌ on the purchase card releases the hold (`cines_release_hold`); unanswered holds expire on the
     server after ~9 min.
+  - PayPal is approved at the Mac's screen: when `cines_purchase` returns `in_progress`, the hub
+    polls `cines_hold_status` every 10 s (up to `CINES_PAYPAL_WAIT_MIN`+2 min, no model calls, never
+    re-calling the purchase) with "⏳ Esperando que apruebe el pago en PayPal en el Mac…". Paid →
+    the confirmation screenshot, then "✅ 🎟️ Compra confirmada: reserva … · $… MXN"; failed → ❌ with
+    the server's message; unknown → ⚠️ "No sé si se cobró; revise su correo. No liberé los asientos."
+  - Not armed on the Mac → "🔒 El pago real no está armado. En el Mac corra: bin/cinesctl
+    arm-payment" (nothing was recorded, so the hold can still be paid once armed).
   - `CINES_PURCHASE_DRY_RUN=1` sends every purchase with `dryRun` (nothing is charged; not counted).
     Real payment is disabled on cines-mx-mcp until the live PayPal check.
   - A hold is paid at most once (claimed before the call): a failed or unknown payment is never

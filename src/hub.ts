@@ -67,6 +67,8 @@ export interface HubDeps {
   transcribeModel?: unknown;
   /** Clock for the local time in the prompt and the meal-by-hour fallback (replay pins it). */
   localNow?: () => number;
+  /** Poll interval for an in-progress Cinépolis purchase (tests; default 10 s). */
+  cinesPollMs?: number;
   /** fetch for cines images (tests). */
   cinesFetch?: typeof fetch;
   /** Gemini HTTP fetch (replay/tests): wrapped by the rate limiter and usage observer. */
@@ -237,6 +239,10 @@ export function createHub(config: HubConfig, deps: HubDeps = {}): Hub {
     secureBadFormat: (kind) => voice.secureBadFormat(kind),
     secureExpired: () => voice.secureExpired(),
     dryRun: config.cinesDryRun,
+    paypalWaitMin: Number((deps.env ?? process.env).CINES_PAYPAL_WAIT_MIN ?? 15) || 15,
+    pollMs: deps.cinesPollMs,
+    paypalWaitText: () => msgs.paypalWait(),
+    working: (text) => usageContext.getStore()?.status?.setActivity(text),
     ...(tgApi
       ? {
           sendPhoto: (chatId: string, bytes: Uint8Array) => tgApi.sendPhoto(chatId, bytes),

@@ -17,6 +17,8 @@ export interface Failure {
   tool: string;
   label: string;
   why: Explained;
+  /** The server's own message (purchases show it verbatim). */
+  message?: string;
 }
 export interface Outcome {
   kind: 'none' | 'done' | 'partial' | 'failed';
@@ -76,6 +78,7 @@ function labelOf(o: ToolOutcome, lang: Lang): string {
 
 export function summarizeOutcome(events: ToolOutcome[], isWrite: (tool: string) => boolean, lang: Lang = 'es'): Outcome {
   const writes = events.filter((e) => isWrite(e.tool));
+  const done: string[] = [];
   const reads = events.filter((e) => !isWrite(e.tool));
   const failures: Failure[] = [];
   const needInfo: string[] = [];
@@ -110,7 +113,7 @@ export function summarizeOutcome(events: ToolOutcome[], isWrite: (tool: string) 
       // the model retrying the same item counts once
       if (failures.some((f) => f.tool === e.tool && f.label === label)) return;
       g(key).total++;
-      failures.push({ tool: e.tool, label, why: explain(err.code, err.message, lang, appName(appOfTool(e.tool), lang)) });
+      failures.push({ tool: e.tool, label, why: explain(err.code, err.message, lang, appName(appOfTool(e.tool), lang)), message: err.message });
       return;
     }
     const r = (e.result ?? {}) as Rec;
@@ -118,6 +121,13 @@ export function summarizeOutcome(events: ToolOutcome[], isWrite: (tool: string) 
     if (typeof r.status === 'string' && /^(needs_|waiting|in_progress|secure_input|none$|shown_to_user$|nothing_to_delete$)/.test(r.status)) {
       if (/needs_|waiting|secure_input_busy/.test(r.status)) needInfo.push(lang === 'es' ? '🔒 esperando su código' : '🔒 waiting for your code');
       else if (r.status === 'in_progress') needInfo.push(lang === 'es' ? 'sigue en curso' : 'still running');
+      return;
+    }
+    if (e.tool === 'cines_purchase' && r.status === 'paid') {
+      const es = lang === 'es';
+      done.unshift(`🎟️ ${es ? 'Compra confirmada' : 'Purchase confirmed'}${r.bookingNumber ? `: ${es ? 'reserva' : 'booking'} ${r.bookingNumber}` : ''}${typeof r.total === 'number' ? ` · $${r.total} ${r.currency ?? 'MXN'}` : ''}${r.dryRun ? (es ? ' (simulada)' : ' (simulated)') : ''}`);
+      g(key).ok++;
+      g(key).total++;
       return;
     }
     if (e.tool === 'log_meal') {
@@ -153,10 +163,10 @@ export function summarizeOutcome(events: ToolOutcome[], isWrite: (tool: string) 
     if (typeof e.args.amount === 'number') gg.sum += e.args.amount;
     if (typeof r.currency === 'string') gg.currency = r.currency;
   });
-  const done: string[] = [];
   for (const [meal, m] of meals) done.push(`${MEALS[meal]?.[lang] ?? meal}: ${plural(m.n, NOUN.log_meal![lang][0], NOUN.log_meal![lang][1])}, ${Math.round(m.kcal)} kcal`);
   for (const [k, v] of groups) {
-    if (k === 'log_meal' || k === 'fitness_log_food' || v.ok === 0) continue;
+    if (k === 'log_meal' || k === 'fitness_log_food' || k === 'cines_purchase' || v.ok === 0) continue;
+    if (k === 'cines_hold_seats' && groups.get('cines_purchase')?.ok) continue; // the purchase line says it all
     const n = NOUN[k]![lang];
     done.push(`${plural(v.ok, n[0], n[1])}${v.sum ? `, ${money(v.sum, v.currency)}` : ''}`);
   }

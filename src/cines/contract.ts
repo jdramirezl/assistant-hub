@@ -23,6 +23,9 @@ export const PURCHASE_TOOL = 'cines_purchase';
 export const RELEASE_TOOL = 'cines_release_hold';
 export const SECURE_TOOL = 'cines_submit_code';
 export const STATUS_TOOL = 'cines_hold_status';
+
+/** The server refused a real payment because it is not armed on the Mac (nothing was recorded). */
+export const NOT_ARMED = /no est[aá] armado|armado del pago expir/i;
 /** Tools the model must never see or call. */
 export const HUB_ONLY_TOOLS: ReadonlySet<string> = new Set([SECURE_TOOL]);
 /** Tools that move money or hold seats: always behind the hub's own checks, never in plans. */

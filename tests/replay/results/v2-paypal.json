@@ -1,0 +1,70 @@
+{
+ "label": "v2-paypal",
+ "at": "2026-10-20T17:49:06.972Z",
+ "results": [
+  {
+   "id": "cines-pick-seat",
+   "calls": 25,
+   "rateLimited": 0,
+   "inputTokens": 34635,
+   "cachedTokens": 7967,
+   "outputTokens": 528,
+   "toolsSentAvg": 14,
+   "systemCharsAvg": 5203,
+   "actions": [
+    "cines.hold hold_1 570-1002 C7 $99"
+   ],
+   "cards": [
+    "tool:cines_hold_seats"
+   ],
+   "ok": true,
+   "reply": "He apartado el asiento C7 para Dune en Parque Toreo por $99 MXN.",
+   "status": "✅ 1 apartado de asientos",
+   "ms": 381070
+  },
+  {
+   "id": "cines-paypal",
+   "calls": 8,
+   "rateLimited": 0,
+   "inputTokens": 13041,
+   "cachedTokens": 0,
+   "outputTokens": 403,
+   "toolsSentAvg": 14,
+   "systemCharsAvg": 5203,
+   "actions": [
+    "cines.hold hold_1 570-1002 F7 $99",
+    "cines.purchase hold_1 $99 dry-run"
+   ],
+   "cards": [
+    "tool:cines_hold_seats",
+    "tool:cines_purchase"
+   ],
+   "ok": true,
+   "reply": "Muy bien, amo Julián. El asiento F7 para Dune: Mesías en Parque Toreo ha sido apartado y pagado con éxito (Total: $99 MXN, reserva DRYRUN-001).",
+   "status": "✅ 🎟️ Compra confirmada: reserva DRYRUN-001 · $99 MXN (simulada)",
+   "ms": 121121
+  },
+  {
+   "id": "cines-buy",
+   "calls": 12,
+   "rateLimited": 0,
+   "inputTokens": 17719,
+   "cachedTokens": 2003,
+   "outputTokens": 941,
+   "toolsSentAvg": 14,
+   "systemCharsAvg": 5203,
+   "actions": [
+    "cines.hold hold_1 570-1002 F7,F8 $198",
+    "cines.purchase hold_1 $198 dry-run"
+   ],
+   "cards": [
+    "tool:cines_hold_seats",
+    "tool:cines_purchase"
+   ],
+   "ok": true,
+   "reply": "Amo Julián, el pago ha sido procesado con éxito (modo de prueba). Su número de reserva es **DRYRUN-001** para los asientos **F7 y F8** ($198 MXN).",
+   "status": "⏳ Trabajando en ello…",
+   "ms": 159654
+  }
+ ]
+}

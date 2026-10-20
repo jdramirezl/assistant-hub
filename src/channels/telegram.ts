@@ -103,7 +103,7 @@ export const toolDisplay: ToolDisplayFn = (_event) => {
 };
 
 /** A resumed (approved) run that never reports its end still closes its status message. */
-const RESUME_FINISH_TIMEOUT_MS = 180_000;
+const RESUME_FINISH_TIMEOUT_MS = 25 * 60_000; // a purchase may wait ~15 min for PayPal at the Mac
 
 /** Media that get an immediate "📥 received" status. */
 const RECEIVED_MEDIA = new Set(['voice', 'photo', 'pdf']);

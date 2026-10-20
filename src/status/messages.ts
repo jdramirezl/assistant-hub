@@ -55,7 +55,11 @@ export class StatusMessages {
     return { text: this.es ? `📥 Nota: ${q}${final ? '' : ' Procesando…'}` : `📥 Note: ${q}${final ? '' : ' Processing…'}` };
   }
   working(activity?: string): StatusText {
+    if (activity && /^\p{Extended_Pictographic}/u.test(activity)) return { text: activity };
     return { text: `⏳ ${activity ?? (this.es ? 'Trabajando en ello…' : 'Working on it…')}` };
+  }
+  paypalWait(): string {
+    return this.es ? `⏳ Esperando que apruebe el pago en PayPal en el Mac${this.addr}…` : `⏳ Waiting for you to approve the PayPal payment on the Mac${this.addr}…`;
   }
   /** Activity line for a tool that started ("Buscando 4 alimentos en MyFitnessPal…"). */
   activity(tool: string, args: Record<string, unknown>, sameToolCount = 1): string {
@@ -87,6 +91,18 @@ export class StatusMessages {
     if (o.kind === 'done') return { text: `✅ ${o.done.join(' · ')}${more}` };
     if (o.kind === 'none') return o.needInfo.length ? { text: `❓ ${o.needInfo.join(', ')}` } : undefined;
     const f = o.failures[0]!;
+    // purchases: their own lines, never the generic failure wording
+    if (f.why.code === 'CINES_PAYMENT_NOT_ARMED') {
+      return { text: this.es ? '🔒 El pago real no está armado. En el Mac corra: bin/cinesctl arm-payment' : '🔒 Real payment is not armed. On the Mac run: bin/cinesctl arm-payment', tech: techLine(f.why.code, requestId) };
+    }
+    if (f.why.code === 'CINES_PAYMENT_UNKNOWN') {
+      return { text: this.es ? '⚠️ No sé si se cobró; revise su correo. No liberé los asientos.' : '⚠️ I do not know whether it was charged; check your e-mail. I did not release the seats.', tech: techLine(f.why.code, requestId) };
+    }
+    if (f.why.code === 'CINES_PAYMENT_FAILED' && f.tool === 'cines_purchase') {
+      const msg = f.message ?? '';
+      const nothing = /no se cobr[oó] nada|nada se cobr|not charged/i.test(msg);
+      return { text: `❌ ${this.es ? 'El pago no se completó' : 'The payment did not go through'}${msg ? `: ${msg.replace(/\s*No se reintentar[aá] el pago\.?/i, '').trim()}` : '.'}${nothing ? '' : this.es ? ' No lo reintento; revise su correo.' : ' I will not retry; check your e-mail.'}`, tech: techLine(f.why.code, requestId) };
+    }
     const others = o.failures.length > 1 ? (es ? ` (y ${o.failures.length - 1} más)` : ` (and ${o.failures.length - 1} more)`) : '';
     const what = f.label ? `${f.label} — ${f.why.cause}` : f.why.cause;
     const tech = techLine(f.why.code, requestId);

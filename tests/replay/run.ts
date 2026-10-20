@@ -125,6 +125,7 @@ async function runScenario(s: Scenario, pacer: ReturnType<typeof pacedFetch>, ap
   const hub: Hub = createHub(loadConfig(env), {
     env,
     geminiFetch: pacer.fetch,
+    cinesPollMs: 1000,
     ...(s.localHour !== undefined ? { localNow: () => atLocalHour(s.localHour!) } : {}),
     telegram: { apiBaseUrl: tg.url, longPolling: { timeout: 0, retryDelayMs: 50 }, log: (m) => logs.push(m) },
   });

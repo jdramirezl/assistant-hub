@@ -90,6 +90,11 @@ export class StatusTracker {
     this.transcript = text;
     void this.show(this.msgs.transcribed(text));
   }
+  /** A specific "working" line chosen by the hub (e.g. waiting for PayPal at the Mac). */
+  setActivity(text: string): void {
+    this.activityText = text;
+    void this.show(this.msgs.working(text), true);
+  }
   /** The hub's own pacing: just make sure the user sees we are working (no ⏸️). */
   pacing(): void {
     this.ensureWorking();
