@@ -55,6 +55,7 @@ describe('seat picks', () => {
     ['el D5 por favor', ['D5']],
     ['quiero ver Dune', undefined],
     ['elige la de las 8', undefined],
+    ['no, sí se puede, es solo 1 ticket; mira que E4 está ocupado y tiene a E3 solo', undefined],
   ])('%s → %j', (t, seats) => expect(seatPickOf(t)).toEqual(seats));
 });
 
