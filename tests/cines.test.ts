@@ -241,7 +241,7 @@ describe('cines through Telegram (fake cines-mx-mcp)', () => {
     // the server got the hub's total and userApproved, not the model's
     await tg.waitFor(() => /🔒 Envíe el CVV/.test(tg.outgoingText(ME)), 10_000);
     expect(cines.calls.find((c) => c.tool === 'cines_purchase')!.args).toMatchObject({ expectedTotal: 198, userApproved: true });
-    expect(tg.outgoingText(ME)).toMatch(/🔒 Envíe el CVV de su tarjeta, Amo Julián\. No lo verá el modelo/);
+    expect(tg.outgoingText(ME)).toMatch(/🔒 Envíe el CVV de su tarjeta, Master Julian\. No lo verá el modelo/);
     const cvvMsg = textUpdate(ME, CVV);
     tg.push(cvvMsg);
     await tg.waitFor(() => /🔒 Envíe el código que le envió su banco/.test(tg.outgoingText(ME)), 10_000);

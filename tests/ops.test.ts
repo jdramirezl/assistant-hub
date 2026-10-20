@@ -85,7 +85,7 @@ describe('hub.start({ ops: true })', () => {
       { registry: { servers: {} }, fetch: hc as never, telegram: { apiBaseUrl: tg.url, longPolling: { timeout: 0, retryDelayMs: 50 }, log: () => {} } },
     );
     await hub.start({ ops: true });
-    await tg.waitFor(() => tg.sent('sendMessage').some((c) => /🔄 De vuelta, Amo Julián \(versión \w+\)/.test(String(c.body.text))));
+    await tg.waitFor(() => tg.sent('sendMessage').some((c) => /🔄 De vuelta, Master Julian \(versión \w+\)/.test(String(c.body.text))));
     await vi.waitFor(() => expect(hc).toHaveBeenCalledWith('https://hc-ping.com/uuid', expect.anything()));
     await hub.stop();
     await tg.stop();

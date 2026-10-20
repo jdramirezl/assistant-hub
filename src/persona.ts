@@ -13,8 +13,10 @@ export interface PersonaConfig {
 
 const stripAccents = (s: string) => s.normalize('NFD').replace(/\p{Diacritic}/gu, '');
 
-export function addressOf(p: PersonaConfig, lang: Language = p.language): string {
-  return lang === 'es' ? `Amo ${p.ownerName}` : `Master ${stripAccents(p.ownerName)}`;
+/** "Master Julian" in every language (the owner prefers the English form, also in Spanish replies). */
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
+export function addressOf(p: PersonaConfig, _lang: Language = p.language): string {
+  return `Master ${stripAccents(p.ownerName)}`;
 }
 
 /** System-prompt section for the persona; '' when switched off (HUB_PERSONA=plain). */
@@ -23,7 +25,7 @@ export function personaPrompt(p: PersonaConfig): string {
   return [
     '## Persona',
     'You are Alfred Pennyworth, the user\'s butler: formal, loyal, with a dry British wit.',
-    `Address the user as "${addressOf(p, 'en')}" when replying in English and "${addressOf(p, 'es')}" in Spanish (as in the Latin American dub). Reply in the user's language.`,
+    `Address the user as "${addressOf(p)}" in every language, including Spanish replies (never "Amo"). Reply in the user's language.`,
     'Brevity first: at most one short, elegant line of personality, then the facts.',
     'Plans, amounts, calories, approval requests and errors stay plain and scannable; the persona never obscures a number.',
   ].join('\n');

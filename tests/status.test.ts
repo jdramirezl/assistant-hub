@@ -141,7 +141,7 @@ describe('StatusTracker (one live message)', () => {
     t.onToolEvent({ kind: 'result', toolCallId: 'c1', toolName: 'log_meal', displayName: 'log_meal', argsSummary: '', args: {}, result: { logged: [{ meal: 'dinner', kcal: 205 }, { meal: 'dinner', kcal: 284 }] }, resultText: '', durationMs: 1, isError: false });
     await t.finish();
     expect(f.calls.filter((c) => c.op === 'send')).toHaveLength(1);
-    expect(f.calls[0]!.html).toBe('📥 Nota recibida, Amo Julián. Transcribiendo…');
+    expect(f.calls[0]!.html).toBe('📥 Nota recibida, Master Julian. Transcribiendo…');
     expect(f.calls.some((c) => c.op === 'edit' && /⏳ Buscando 2 alimentos en MyFitnessPal…/.test(c.html!))).toBe(true);
     expect(f.calls.at(-1)).toEqual({ op: 'edit', id: 101, html: '✅ Cena: 2 alimentos, 489 kcal' });
   });
@@ -290,7 +290,7 @@ describe('through Telegram', () => {
     await tg.waitFor(() => statusCalls(tg).some((c) => /^✅/.test(String(c.body.text))), 10_000);
     const s = statusCalls(tg);
     expect(s[0]!.method).toBe('sendMessage');
-    expect(s[0]!.body.text).toBe('📥 Nota recibida, Amo Julián. Transcribiendo…');
+    expect(s[0]!.body.text).toBe('📥 Nota recibida, Master Julian. Transcribiendo…');
     const id = (s[0]!.result as { message_id: number }).message_id;
     expect(s.slice(1).every((c) => c.method === 'editMessageText' && c.body.message_id === id)).toBe(true);
     expect(s.at(-1)!.body.text).toBe('✅ Cena: 1 alimento, 205 kcal');
@@ -307,7 +307,7 @@ describe('through Telegram', () => {
   });
 
   it('a quick chat answer sends no status message at all', async () => {
-    const { tg } = await boot([{ text: 'Buenas noches, Amo Julián.' }]);
+    const { tg } = await boot([{ text: 'Buenas noches, Master Julian.' }]);
     tg.push(textUpdate(ME, 'hola'));
     await tg.waitFor(() => tg.outgoingText(ME).includes('Buenas noches'), 10_000);
     await new Promise((r) => setTimeout(r, 200));
@@ -318,9 +318,9 @@ describe('through Telegram', () => {
 describe('restart and service notices', () => {
   it('🔄 restart names the version and the connected apps; 🔌 down/back', () => {
     expect(msgs.restart('e496959', { finance: { state: 'up' }, mfp: { state: 'up' }, cines: { state: 'down' }, echo: { state: 'skipped' } }).text).toBe(
-      '🔄 De vuelta, Amo Julián (versión e496959). Conectados: Finanzas, MyFitnessPal. ⚠️ Sin respuesta: Cinépolis.',
+      '🔄 De vuelta, Master Julian (versión e496959). Conectados: Finanzas, MyFitnessPal. ⚠️ Sin respuesta: Cinépolis.',
     );
-    expect(msgs.serviceDown('mfp', 12 * 60_000).text).toMatch(/^🔌 MyFitnessPal no responde desde hace 12 min, Amo Julián\./);
-    expect(msgs.serviceBack('mfp', 14 * 60_000).text).toBe('🔌 MyFitnessPal volvió, Amo Julián (estuvo fuera 14 min).');
+    expect(msgs.serviceDown('mfp', 12 * 60_000).text).toMatch(/^🔌 MyFitnessPal no responde desde hace 12 min, Master Julian\./);
+    expect(msgs.serviceBack('mfp', 14 * 60_000).text).toBe('🔌 MyFitnessPal volvió, Master Julian (estuvo fuera 14 min).');
   });
 });

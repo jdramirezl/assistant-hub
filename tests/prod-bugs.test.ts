@@ -84,7 +84,7 @@ describe('bugs 2 + 4: the mixed voice note (meal + 3 expenses from a pocket)', (
     tg.addFile('v', { path: 'v.oga', mime: 'audio/ogg', bytes: Buffer.from('OggS fake audio') });
     tg.push(voiceUpdate(ME, 'v'));
     await tg.waitFor(() => tg.outgoingText(ME).includes('Listo'), 10_000);
-    expect(tg.outgoingText(ME)).toMatch(/📥 Nota recibida, Amo Julián\. Transcribiendo…/); // voice notes are acknowledged
+    expect(tg.outgoingText(ME)).toMatch(/📥 Nota recibida, Master Julian\. Transcribiendo…/); // voice notes are acknowledged
     const creates = fin.calls.filter((c) => c.tool === 'finance_create_movement');
     expect(creates.map((c) => [c.input.accountId, c.input.amount])).toEqual([
       ['acc-nequi', 18000],

@@ -31,7 +31,7 @@ async function boot(script: Parameters<typeof scriptedModel>[0]) {
   return sm;
 }
 const settle = () => new Promise((r) => setTimeout(r, 600));
-const CLAIM = 'Muy bien, Amo Julián. Queda registrado: $25.000 COP en Nequi (Almuerzo).';
+const CLAIM = 'Muy bien, Master Julian. Queda registrado: $25.000 COP en Nequi (Almuerzo).';
 
 describe('false save guard', () => {
   it('"gasté 25k en almuerzo con Nequi" → no tool call → text-only claim, twice: the user sees "no lo guardé", never the claim', async () => {
@@ -39,7 +39,7 @@ describe('false save guard', () => {
     tg.push(textUpdate(ME, 'gasté 25k en almuerzo con Nequi'));
     await tg.waitFor(() => tg.outgoingText(ME).includes('no lo guardé'));
     await settle();
-    expect(tg.outgoingText(ME)).toMatch(/⚠️ Le pido disculpas, Amo Julián: no lo guardé\. ¿Lo registro\?/);
+    expect(tg.outgoingText(ME)).toMatch(/⚠️ Le pido disculpas, Master Julian: no lo guardé\. ¿Lo registro\?/);
     expect(tg.outgoingText(ME)).not.toContain('Queda registrado');
     expect(sm.calls).toHaveLength(2); // one retry with feedback
     expect(JSON.stringify(sm.calls[1]!.prompt)).toMatch(/no write tool succeeded/);
@@ -72,7 +72,7 @@ describe('false save guard', () => {
   });
 
   it('questions and reads are not touched', async () => {
-    const sm = await boot([{ text: '¿En qué cuenta lo registro, Amo Julián?' }, { text: 'Este mes gastó 120.000 COP; registré todo bien.' }]);
+    const sm = await boot([{ text: '¿En qué cuenta lo registro, Master Julian?' }, { text: 'Este mes gastó 120.000 COP; registré todo bien.' }]);
     tg.push(textUpdate(ME, 'gasté 25k en almuerzo'));
     await tg.waitFor(() => tg.outgoingText(ME).includes('¿En qué cuenta'));
     tg.push(textUpdate(ME, '¿cuánto gasté este mes?')); // finance-read: not a write intent

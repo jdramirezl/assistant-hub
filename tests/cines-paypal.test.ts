@@ -98,7 +98,7 @@ describe("PayPal at the Mac: in_progress → the hub polls cines_hold_status", (
       10_000,
     );
     expect(status()).toContain(
-      "⏳ Esperando que apruebe el pago en PayPal en el Mac, Amo Julián…",
+      "⏳ Esperando que apruebe el pago en PayPal en el Mac, Master Julian…",
     );
     expect(status().at(-1)).toBe(
       "✅ 🎟️ Compra confirmada: Dune: Mesías · Cinépolis Parque Toreo · lun 19 20:30 · F7 · $99 MXN · reserva BK001 (revise su correo)",

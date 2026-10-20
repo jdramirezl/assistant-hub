@@ -249,7 +249,7 @@ describe('rate limits in Telegram', () => {
     await hub.start();
     tg.push(textUpdate(ME, 'hola'));
     await tg.waitFor(() => /⏸️|❌|⚠️/.test(tg.outgoingText(ME)));
-    expect(tg.outgoingText(ME)).toMatch(/⏸️ Gemini pidió una pausa más larga de lo normal, Amo Julián\. Vuelva a enviarlo en un minuto\.\n<code>GEMINI_RATE_LIMIT · req [0-9a-f]{6}<\/code>/);
+    expect(tg.outgoingText(ME)).toMatch(/⏸️ Gemini pidió una pausa más larga de lo normal, Master Julian\. Vuelva a enviarlo en un minuto\.\n<code>GEMINI_RATE_LIMIT · req [0-9a-f]{6}<\/code>/);
     expect(tg.outgoingText(ME)).not.toMatch(/❌|⚠️/);
   });
 });

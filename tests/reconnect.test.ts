@@ -97,6 +97,6 @@ describe('MCP reconnect', () => {
     closers.push(s.close);
     now = 11 * 60_000;
     await hub.toolbox.tick();
-    expect(logs.join('\n')).toMatch(/\[notify\] .*🔌 echo volvió, Amo Julián \(estuvo fuera \d+ min\)/);
+    expect(logs.join('\n')).toMatch(/\[notify\] .*🔌 echo volvió, Master Julian \(estuvo fuera \d+ min\)/);
   });
 });

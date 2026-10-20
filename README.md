@@ -211,7 +211,7 @@ Telegram shows ONE message: the plan grouped by section (meal / account), with
 - **Secure input** (CVV, arming PIN, bank 3DS/OTP, Cinépolis e-mail code): a result
   `{status:"needs_cvv"|"needs_3ds"|"needs_email_code", challengeId, kind, expiresAt}` opens ONE
   pending request per chat (LibSQL, no secret stored, ≤ 5 min or the server's `expiresAt`) and
-  Alfred asks "🔒 Envíe el CVV, Amo Julián. No lo verá el modelo…" (plus the result's image, if any).
+  Alfred asks "🔒 Envíe el CVV, Master Julian. No lo verá el modelo…" (plus the result's image, if any).
   The user's next message is taken by the channel before the agent: it is deleted from the chat,
   format-checked by the hub (code 6 digits, CVV 3–4, PIN 6–8, OTP 4–10 alphanumerics; a bad one is asked
   again without calling anything), sent straight to the hub-only `cines_submit_code`, and never
@@ -288,7 +288,7 @@ icon + what happened + what's next, one line.
 
 ## Persona
 
-By default the assistant is **Alfred** (Alfred Pennyworth): formal, dry wit, "Amo Julián" in
+By default the assistant is **Alfred** (Alfred Pennyworth): formal, dry wit, "Master Julian" in
 Spanish and "Master Julian" in English, one short line and then plain facts. It also voices the
 startup ping, weekly digest, "app is back" and rate-limit notices. Switch off with
 `HUB_PERSONA=plain`; `HUB_LANGUAGE` (es/en) sets the language of notices and plan buttons, and

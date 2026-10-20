@@ -134,7 +134,7 @@ describe('through Telegram (fake cines)', () => {
     const calls = sm.calls.length;
     tg.push(textUpdate(ME, 'elige a1'));
     await tg.waitFor(() => /❓ A1 no se puede/.test(allText()), 10_000);
-    expect(allText()).toMatch(/❓ A1 no se puede, Amo Julián: A1 está ocupado\. ¿Elige otro asiento\?/);
+    expect(allText()).toMatch(/❓ A1 no se puede, Master Julian: A1 está ocupado\. ¿Elige otro asiento\?/);
     expect(tg.sent('sendPhoto').length).toBe(2); // the seat map, then the preview with the choice
     expect(sm.calls.length).toBe(calls); // no model call
   });
@@ -190,7 +190,7 @@ describe('through Telegram (fake cines)', () => {
             chunks: [
               { type: 'stream-start', warnings: [] },
               { type: 'text-start', id: 't' },
-              { type: 'text-delta', id: 't', delta: 'Hola, Amo Julián.' },
+              { type: 'text-delta', id: 't', delta: 'Hola, Master Julian.' },
               { type: 'text-end', id: 't' },
               { type: 'finish', finishReason: 'stop', usage: { inputTokens: 1, outputTokens: 1, totalTokens: 2 } },
             ] as never[],
@@ -207,7 +207,7 @@ describe('through Telegram (fake cines)', () => {
     closers.push(() => hub.stop());
     await hub.start();
     tg.push(textUpdate(ME, 'hola'));
-    await tg.waitFor(() => allText().includes('Hola, Amo Julián'), 10_000);
+    await tg.waitFor(() => allText().includes('Hola, Master Julian'), 10_000);
     const st = tg.calls.filter((c) => c.body.parse_mode === 'HTML').map((c) => String(c.body.text));
     expect(st[0]).toBe('⏳ Trabajando en ello…');
     expect(st).toContain('⏳ Sigo en ello; Gemini está lento…');

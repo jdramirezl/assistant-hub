@@ -40,7 +40,7 @@ export class StatusMessages {
   private get es() {
     return this.lang === 'es';
   }
-  /** ", Amo Julián" or "" */
+  /** ", Master Julian" or "" */
   private get addr() {
     return this.who ? `, ${this.who}` : '';
   }

@@ -90,7 +90,7 @@ describe('propose_plan through Telegram', () => {
   it('17-item MFP delete: 1 card, 1 approval, 17 calls, 1 summary, no per-item cards', async () => {
     const { tg, mason } = await setup([
       { tool: 'propose_plan', args: deleteDayPlan() },
-      { text: 'Plan listo, Amo Julián.' },
+      { text: 'Plan listo, Master Julian.' },
       { text: 'Hecho: 17 entradas eliminadas.' },
     ]);
     tg.push(textUpdate(ME, 'borra todo lo de hoy'));

@@ -20,11 +20,11 @@ describe('planning leak detector', () => {
   it('flags the live leak and tool names; not a normal answer', () => {
     expect(leaks(LIVE_LEAK)).toBe(true);
     expect(leaks('Voy a llamar a fitness_delete_food')).toBe(true);
-    expect(leaks('Muy bien, Amo Julián. Desayuno: 3 alimentos, 420 kcal.')).toBe(false);
+    expect(leaks('Muy bien, Master Julian. Desayuno: 3 alimentos, 420 kcal.')).toBe(false);
     expect(leaks('¿Con qué cuenta pagó la camisa?')).toBe(false);
   });
   it('strips only the leaking sentences', () => {
-    expect(stripLeaks('Listo, Amo Julián. Let\'s call fitness_get_day now.\nDesayuno: 420 kcal.')).toBe('Listo, Amo Julián.\nDesayuno: 420 kcal.');
+    expect(stripLeaks('Listo, Master Julian. Let\'s call fitness_get_day now.\nDesayuno: 420 kcal.')).toBe('Listo, Master Julian.\nDesayuno: 420 kcal.');
   });
 });
 
@@ -58,7 +58,7 @@ describe('through Telegram', () => {
     const { logs } = await boot([
       { tool: 'fitness_get_day', args: {} },
       { text: LIVE_LEAK },
-      { text: 'Hoy no tiene nada registrado, Amo Julián.' },
+      { text: 'Hoy no tiene nada registrado, Master Julian.' },
     ]);
     tg.push(textUpdate(ME, '¿qué comí hoy?'));
     await tg.waitFor(() => allText().includes('no tiene nada registrado'), 10_000);

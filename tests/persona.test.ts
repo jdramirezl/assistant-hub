@@ -22,23 +22,23 @@ describe('persona prompt', () => {
     expect(p).toMatch(/^## Persona/);
     expect(p).toContain('Alfred');
     expect(p).toContain('"Master Julian"');
-    expect(p).toContain('"Amo Julián"');
+    expect(p).toContain('"Master Julian"');
     expect(p).toMatch(/one short/i);
     expect(p).toMatch(/plain and scannable/i);
   });
   it('is empty when switched off, and the agent prompt includes it only when on', () => {
     expect(personaPrompt(plain)).toBe('');
-    expect(buildInstructions('America/Bogota', new Date(), { persona: alfredEs })).toContain('Amo Julián');
+    expect(buildInstructions('America/Bogota', new Date(), { persona: alfredEs })).toContain('Master Julian');
     expect(buildInstructions('America/Bogota', new Date(), { persona: plain })).not.toContain('Alfred');
   });
 });
 
 describe('voice (notices)', () => {
   const apps = { mfp: { state: 'up' as const, tools: 20 }, finance: { state: 'down' as const, reason: 'x' }, echo: { state: 'skipped' as const, reason: 'off' } };
-  it('Alfred in Spanish addresses "Amo Julián" and keeps the facts', () => {
+  it('Alfred in Spanish addresses "Master Julian" and keeps the facts', () => {
     const v = createVoice(alfredEs);
     const up = v.startup('mac-mini', apps);
-    expect(up).toContain('Amo Julián');
+    expect(up).toContain('Master Julian');
     expect(up).toContain('mac-mini');
     expect(up).toContain('mfp');
     expect(up).toMatch(/finance/);

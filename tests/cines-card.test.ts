@@ -84,7 +84,7 @@ describe('saved card: Comprar → CVV via secure input → paid', () => {
     const { sm, hub } = await buy({});
     await tg.waitFor(() => /confirmo la compra/.test(out()));
     expect(out()).toMatch(/💳 Tarjeta guardada \(predeterminada\); le pediré el CVV en privado/);
-    const msg = await sendSecret(/🔒 Envíe el CVV de su tarjeta \*1234 \(\$99 MXN\), Amo Julián\. No lo verá el modelo/, CVV);
+    const msg = await sendSecret(/🔒 Envíe el CVV de su tarjeta \*1234 \(\$99 MXN\), Master Julian\. No lo verá el modelo/, CVV);
     await tg.waitFor(() => status().some((s) => /^✅ 🎟️ Compra confirmada/.test(s)), 10_000);
     expect(status().at(-1)).toBe(FINAL);
     expect(finalIsNewMessage()).toBe(true);
@@ -182,7 +182,7 @@ describe('PIN arming from Telegram (needs_arm_pin → needs_cvv)', () => {
   it('a PIN that is too short is asked again without the server', async () => {
     await buy({ pin: 'ok' });
     await sendSecret(/🔒 Envíe su PIN de compras/, '1234');
-    await tg.waitFor(() => /no parece correcto, Amo Julián \(6 a 8 dígitos\)/.test(out()), 10_000);
+    await tg.waitFor(() => /no parece correcto, Master Julian \(6 a 8 dígitos\)/.test(out()), 10_000);
     expect(cines.secrets).toEqual([]);
   }, 30_000);
 
@@ -202,7 +202,7 @@ describe('PayPal + PIN: needs_arm_pin → the PayPal step', () => {
     await buy({ pin: 'ok' }, 'compra el F7 para Dune hoy en la noche con PayPal', { inProgress: { polls: 2, outcome: 'paid' } });
     await sendSecret(/🔒 Envíe su PIN de compras \(\$99 MXN\)/, '246810');
     await tg.waitFor(() => status().some((s) => /^✅ 🎟️ Compra confirmada/.test(s)), 10_000);
-    expect(status()).toContain('⏳ Esperando que apruebe el pago en PayPal en el Mac, Amo Julián…');
+    expect(status()).toContain('⏳ Esperando que apruebe el pago en PayPal en el Mac, Master Julian…');
     expect(out()).not.toMatch(/🔒 Envíe el CVV/);
     expect(purchases()[0]!.args).toMatchObject({ method: 'paypal' });
     expect(cines.secrets).toEqual(['246810']);

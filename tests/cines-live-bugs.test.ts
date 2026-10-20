@@ -149,7 +149,7 @@ describe('queued live issues (seat pick during the map run, duplicate failure te
       { role: 'tool', content: [{ type: 'tool-result', toolName: 'cines_hold_seats', output: { type: 'json', value: { error: { code: 'CINES_SCHEMA_CHANGED' }, user_message: 'Cinépolis cambió su sitio. Hay que actualizar cines-mx-mcp; no lo reintento.' } } }] },
     ];
     const causes = finalFailureCauses(prompt as never);
-    expect(restatesFailure('Me temo que Cinépolis cambió su sitio y hay que actualizar cines-mx-mcp, Amo Julián.', causes)).toBe(true);
+    expect(restatesFailure('Me temo que Cinépolis cambió su sitio y hay que actualizar cines-mx-mcp, Master Julian.', causes)).toBe(true);
     expect(restatesFailure('Cinépolis cambió su sitio. ¿Quiere que intente otra función?', causes)).toBe(false); // a question stays
     expect(restatesFailure('Le propongo D6.', causes)).toBe(false);
   });
