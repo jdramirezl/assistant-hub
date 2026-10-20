@@ -1,3 +1,4 @@
+import { markTiming } from '../telemetry/timing.js';
 /**
  * Only the FINAL answer reaches the user. Gemini often writes its plan as plain text before a
  * tool call ("The user wants to… Rule check: … Let's call fitness_get_day…"); Mastra's channel
@@ -124,6 +125,7 @@ export function withLeakGuard(model: unknown, log: (m: string) => void = () => {
     }
     if (!leaks(text)) return { ...first, stream: replay(parts) };
     log('[guard] reply leaks internal planning; retrying once with feedback');
+    markTiming('guard-leak');
     const retry = await m.doStream({ ...(options as object), prompt: [...prompt, { role: 'user', content: [{ type: 'text', text: FEEDBACK }] }] });
     const again = await drain(retry.stream);
     if (hasToolCall(again)) return { ...retry, stream: replay(again.filter((p) => !isText(p))) };

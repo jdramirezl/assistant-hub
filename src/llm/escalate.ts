@@ -1,3 +1,4 @@
+import { markTiming } from '../telemetry/timing.js';
 /**
  * Escalate to the stronger model only on a BAD response: Gemini's MALFORMED_FUNCTION_CALL
  * arrives as finishReason "error" with no content, which Mastra would otherwise turn into a
@@ -40,6 +41,7 @@ export function withMalformedFallback(primary: unknown, stronger: unknown, log: 
       const res = await p.doGenerate(options);
       if (isErrorFinish(res.finishReason) && !(res.content ?? []).length) {
         log(`[llm] malformed response from ${p.modelId}; retrying on ${s.modelId}`);
+        markTiming('escalate');
         return s.doGenerate(options);
       }
       return res;
@@ -62,6 +64,7 @@ export function withMalformedFallback(primary: unknown, stronger: unknown, log: 
           reader.releaseLock();
           void first.stream.cancel().catch(() => {});
           log(`[llm] malformed response from ${p.modelId}; retrying on ${s.modelId}`);
+        markTiming('escalate');
           return s.doStream(options);
         }
       }

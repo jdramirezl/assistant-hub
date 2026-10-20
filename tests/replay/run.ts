@@ -21,6 +21,7 @@ import { SCENARIOS, type Msg, type Scenario } from './scenarios.js';
 import { devGeminiKey } from '../support/dev-key.js';
 import { startFakeCines } from '../support/fake-cines.js';
 import { leaks } from '../../src/guards/leak.js';
+import { span } from '../../src/telemetry/timing.js';
 
 const RESULTS = join(import.meta.dirname, 'results');
 const FIXTURES = join(import.meta.dirname, '..', 'support', 'fixtures');
@@ -47,6 +48,8 @@ export interface ScenarioResult {
   /** Final text of the request's status message, if any. */
   status?: string;
   ms: number;
+  /** Where each request's time went (request_timings), in order. */
+  timings?: { intent: string; totalMs: number; activeMs: number; gemini: number; pacer: number; tools: number; telegram: number; hub: number; poll: number; geminiCalls: number; geminiRetries: number; toolCalls: number; dominant: string; spans?: string[] }[];
 }
 
 /** Sliding-window pacer + in-flight counter around the real fetch (protects the shared quota). */
@@ -59,12 +62,15 @@ function pacedFetch() {
   const f = (async (input: Parameters<typeof fetch>[0], init?: Parameters<typeof fetch>[1]) => {
     inflight++; // waiting for a slot counts as busy
     lastActivity = Date.now();
+    // the replay's own quota pacing is pacer time, not Gemini time
+    const wait = span('pacer', 'replay');
     for (;;) {
       const now = Date.now();
       while (starts.length && now - starts[0]! >= 60_000) starts.shift();
       if (starts.length < RPM) break;
       await new Promise((r) => setTimeout(r, 60_000 - (now - starts[0]!) + 50));
     }
+    wait.end();
     if (total >= MAX_CALLS) {
       inflight--;
       throw new BudgetExceeded(`replay call budget reached (${MAX_CALLS} calls; REPLAY_MAX_CALLS)`);
@@ -213,6 +219,8 @@ async function runScenario(s: Scenario, pacer: ReturnType<typeof pacedFetch>, ap
     .map((c) => String((c.body.rich_message as { markdown?: string } | undefined)?.markdown ?? c.body.text ?? ''))
     .filter((t) => t && t !== '...')
     .at(-1) ?? '';
+  const spansOf = new Map<string, Awaited<ReturnType<Hub['timings']['spans']>>>();
+  for (const t of await hub.timings.rows(t0)) spansOf.set(t.requestId, await hub.timings.spans(t.requestId));
   const result: ScenarioResult = {
     id: s.id,
     calls: rows.length,
@@ -228,6 +236,11 @@ async function runScenario(s: Scenario, pacer: ReturnType<typeof pacedFetch>, ap
     reply: reply.slice(0, 400),
     status: status.at(-1),
     ms: Date.now() - t0,
+    timings: (await hub.timings.rows(t0)).map((t) => ({
+      intent: t.intent, totalMs: t.totalMs, activeMs: t.activeMs, ...t.byCategory, geminiCalls: t.geminiCalls, geminiRetries: t.geminiRetries,
+      toolCalls: t.toolCalls, dominant: `${t.dominant.category}${t.dominant.label ? `:${t.dominant.label}` : ''}`,
+      spans: (spansOf.get(t.requestId) ?? []).map((x) => `${x.kind}:${x.label} ${x.start}-${x.end}${x.meta?.ttft !== undefined ? ` ttft=${x.meta.ttft}` : ''}${x.ok === false ? ` ✗${x.meta?.status ?? x.meta?.code ?? ''}` : ''}`),
+    })),
   };
   const cinesCalls = cines.calls.map((c) => c.tool);
   const photos = tg.sent('sendPhoto').length;
@@ -312,6 +325,7 @@ async function main() {
     results.push(r);
     writeFileSync(out, JSON.stringify({ label, at: new Date().toISOString(), results }, null, 1) + '\n');
     console.log(`${r.ok === true ? '✓' : '✗'} ${r.id}: ${r.calls} calls${r.rateLimited ? ` (429×${r.rateLimited})` : ''}, ${(r.inputTokens / 1000).toFixed(1)}K in (${(r.cachedTokens / 1000).toFixed(1)}K cached), tools ${r.toolsSentAvg}, ${Math.round(r.ms / 1000)}s | ${r.actions.join(' ; ') || 'no actions'}${r.cards.length ? ` | cards ${r.cards.join(',')}` : ''}${r.ok === true ? '' : ` | ✗ ${r.ok}`}`);
+    for (const t of r.timings ?? []) console.log(`    [timing] ${t.intent} active=${t.activeMs}ms gemini=${t.gemini}(${t.geminiCalls}${t.geminiRetries ? ` r${t.geminiRetries}` : ''}) tools=${t.tools}(${t.toolCalls}) pacer=${t.pacer} telegram=${t.telegram} hub=${t.hub}${t.poll ? ` poll=${t.poll}` : ''} dominant=${t.dominant}`);
   }
   const sum = (f: (r: ScenarioResult) => number) => results.reduce((a, r) => a + f(r), 0);
   console.log(`TOTAL ${label}: ${results.length} scenarios, ${sum((r) => r.calls)} calls, ${(sum((r) => r.inputTokens) / 1000).toFixed(0)}K in, ${(sum((r) => r.cachedTokens) / 1000).toFixed(0)}K cached, ok ${results.filter((r) => r.ok === true).length}/${results.length}`);

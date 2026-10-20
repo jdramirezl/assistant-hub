@@ -6,6 +6,7 @@
  * the claim sentences are removed.
  */
 import { usageContext } from '../telemetry/context.js';
+import { markTiming } from '../telemetry/timing.js';
 
 type Part = { type: string; delta?: string };
 /** The request is about Cinépolis (only then a list of times is a showtime claim). */
@@ -108,6 +109,7 @@ export function withEvidenceGuard(model: unknown, log: (m: string) => void = () 
     const missing = claimsOf(textOf(parts), { cines: cinesTurn }).filter((c) => !hasEvidence(c, prompt));
     if (!missing.length) return { ...first, stream: replay(parts) };
     log(`[guard] reply claims ${missing.join(' + ')} availability without evidence; retrying once with feedback`);
+    markTiming('guard-evidence');
     const fb = `[hub] Not verified: ${missing.map((c) => FEEDBACK[c]).join('; and ')}. Never state availability a tool did not show in this turn.`;
     const retry = await m.doStream({ ...(options as object), prompt: [...prompt, { role: 'user', content: [{ type: 'text', text: fb }] }] });
     const again = await drain(retry.stream);

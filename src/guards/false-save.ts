@@ -1,5 +1,6 @@
 import { usageContext } from '../telemetry/context.js';
 import type { Language } from '../persona.js';
+import { markTiming } from '../telemetry/timing.js';
 
 /** Intents where the user asked for a write (the reply must not claim one that didn't happen). */
 export const WRITE_INTENTS = new Set(['expense', 'meal', 'plan', 'mfp-other', 'mixed']);
@@ -134,6 +135,7 @@ export function withFalseSaveGuard(model: unknown, notSaved: () => string, log: 
       const text = textOf(parts);
       if (hasToolCall(parts) || !claims(text) || ADMITS.test(text)) return { ...first, stream: replay(parts) };
       log(`[guard] reply claims a full save but ${failed.length} write(s) failed; retrying once with feedback`);
+      markTiming('guard-false-save');
       const retry = await m.doStream({ ...(options as object), prompt: [...prompt, { role: 'user', content: [{ type: 'text', text: PARTIAL_FEEDBACK(failed) }] }] });
       return { ...retry, stream: replay(await drain(retry.stream)) };
     }

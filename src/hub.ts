@@ -49,6 +49,8 @@ import { UsageLog, formatUsageReport, summarize as summarizeUsage } from './tele
 import { createUsageObserver } from './telemetry/observe.js';
 import { newRequestId, usageContext, withUsageScope } from './telemetry/context.js';
 import type { Domain } from './telemetry/intent.js';
+import { RequestTimer, TimingLog, instrumentTelegramFetch, timingLine } from './telemetry/timing.js';
+import { formatVelocidad } from './status/velocidad.js';
 import { bogotaDay } from './budget.js';
 
 export interface HubDeps {
@@ -100,6 +102,10 @@ export interface Hub {
   /** Requests still running (their status message not closed yet). */
   openRequests(): number;
   usage: UsageLog;
+  /** Per-request wall-clock spans (request_timings / request_spans). */
+  timings: TimingLog;
+  /** The /velocidad report text. */
+  velocidadReport(): Promise<string>;
   /** The /usage report text. */
   usageReport(): Promise<string>;
   /**
@@ -349,6 +355,19 @@ export function createHub(config: HubConfig, deps: HubDeps = {}): Hub {
   });
 
   const usage = new UsageLog(client, deps.now);
+  // where each request's wall-clock goes: spans from every layer, one row per request
+  instrumentTelegramFetch();
+  const timings = new TimingLog(client);
+  const newTimer = (requestId: string, startedAt?: number) => {
+    const timer = new RequestTimer(requestId, {
+      startedAt,
+      onEnd: (t) => {
+        baseLog(`[req ${requestId}] ${timingLine(t)}`);
+        void timings.record(t).catch((e: Error) => baseLog(`[timing] ${e.message}`));
+      },
+    });
+    return { timer, close: () => void timer.end() };
+  };
   const observe = createUsageObserver(usage, { now: deps.now, primaryModel: 'gemini-3.5-flash-lite', onError: (e) => log(`[usage] ${e.message}`) });
   if (!deps.model) log(`[models] Gemini key from ${config.modelKeySource}${config.modelKeySource === 'DEV_GOOGLE_API_KEY' ? ' (dev project)' : ''}`);
   const gemini = deps.model ? undefined : createGeminiModels(config.googleApiKey, log, observe, deps.geminiFetch, deps.geminiPacer);
@@ -438,7 +457,8 @@ export function createHub(config: HubConfig, deps: HubDeps = {}): Hub {
     status: makeTracker,
     onPlanAction: (actionId, userId) => plans.handleAction(actionId, userId),
     onCinesAction: (actionId, chatId) => cinesCard(actionId, chatId),
-    commands: { usage: () => usageReport(), estado: () => estadoReport() },
+    commands: { usage: () => usageReport(), estado: () => estadoReport(), velocidad: () => velocidadReport() },
+    timer: newTimer,
     transcribe,
     approvalCard: (event) => {
       if (event.kind === 'approval') log(`[approval] card: ${event.toolName}`);
@@ -470,13 +490,16 @@ export function createHub(config: HubConfig, deps: HubDeps = {}): Hub {
     const holdId = m[2]!;
     const requestId = newRequestId();
     const tracker = makeTracker?.(chatId, requestId);
-    await withUsageScope({ requestId, intent: 'cines', media: 'text', kind: 'resume', chatId, domains: ['cines'], status: tracker }, async () => {
+    const timing = newTimer(requestId);
+    await withUsageScope({ requestId, intent: 'cines', media: 'text', kind: 'resume', chatId, domains: ['cines'], status: tracker, timer: timing.timer }, async () => {
+      timing.timer.bindScope(usageContext.getStore()!);
       tracker?.start();
       const tool = m[1] === 'b' ? PURCHASE_TOOL : 'cines_release_hold';
       log(`[cines] purchase card: ${m[1] === 'b' ? 'Comprar' : 'Cancelar'} ${holdId}`);
       const r = m[1] === 'b' ? await cinesHub.buyFromCard(holdId) : await cinesHub.releaseFromCard(holdId);
       if (r !== undefined) tracker?.onToolEvent({ kind: 'result', toolCallId: `card-${requestId}`, toolName: tool, displayName: tool, argsSummary: '', args: { holdId }, result: r, resultText: '', durationMs: 0, isError: false });
       await tracker?.finish();
+      timing.close();
     });
   }
 
@@ -488,9 +511,11 @@ export function createHub(config: HubConfig, deps: HubDeps = {}): Hub {
   async function securePayment(chatId: string, value: string, p: PendingSecure): Promise<{ agentText?: string; userText?: string }> {
     const requestId = newRequestId();
     const tracker = makeTracker?.(chatId, requestId);
-    return withUsageScope({ requestId, intent: 'cines', media: 'text', kind: 'resume', chatId, domains: ['cines'], status: tracker }, async () => {
+    const timing = newTimer(requestId);
+    return withUsageScope({ requestId, intent: 'cines', media: 'text', kind: 'resume', chatId, domains: ['cines'], status: tracker, timer: timing.timer }, async () => {
+      timing.timer.bindScope(usageContext.getStore()!);
       tracker?.start();
-      log(`[req ${requestId}] [cines] secure ${p.kind} for ${p.holdId ?? 'a purchase'}`);
+      log(`[cines] secure ${p.kind} for ${p.holdId ?? 'a purchase'}`);
       const es = config.persona.language === 'es';
       // say what is happening right away (the charge / PIN check can take a while); always closed below
       tracker?.setActivity(p.kind === 'arm_pin' ? (es ? '⏳ Verificando su PIN…' : '⏳ Checking your PIN…') : p.kind === 'cvv' ? (es ? '⏳ Pagando con su tarjeta en Cinépolis…' : '⏳ Paying with your card at Cinépolis…') : es ? '⏳ Enviando el código…' : '⏳ Sending the code…');
@@ -503,6 +528,7 @@ export function createHub(config: HubConfig, deps: HubDeps = {}): Hub {
       }
       if (settled) tracker?.onToolEvent({ kind: 'result', toolCallId: `secure-${requestId}`, toolName: PURCHASE_TOOL, displayName: PURCHASE_TOOL, argsSummary: '', args: { holdId: p.holdId }, result: res, resultText: '', durationMs: 0, isError: false });
       await tracker?.finish();
+      timing.close();
       return { userText: r.userText, agentText: r.payment ? undefined : r.agentText };
     });
   }
@@ -521,6 +547,18 @@ export function createHub(config: HubConfig, deps: HubDeps = {}): Hub {
       today,
       budget: { tokens: b.tokens, costUsd: b.costUsd, tokenCap: config.budget.dailyTokenCap, costCapUsd: config.budget.dailyCostCapUsd },
       failures,
+    });
+  }
+
+  async function velocidadReport(): Promise<string> {
+    const now = Date.now();
+    const week = (await timings.rows(now - 7 * 86_400_000)).filter((r) => r.kind !== 'digest');
+    return formatVelocidad({
+      lang: config.persona.language,
+      address: config.persona.persona === 'alfred' ? addressOf(config.persona) : config.persona.ownerName,
+      timezone: config.timezone,
+      day: week.filter((r) => r.ts >= now - 86_400_000),
+      week,
     });
   }
 
@@ -559,6 +597,8 @@ export function createHub(config: HubConfig, deps: HubDeps = {}): Hub {
     cines: cinesHub,
     openRequests: () => openRequests,
     usage,
+    timings,
+    velocidadReport,
     usageReport,
     runDigest,
     async start(opts = {}) {

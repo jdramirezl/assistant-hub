@@ -1,0 +1,449 @@
+{
+ "label": "latency",
+ "at": "2026-10-20T23:25:16.280Z",
+ "results": [
+  {
+   "id": "eggs-toast",
+   "calls": 5,
+   "rateLimited": 0,
+   "inputTokens": 13529,
+   "cachedTokens": 0,
+   "outputTokens": 346,
+   "toolsSentAvg": 22,
+   "systemCharsAvg": 4913,
+   "actions": [
+    "mfp.log Breakfast: Egg, whole, large × 2 [1 large egg] = 144 kcal",
+    "mfp.log Breakfast: Toast, white bread × 1 [1 slice] = 75 kcal"
+   ],
+   "cards": [],
+   "ok": true,
+   "reply": "Muy bien, Master Julian. He registrado sus alimentos para el desayuno:\n\n- Desayuno: 2 items, 219 kcal (Egg, whole, large: 144 kcal; Toast, white bread: 75 kcal).",
+   "status": "✅ Desayuno: 2 alimentos, 219 kcal",
+   "ms": 32435,
+   "timings": [
+    {
+     "intent": "meal",
+     "totalMs": 27614,
+     "activeMs": 27614,
+     "gemini": 26292,
+     "pacer": 0,
+     "tools": 20,
+     "telegram": 67,
+     "poll": 0,
+     "hub": 1235,
+     "geminiCalls": 5,
+     "geminiRetries": 3,
+     "toolCalls": 4,
+     "dominant": "gemini:gemini-3.5-flash-lite"
+    }
+   ]
+  },
+  {
+   "id": "meal-3",
+   "calls": 2,
+   "rateLimited": 0,
+   "inputTokens": 13770,
+   "cachedTokens": 8039,
+   "outputTokens": 528,
+   "toolsSentAvg": 22,
+   "systemCharsAvg": 4913,
+   "actions": [
+    "mfp.log Lunch: Rice, white, cooked × 1 [1 cup] = 205 kcal",
+    "mfp.log Lunch: Chicken breast, grilled × 1 [1 breast (172 g)] = 284 kcal",
+    "mfp.log Lunch: Green salad × 1 [1 bowl] = 35 kcal"
+   ],
+   "cards": [],
+   "ok": true,
+   "reply": "Muy bien, Master Julian, servido y anotado.\n\n**Almuerzo:** 3 items, 524 kcal\n- Rice, white, cooked: 205 kcal\n- Chicken breast, grilled: 284 kcal\n- Green salad: 35 kcal",
+   "status": "✅ Almuerzo: 3 alimentos, 524 kcal",
+   "ms": 21234,
+   "timings": [
+    {
+     "intent": "meal",
+     "totalMs": 16608,
+     "activeMs": 16608,
+     "gemini": 15367,
+     "pacer": 0,
+     "tools": 23,
+     "telegram": 59,
+     "poll": 0,
+     "hub": 1159,
+     "geminiCalls": 2,
+     "geminiRetries": 0,
+     "toolCalls": 6,
+     "dominant": "gemini:gemini-3.5-flash-lite"
+    }
+   ]
+  },
+  {
+   "id": "expense-nequi",
+   "calls": 2,
+   "rateLimited": 0,
+   "inputTokens": 8830,
+   "cachedTokens": 0,
+   "outputTokens": 345,
+   "toolsSentAvg": 15,
+   "systemCharsAvg": 4811,
+   "actions": [
+    "finance.create EgresoNormal 25000 COP Nequi/Disponible 2026-10-20"
+   ],
+   "cards": [],
+   "ok": true,
+   "reply": "Muy bien, Master Julian. Como ordene.\n\n- Gasto: $25,000 COP (almuerzo) — Nequi",
+   "status": "✅ 1 gasto, $25.000",
+   "ms": 18446,
+   "timings": [
+    {
+     "intent": "expense",
+     "totalMs": 13606,
+     "activeMs": 13606,
+     "gemini": 12377,
+     "pacer": 0,
+     "tools": 22,
+     "telegram": 48,
+     "poll": 0,
+     "hub": 1159,
+     "geminiCalls": 2,
+     "geminiRetries": 0,
+     "toolCalls": 3,
+     "dominant": "gemini:gemini-3.5-flash-lite"
+    }
+   ]
+  },
+  {
+   "id": "finance-month",
+   "calls": 2,
+   "rateLimited": 0,
+   "inputTokens": 8420,
+   "cachedTokens": 0,
+   "outputTokens": 36,
+   "toolsSentAvg": 15,
+   "systemCharsAvg": 4811,
+   "actions": [],
+   "cards": [],
+   "ok": true,
+   "reply": "Muy bien, Master Julian. Sus gastos de este mes ascienden a 120.000 COP.",
+   "status": "⏳ Consultando sus finanzas…",
+   "ms": 24484,
+   "timings": [
+    {
+     "intent": "finance-read",
+     "totalMs": 19757,
+     "activeMs": 19757,
+     "gemini": 18514,
+     "pacer": 0,
+     "tools": 22,
+     "telegram": 73,
+     "poll": 0,
+     "hub": 1148,
+     "geminiCalls": 2,
+     "geminiRetries": 0,
+     "toolCalls": 3,
+     "dominant": "gemini:gemini-3.5-flash-lite"
+    }
+   ]
+  },
+  {
+   "id": "what-did-i-eat",
+   "calls": 2,
+   "rateLimited": 0,
+   "inputTokens": 13328,
+   "cachedTokens": 4019,
+   "outputTokens": 199,
+   "toolsSentAvg": 22,
+   "systemCharsAvg": 4913,
+   "actions": [],
+   "cards": [],
+   "ok": true,
+   "reply": "Muy bien, Master Julian. Aquí tiene el registro de lo que lleva consumido hoy:\n\n• **Desayuno**:\n  - Coffee with milk (60 kcal)\n  - Egg, whole, large (144 kcal)\n  - Toast, white bread (75 kcal)\n  - Orange juice (112 kcal)\n\n• **Almuerzo**:\n  - Rice, white, cooked (205 kcal)\n\n**Total del día**: 596 kcal (de una meta de 2.200 kcal).",
+   "status": "⏳ Consultando MyFitnessPal…",
+   "ms": 20707,
+   "timings": [
+    {
+     "intent": "mfp-read",
+     "totalMs": 16094,
+     "activeMs": 16094,
+     "gemini": 14871,
+     "pacer": 0,
+     "tools": 11,
+     "telegram": 55,
+     "poll": 0,
+     "hub": 1157,
+     "geminiCalls": 2,
+     "geminiRetries": 0,
+     "toolCalls": 1,
+     "dominant": "gemini:gemini-3.5-flash-lite"
+    }
+   ]
+  },
+  {
+   "id": "voice-meal",
+   "calls": 3,
+   "rateLimited": 0,
+   "inputTokens": 13786,
+   "cachedTokens": 4018,
+   "outputTokens": 394,
+   "toolsSentAvg": 15,
+   "systemCharsAvg": 3314,
+   "actions": [
+    "mfp.log Dinner: Rice, white, cooked × 1 [1 cup] = 205 kcal",
+    "mfp.log Dinner: Chicken breast, grilled × 1 [1 breast (172 g)] = 284 kcal"
+   ],
+   "cards": [],
+   "ok": true,
+   "reply": "Muy bien, Master Julian.\n\nCena: 2 items, 489 kcal\n- Rice, white, cooked (1 cup): 205 kcal\n- Chicken breast, grilled (1 breast): 284 kcal",
+   "status": "✅ Cena: 2 alimentos, 489 kcal",
+   "ms": 30010,
+   "timings": [
+    {
+     "intent": "meal",
+     "totalMs": 25184,
+     "activeMs": 25184,
+     "gemini": 23911,
+     "pacer": 0,
+     "tools": 20,
+     "telegram": 74,
+     "poll": 0,
+     "hub": 1179,
+     "geminiCalls": 3,
+     "geminiRetries": 0,
+     "toolCalls": 4,
+     "dominant": "gemini:gemini-3.5-flash-lite"
+    }
+   ]
+  },
+  {
+   "id": "chat",
+   "calls": 1,
+   "rateLimited": 0,
+   "inputTokens": 9473,
+   "cachedTokens": 0,
+   "outputTokens": 109,
+   "toolsSentAvg": 35,
+   "systemCharsAvg": 6514,
+   "actions": [],
+   "cards": [],
+   "ok": true,
+   "reply": "Muy bien, Master Julian, a vuestro entero servicio. ¿En qué le puedo asistir en esta ocasión?",
+   "ms": 12652,
+   "timings": [
+    {
+     "intent": "chat",
+     "totalMs": 7828,
+     "activeMs": 7828,
+     "gemini": 6656,
+     "pacer": 0,
+     "tools": 8,
+     "telegram": 27,
+     "poll": 0,
+     "hub": 1137,
+     "geminiCalls": 1,
+     "geminiRetries": 0,
+     "toolCalls": 2,
+     "dominant": "gemini:gemini-3.5-flash-lite"
+    }
+   ]
+  },
+  {
+   "id": "cines-seats",
+   "calls": 5,
+   "rateLimited": 0,
+   "inputTokens": 23608,
+   "cachedTokens": 8005,
+   "outputTokens": 302,
+   "toolsSentAvg": 14,
+   "systemCharsAvg": 6307,
+   "actions": [],
+   "cards": [],
+   "ok": true,
+   "reply": "Enseguida, Master Julian. Le propongo los asientos **F7 y F8**.",
+   "status": "⏳ Preparando el mapa de asientos…",
+   "ms": 41576,
+   "timings": [
+    {
+     "intent": "cines",
+     "totalMs": 15876,
+     "activeMs": 15876,
+     "gemini": 14653,
+     "pacer": 0,
+     "tools": 11,
+     "telegram": 57,
+     "poll": 0,
+     "hub": 1155,
+     "geminiCalls": 2,
+     "geminiRetries": 0,
+     "toolCalls": 1,
+     "dominant": "gemini:gemini-3.5-flash-lite"
+    },
+    {
+     "intent": "cines",
+     "totalMs": 16656,
+     "activeMs": 16656,
+     "gemini": 15402,
+     "pacer": 0,
+     "tools": 29,
+     "telegram": 46,
+     "poll": 0,
+     "hub": 1179,
+     "geminiCalls": 3,
+     "geminiRetries": 0,
+     "toolCalls": 4,
+     "dominant": "gemini:gemini-3.5-flash-lite"
+    }
+   ]
+  },
+  {
+   "id": "cines-paypal",
+   "calls": 2,
+   "rateLimited": 0,
+   "inputTokens": 9511,
+   "cachedTokens": 4012,
+   "outputTokens": 634,
+   "toolsSentAvg": 14,
+   "systemCharsAvg": 6307,
+   "actions": [
+    "cines.hold hold_1 570-1002 F7 $99",
+    "cines.purchase hold_1 $99 dry-run"
+   ],
+   "cards": [
+    "tool:cines_hold_seats",
+    "purchase-card"
+   ],
+   "ok": true,
+   "reply": "🎟️ Asientos apartados — ¿confirmo la compra?\n🎬 Dune: Mesías\n📍 Cinépolis Parque Toreo · 2026-10-19 20:30 · subtitulada 2D\n💺 F7 · Admision General\n💰 $99 MXN (boletos $92 + cargos $7)\n⌛ Expira 17:33 (≈9 min)\n💳 PayPal: apruébelo en la pantalla del Mac.\n\n✅ Pagado: reserva DRYRUN-001 (simulado)",
+   "status": "✅ 🎟️ Compra confirmada: Dune: Mesías · Cinépolis Parque Toreo · lun 19 20:30 · F7 · $99 MXN · reserva DRYRUN-001 (simulada)",
+   "ms": 26987,
+   "timings": [
+    {
+     "intent": "cines",
+     "totalMs": 6162,
+     "activeMs": 6162,
+     "gemini": 6108,
+     "pacer": 0,
+     "tools": 8,
+     "telegram": 33,
+     "poll": 0,
+     "hub": 13,
+     "geminiCalls": 1,
+     "geminiRetries": 0,
+     "toolCalls": 1,
+     "dominant": "gemini:gemini-3.5-flash-lite"
+    },
+    {
+     "intent": "resume-cines",
+     "totalMs": 4737,
+     "activeMs": 4737,
+     "gemini": 4670,
+     "pacer": 0,
+     "tools": 5,
+     "telegram": 5,
+     "poll": 0,
+     "hub": 57,
+     "geminiCalls": 1,
+     "geminiRetries": 0,
+     "toolCalls": 1,
+     "dominant": "gemini:gemini-3.5-flash-lite"
+    },
+    {
+     "intent": "cines",
+     "totalMs": 3097,
+     "activeMs": 50,
+     "gemini": 0,
+     "pacer": 0,
+     "tools": 10,
+     "telegram": 12,
+     "poll": 3047,
+     "hub": 28,
+     "geminiCalls": 0,
+     "geminiRetries": 0,
+     "toolCalls": 5,
+     "dominant": "hub:cines_purchase"
+    }
+   ]
+  },
+  {
+   "id": "cines-buy",
+   "calls": 2,
+   "rateLimited": 0,
+   "inputTokens": 8950,
+   "cachedTokens": 4007,
+   "outputTokens": 63,
+   "toolsSentAvg": 14,
+   "systemCharsAvg": 6307,
+   "actions": [
+    "cines.hold hold_1 570-1002 F7,F8 $198",
+    "cines.purchase hold_1 $198 dry-run"
+   ],
+   "cards": [
+    "tool:cines_hold_seats",
+    "purchase-card"
+   ],
+   "ok": true,
+   "reply": "🎟️ Asientos apartados — ¿confirmo la compra?\n🎬 Dune: Mesías\n📍 Cinépolis Parque Toreo · 2026-10-19 20:30 · subtitulada 2D\n💺 F7, F8 · Admision General\n💰 $198 MXN (boletos $184 + cargos $14)\n⌛ Expira 17:33 (≈9 min)\n💳 Tarjeta guardada (predeterminada); le pediré el CVV en privado.\n\n✅ Pagado: reserva DRYRUN-001 (simulado)",
+   "status": "✅ 🎟️ Compra confirmada: Dune: Mesías · Cinépolis Parque Toreo · lun 19 20:30 · F7, F8 · $198 MXN · reserva DRYRUN-001 (simulada)",
+   "ms": 26244,
+   "timings": [
+    {
+     "intent": "cines",
+     "totalMs": 4042,
+     "activeMs": 4042,
+     "gemini": 3987,
+     "pacer": 0,
+     "tools": 11,
+     "telegram": 31,
+     "poll": 0,
+     "hub": 13,
+     "geminiCalls": 1,
+     "geminiRetries": 0,
+     "toolCalls": 1,
+     "dominant": "gemini:gemini-3.5-flash-lite"
+    },
+    {
+     "intent": "resume-cines",
+     "totalMs": 4719,
+     "activeMs": 4719,
+     "gemini": 4661,
+     "pacer": 0,
+     "tools": 6,
+     "telegram": 5,
+     "poll": 0,
+     "hub": 47,
+     "geminiCalls": 1,
+     "geminiRetries": 0,
+     "toolCalls": 1,
+     "dominant": "gemini:gemini-3.5-flash-lite"
+    },
+    {
+     "intent": "cines",
+     "totalMs": 29,
+     "activeMs": 29,
+     "gemini": 0,
+     "pacer": 0,
+     "tools": 11,
+     "telegram": 3,
+     "poll": 0,
+     "hub": 15,
+     "geminiCalls": 0,
+     "geminiRetries": 0,
+     "toolCalls": 1,
+     "dominant": "hub:cines_purchase"
+    },
+    {
+     "intent": "cines",
+     "totalMs": 30,
+     "activeMs": 30,
+     "gemini": 0,
+     "pacer": 0,
+     "tools": 10,
+     "telegram": 17,
+     "poll": 0,
+     "hub": 3,
+     "geminiCalls": 0,
+     "geminiRetries": 0,
+     "toolCalls": 2,
+     "dominant": "telegram:sendMessage"
+    }
+   ]
+  }
+ ]
+}

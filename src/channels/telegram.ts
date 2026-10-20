@@ -7,8 +7,10 @@ import { describeModelError, rateLimitContext } from '../llm/rate-limit.js';
 import type { Voice } from '../persona.js';
 import { classifyIntent, domainsFor, mediaOf, type Domain } from '../telemetry/intent.js';
 import { newRequestId, usageContext, withUsageScope } from '../telemetry/context.js';
+import { timed } from '../telemetry/timing.js';
 import type { Transcribe } from '../voice/transcribe.js';
 import type { StatusTracker } from '../status/tracker.js';
+import type { RequestTimer } from '../telemetry/timing.js';
 
 /** Media sent to Gemini as file parts: receipts/meal photos and voice notes. */
 export const INLINE_MEDIA = ['image/*', 'audio/*', 'application/pdf'];
@@ -50,7 +52,12 @@ export interface TelegramDeps {
    * posted instead of running the agent; an `agentText` replaces the user's message for it.
    */
   preAgent?: (chatId: string, text: string) => Promise<{ reply?: string; agentText?: string } | undefined>;
+  /** Per-request wall-clock spans (omit: nothing is timed). */
+  timer?: TimerFactory;
 }
+
+/** Starts a request's timer; `close` records it (idempotent) with the scope's final intent. */
+export type TimerFactory = (requestId: string, startedAt?: number) => { timer: RequestTimer; close: () => void };
 
 type Pending = { requestId: string; kind: string; expiresAt: number; expired?: boolean; purpose?: 'payment'; holdId?: string };
 export interface SecureInputPort {
@@ -139,8 +146,10 @@ function guarded(
   recent: RecentTopics = new Map(),
   status?: (chatId: string, requestId: string) => StatusTracker,
   preAgent?: TelegramDeps['preAgent'],
+  timers?: TimerFactory,
 ): ChannelHandler {
   return async (thread: Thread, message: Message, defaultHandler) => {
+    const handlerStart = Date.now();
     if (!thread.isDM) return log(`[telegram] ignoring non-DM message in ${thread.id}`);
     if (!isAllowed(allowed, message)) return log(`[telegram] ignoring message from non-allowlisted user ${message.author?.userId}`);
     if (kv && !(await kv.setIfNotExists(`telegram:handled:${message.id}`, Date.now(), DEDUP_TTL_MS))) {
@@ -175,6 +184,9 @@ function guarded(
       message.attachments = [];
     }
     const requestId = newRequestId();
+    // the clock starts when the handler got the message (dedup / secure check included)
+    const timing = timers?.(requestId, handlerStart);
+    timing?.timer.received((message.metadata as { dateSent?: Date } | undefined)?.dateSent?.getTime?.());
     const blocked = await gate?.(requestId);
     if (blocked) {
       await thread.post(blocked);
@@ -183,15 +195,17 @@ function guarded(
     const notify = async (text: string) => void (await thread.post(text));
     const media = mediaOf(message.attachments ?? []);
     const tracker = status?.(chatId, requestId);
-    await withUsageScope({ requestId, intent: 'chat', media, kind: 'chat', status: tracker }, () =>
+    await withUsageScope({ requestId, intent: 'chat', media, kind: 'chat', status: tracker, ...(timing ? { timer: timing.timer } : {}) }, () =>
       rateLimitContext.run({ notify, format: voice?.rateLimit, waiting: voice?.waiting, ...(tracker ? { onQuota: (s: number) => tracker.quota(s), onPacing: () => tracker.pacing() } : {}) }, async () => {
         const scope = usageContext.getStore()!;
         scope.chatId = chatId;
+        timing?.timer.bindScope(scope);
         tracker?.start();
         try {
           await route();
         } finally {
           await tracker?.finish().catch((e: Error) => log(`[status] ${e.message}`));
+          timing?.close();
         }
       }),
     );
@@ -226,7 +240,7 @@ function guarded(
         // a voice note / photo takes a while: say it arrived instead of silence
         if (tracker && RECEIVED_MEDIA.has(media)) await tracker.received(media as 'voice' | 'photo' | 'pdf');
         // a transcribed voice note is routed like the text it says
-        const t = media === 'voice' && transcribe ? await transcribeInPlace(message, transcribe, log) : undefined;
+        const t = media === 'voice' && transcribe ? await timed('transcribe', 'voice', () => transcribeInPlace(message, transcribe, log)) : undefined;
         if (t && tracker) {
           tracker.setLanguage(t.language === 'en' || t.language === 'es' ? t.language : undefined);
           tracker.transcribed(t.transcript);
@@ -261,7 +275,7 @@ export function createTelegramChannel(config: HubConfig, deps: TelegramDeps = {}
   process.env.TELEGRAM_ALLOWED_USER_IDS = config.telegram.allowedUserIds.join(',');
 
   const recent: RecentTopics = new Map();
-  const handler = guarded(config.telegram.allowedUserIds, deps.kv, log, deps.gate, deps.voice, deps.transcribe, deps.secureInput, recent, deps.status, deps.preAgent);
+  const handler = guarded(config.telegram.allowedUserIds, deps.kv, log, deps.gate, deps.voice, deps.transcribe, deps.secureInput, recent, deps.status, deps.preAgent, deps.timer);
   const display: ToolDisplayFn = (event, ctx) => {
     usageContext.getStore()?.status?.onToolEvent(event);
     return deps.approvalCard?.(event) ?? toolDisplay(event, ctx);
@@ -296,15 +310,20 @@ export function createTelegramChannel(config: HubConfig, deps: TelegramDeps = {}
         const domains = last && Date.now() - last.at < STICKY_MS ? last.domains : undefined;
         const requestId = newRequestId();
         const tracker = chatId ? deps.status?.(chatId, requestId) : undefined;
-        return withUsageScope({ requestId, intent: 'resume', media: 'text', kind: 'resume', chatId, status: tracker, ...(domains ? { domains } : {}) }, () =>
+        const timing = deps.timer?.(requestId);
+        // the resumed run ends after this handler returns: its status closing ends the timing
+        if (timing && tracker) tracker.onClosed(timing.close);
+        return withUsageScope({ requestId, intent: 'resume', media: 'text', kind: 'resume', chatId, status: tracker, ...(domains ? { domains } : {}), ...(timing ? { timer: timing.timer } : {}) }, () =>
           rateLimitContext.run({ notify: async () => {}, ...(tracker ? { onQuota: (s: number) => tracker.quota(s), onPacing: () => tracker.pacing() } : {}) }, async () => {
             // Mastra resumes the approved tool in the background: the RUN's end closes the
             // status message (StatusRunEnd), with a safety timeout
+            timing?.timer.bindScope(usageContext.getStore()!);
             if (tracker) {
               tracker.closeOnRunEnd = true;
               setTimeout(() => void tracker.finish().catch(() => {}), RESUME_FINISH_TIMEOUT_MS).unref?.();
             }
             await defaultHandler();
+            if (timing && !tracker) timing.close();
           }),
         );
       }
@@ -313,11 +332,14 @@ export function createTelegramChannel(config: HubConfig, deps: TelegramDeps = {}
         return log(`[telegram] ignoring plan button from non-allowlisted user ${userId}`);
       }
       const notify = async (text: string) => void (await event.thread?.post(text));
-      await withUsageScope({ requestId: newRequestId(), intent: 'plan', media: 'text', kind: 'plan' }, () =>
-        rateLimitContext.run({ notify, format: deps.voice?.rateLimit, waiting: deps.voice?.waiting }, () =>
-          deps.onPlanAction ? deps.onPlanAction(event.actionId, String(userId), notify) : Promise.resolve(),
-        ),
-      );
+      const planReq = newRequestId();
+      const timing = deps.timer?.(planReq);
+      await withUsageScope({ requestId: planReq, intent: 'plan', media: 'text', kind: 'plan', ...(timing ? { timer: timing.timer } : {}) }, () =>
+        rateLimitContext.run({ notify, format: deps.voice?.rateLimit, waiting: deps.voice?.waiting }, () => {
+          timing?.timer.bindScope(usageContext.getStore()!);
+          return deps.onPlanAction ? deps.onPlanAction(event.actionId, String(userId), notify) : Promise.resolve();
+        }),
+      ).finally(() => timing?.close());
     },
   };
 
@@ -334,6 +356,7 @@ export function createTelegramChannel(config: HubConfig, deps: TelegramDeps = {}
       { command: 'help', description: 'What I can do' },
       { command: 'usage', description: 'Gemini usage today and last 7 days' },
       { command: 'estado', description: 'Estado: apps, cuota, presupuesto, últimos fallos' },
+      { command: 'velocidad', description: 'Velocidad: p50/p95 y dónde se va el tiempo' },
     ],
     resolveResourceId: ({ defaultResourceId }) => defaultResourceId, // telegram:<userId>
     tools: false, // no reaction tools; keep the tool list for app MCPs

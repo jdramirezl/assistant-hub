@@ -119,6 +119,15 @@ describe("PayPal at the Mac: in_progress → the hub polls cines_hold_status", (
     // the model was not called while polling: 3 tool steps + 1 reply
     expect(sm.calls).toHaveLength(4);
     expect(await hub.cines.successes()).toBe(1);
+    // the PayPal wait is timed as polling, apart from the request's active time
+    await tg.waitFor(() => logs.some((l) => /\[timing\].* poll=\d+ms/.test(l)), 10_000);
+    const paid = logs.find((l) => /\[timing\].* poll=\d+ms/.test(l))!;
+    expect(paid).toMatch(/active=\d+ms/);
+    const rows = await hub.timings.rows(0);
+    const polled = rows.find((r) => r.byCategory.poll > 0)!;
+    expect(polled.activeMs).toBe(polled.totalMs - polled.byCategory.poll);
+    expect(polled.dominant.category).not.toBe("poll");
+    expect((await hub.timings.spans(polled.requestId)).some((s) => s.kind === "poll" && s.label === "cines.paypal")).toBe(true);
   });
 
   it("failed → ❌ with the server message; unknown → ⚠️ not released; neither is retried", async () => {

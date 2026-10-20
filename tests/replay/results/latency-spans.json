@@ -1,0 +1,170 @@
+{
+ "label": "latency-spans",
+ "at": "2026-10-20T23:26:54.718Z",
+ "results": [
+  {
+   "id": "what-did-i-eat",
+   "calls": 2,
+   "rateLimited": 0,
+   "inputTokens": 13389,
+   "cachedTokens": 8035,
+   "outputTokens": 246,
+   "toolsSentAvg": 22,
+   "systemCharsAvg": 4913,
+   "actions": [],
+   "cards": [],
+   "ok": true,
+   "reply": "A su servicio, Master Julian. Su consumo hasta el momento el día de hoy es el siguiente:\n\n**Desayuno:**\n- Coffee with milk: 60 kcal\n- Egg, whole, large: 144 kcal\n- Toast, white bread: 75 kcal\n- Orange juice: 112 kcal\n\n**Almuerzo:**\n- Rice, white, cooked: 205 kcal\n\n**Total:** 596 / 2200 kcal",
+   "ms": 8211,
+   "timings": [
+    {
+     "intent": "mfp-read",
+     "totalMs": 3294,
+     "activeMs": 3294,
+     "gemini": 2001,
+     "pacer": 0,
+     "tools": 10,
+     "telegram": 65,
+     "poll": 0,
+     "hub": 1218,
+     "geminiCalls": 2,
+     "geminiRetries": 0,
+     "toolCalls": 1,
+     "dominant": "gemini:gemini-3.5-flash-lite",
+     "spans": [
+      "receive:telegram→hub -819-0",
+      "telegram:getChat 4-6",
+      "gemini:gemini-3.5-flash-lite 35-1124 ttft=1073",
+      "telegram:sendChatAction 1147-1187",
+      "hub:fitness_get_day 1177-1188",
+      "tool:mfp.fitness_get_day 1178-1188",
+      "gemini:gemini-3.5-flash-lite 1194-2106 ttft=700",
+      "telegram:sendChatAction 2119-2135",
+      "telegram:sendMessage 2123-2135",
+      "telegram:editMessageText 3260-3263",
+      "telegram:sendChatAction 3266-3280"
+     ]
+    }
+   ]
+  },
+  {
+   "id": "chat",
+   "calls": 1,
+   "rateLimited": 0,
+   "inputTokens": 9473,
+   "cachedTokens": 0,
+   "outputTokens": 99,
+   "toolsSentAvg": 35,
+   "systemCharsAvg": 6514,
+   "actions": [],
+   "cards": [],
+   "ok": true,
+   "reply": "A su entera disposición, Master Julian. Todo en riguroso orden por aquí. ¿En qué le puedo servir?",
+   "ms": 7104,
+   "timings": [
+    {
+     "intent": "chat",
+     "totalMs": 2497,
+     "activeMs": 2497,
+     "gemini": 1320,
+     "pacer": 0,
+     "tools": 10,
+     "telegram": 17,
+     "poll": 0,
+     "hub": 1150,
+     "geminiCalls": 1,
+     "geminiRetries": 0,
+     "toolCalls": 2,
+     "dominant": "gemini:gemini-3.5-flash-lite",
+     "spans": [
+      "receive:telegram→hub -934-0",
+      "telegram:getChat 2-3",
+      "hub:finance_list_accounts 10-24",
+      "hub:finance_list_pockets 14-24",
+      "tool:finance.finance_list_accounts 14-24",
+      "tool:finance.finance_list_pockets 19-24",
+      "gemini:gemini-3.5-flash-lite 33-1353 ttft=1260",
+      "telegram:sendChatAction 1361-1371",
+      "telegram:sendMessage 1362-1371",
+      "telegram:editMessageText 2477-2478",
+      "telegram:sendChatAction 2479-2484"
+     ]
+    }
+   ]
+  },
+  {
+   "id": "cines-seats",
+   "calls": 6,
+   "rateLimited": 3,
+   "inputTokens": 14140,
+   "cachedTokens": 6013,
+   "outputTokens": 424,
+   "toolsSentAvg": 14,
+   "systemCharsAvg": 6307,
+   "actions": [],
+   "cards": [],
+   "ok": true,
+   "reply": "Muy bien, Master Julian. He seleccionado los asientos F7 y F8 para la función de las 20:30 en el Toreo. Le he enviado el mapa de asientos en el chat.",
+   "status": "⏸️ Gemini pidió una pausa más larga de lo normal, Master Julian. Vuelva a enviarlo en un minuto.\n<code>GEMINI_RATE_LIMIT · req ca9b28</code>",
+   "ms": 19724,
+   "timings": [
+    {
+     "intent": "cines",
+     "totalMs": 6529,
+     "activeMs": 6529,
+     "gemini": 401,
+     "pacer": 0,
+     "tools": 0,
+     "telegram": 2,
+     "poll": 0,
+     "hub": 6126,
+     "geminiCalls": 3,
+     "geminiRetries": 0,
+     "toolCalls": 0,
+     "dominant": "hub",
+     "spans": [
+      "receive:telegram→hub -68-0",
+      "telegram:getChat 1-2",
+      "gemini:gemini-3.5-flash-lite 8-170 ✗429",
+      "gemini:gemini-3.5-flash-lite 3202-3299 ✗429",
+      "gemini:gemini-3.5-flash-lite 6317-6459 ✗429",
+      "telegram:sendMessage 6527-6528"
+     ]
+    },
+    {
+     "intent": "cines",
+     "totalMs": 4420,
+     "activeMs": 4420,
+     "gemini": 3157,
+     "pacer": 0,
+     "tools": 20,
+     "telegram": 76,
+     "poll": 0,
+     "hub": 1167,
+     "geminiCalls": 3,
+     "geminiRetries": 0,
+     "toolCalls": 3,
+     "dominant": "gemini:gemini-3.5-flash-lite",
+     "spans": [
+      "receive:telegram→hub -632-0",
+      "gemini:gemini-3.5-flash-lite 24-1371 ttft=1321",
+      "telegram:sendChatAction 1374-1404",
+      "hub:cines_showtimes 1396-1405",
+      "tool:cines.cines_showtimes 1396-1405",
+      "gemini:gemini-3.5-flash-lite 1409-2366 ttft=954",
+      "telegram:sendChatAction 2371-2399",
+      "hub:cines_seat_map 2391-2406",
+      "tool:cines.cines_seat_map 2391-2401",
+      "tool:cines.image 2401-2402",
+      "telegram:sendPhoto 2403-2406",
+      "gemini:gemini-3.5-flash-lite 2410-3263 ttft=752",
+      "telegram:sendChatAction 3268-3294",
+      "telegram:sendMessage 3269-3296",
+      "telegram:editMessageText 4401-4402",
+      "telegram:sendChatAction 4403-4408"
+     ]
+    }
+   ]
+  }
+ ]
+}

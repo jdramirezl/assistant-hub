@@ -5,6 +5,7 @@ import { toStandardSchema } from '@mastra/schema-compat/adapters/json-schema';
 import { assertTransportSecurity, resolveHeaders, resolveUrl, type Registry } from './registry.js';
 import { requiresApproval } from '../approvals.js';
 import { mapToolErrorText, sharedError, unavailableError, type ErrorStyle } from './errors.js';
+import { span } from '../telemetry/timing.js';
 
 export type ServerStatus =
   | { state: 'up'; tools: number }
@@ -416,43 +417,62 @@ export class McpToolbox {
       mcp: t.mcp as never,
       requireApproval: this.approvalFor(name, t.mcp?.annotations),
       execute: async (given: unknown, ctx: unknown) => {
-        let input = given;
-        const raw = (ctx as { hubRaw?: boolean } | undefined)?.hubRaw === true; // hub-internal call: full, untrimmed result
-        const finish = async (out: unknown) => {
-          const hook = this.opts.hooks?.afterResult;
-          if (!hook) return out;
-          const hooked = await hook(name, (input ?? {}) as Record<string, unknown>, out, { raw }); // side effects (guards) always run
-          return raw ? out : hooked;
-        };
+        // hub-side time around the call (hooks, guards); the server round trip is its own span
+        const hub = span('hub', name);
         try {
-          const before = await this.opts.hooks?.beforeCall?.(name, (given ?? {}) as Record<string, unknown>);
-          if (before && 'error' in before) return before.error;
-          if (before) input = before.args;
-          const out = normalizeResult(await this.callWithSessionRetry(server, name, t, input, ctx), style);
-          return await finish(out);
-        } catch (err) {
-          const reason = firstLine((err as Error).message);
-          // a write that may have run anyway (timeout / transport error): the hub decides (e.g. poll)
-          const alt = this.opts.hooks?.onCallError?.(name, (input ?? {}) as Record<string, unknown>, reason);
-          if (alt !== undefined) {
-            this.log(`[mcp] ${server}: ${name} failed in transport (${reason}); not marking down, the hub checks the outcome`);
-            return await finish(alt);
-          }
-          const slot = this.slots[server];
-          // one slow call is not an outage: only connection failures mark the server down
-          if (TIMEOUT.test(reason)) {
-            this.log(`[mcp] ${server}: ${name} timed out (${reason}); server stays up`);
-            return unavailableError(style, server, reason);
-          }
-          if (slot && slot.status.state === 'up') {
-            slot.attempts = 1;
-            slot.lastAttemptAt = this.now();
-            this.markDown(server, reason); // keeps its tools listed; retried on next message / tick
-          }
-          return unavailableError(style, server, reason);
+          return await this.runTool(name, server, t, style, given, ctx);
+        } finally {
+          hub.end();
         }
       },
     }) as unknown as AnyTool;
+  }
+
+  private async runTool(name: string, server: string, t: AnyTool & { mcp?: { annotations?: ToolAnnotations } }, style: ErrorStyle, given: unknown, ctx: unknown): Promise<unknown> {
+    let input = given;
+    const raw = (ctx as { hubRaw?: boolean } | undefined)?.hubRaw === true; // hub-internal call: full, untrimmed result
+    const finish = async (out: unknown) => {
+      const hook = this.opts.hooks?.afterResult;
+      if (!hook) return out;
+      const hooked = await hook(name, (input ?? {}) as Record<string, unknown>, out, { raw }); // side effects (guards) always run
+      return raw ? out : hooked;
+    };
+    try {
+      const before = await this.opts.hooks?.beforeCall?.(name, (given ?? {}) as Record<string, unknown>);
+      if (before && 'error' in before) return before.error;
+      if (before) input = before.args;
+      const call = span('tool', `${server}.${name}`);
+      let out: unknown;
+      try {
+        out = normalizeResult(await this.callWithSessionRetry(server, name, t, input, ctx), style);
+      } catch (err) {
+        call.end({ ok: false, meta: { error: TIMEOUT.test((err as Error).message ?? '') ? 'timeout' : 'transport' } });
+        throw err;
+      }
+      const code = (out as { error?: { code?: unknown } } | undefined)?.error?.code;
+      call.end({ ok: !code, ...(code ? { meta: { code: String(code) } } : {}) });
+      return await finish(out);
+    } catch (err) {
+      const reason = firstLine((err as Error).message);
+      // a write that may have run anyway (timeout / transport error): the hub decides (e.g. poll)
+      const alt = this.opts.hooks?.onCallError?.(name, (input ?? {}) as Record<string, unknown>, reason);
+      if (alt !== undefined) {
+        this.log(`[mcp] ${server}: ${name} failed in transport (${reason}); not marking down, the hub checks the outcome`);
+        return await finish(alt);
+      }
+      const slot = this.slots[server];
+      // one slow call is not an outage: only connection failures mark the server down
+      if (TIMEOUT.test(reason)) {
+        this.log(`[mcp] ${server}: ${name} timed out (${reason}); server stays up`);
+        return unavailableError(style, server, reason);
+      }
+      if (slot && slot.status.state === 'up') {
+        slot.attempts = 1;
+        slot.lastAttemptAt = this.now();
+        this.markDown(server, reason); // keeps its tools listed; retried on next message / tick
+      }
+      return unavailableError(style, server, reason);
+    }
   }
 }
 

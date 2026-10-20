@@ -62,6 +62,13 @@ export class StatusTracker {
   private finished = false;
   /** Set for approval resumes: the run's end (not the handler's return) closes the message. */
   closeOnRunEnd = false;
+  private readonly closed: (() => void)[] = [];
+  /** Run after the status message is final (e.g. close the request's timing). */
+  onClosed(cb: () => void): void {
+    if (this.done) cb();
+    else this.closed.push(cb);
+  }
+  private done = false;
   private activityText?: string;
   /** Final line set by the hub when the tool results have nothing to report (e.g. "✅ PIN correcto"). */
   private note?: StatusText;
@@ -207,6 +214,14 @@ export class StatusTracker {
       await this.d.api.remove(this.d.chatId, id).catch(() => {});
     }
     await this.chain;
+    this.done = true;
+    for (const cb of this.closed.splice(0)) {
+      try {
+        cb();
+      } catch {
+        /* never break a request */
+      }
+    }
   }
 
   private ensureWorking(): void {

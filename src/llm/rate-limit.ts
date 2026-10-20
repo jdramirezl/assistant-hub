@@ -1,6 +1,7 @@
 import { AsyncLocalStorage } from 'node:async_hooks';
 import type { Voice } from '../persona.js';
 import { estimateTokens, type Pacer } from './pacer.js';
+import { span } from '../telemetry/timing.js';
 
 /**
  * Per-request context so a model call deep inside an agent run can tell the chat it is
@@ -72,6 +73,7 @@ export function createRateLimitedFetch(opts: RateLimitedFetchOptions = {}): type
     for (let attempt = 0; ; attempt++) {
       let slot: { settle(actual: number): void } | undefined;
       if (opts.pacer) {
+        const wait = span('pacer', model);
         slot = await opts.pacer.acquire(model, estimateTokens(init?.body), (ms) => {
           // our own pacing, not an error: a calm "one moment" (or nothing for short waits)
           if (ms < SILENT_WAIT_MS || paced) return;
@@ -81,9 +83,16 @@ export function createRateLimitedFetch(opts: RateLimitedFetchOptions = {}): type
           if (ctx.onPacing) return ctx.onPacing(ms);
           const s = Math.ceil(ms / 1000);
           void ctx.notify(ctx.waiting?.(s) ?? '⏳ One moment, processing your message…').catch(() => {});
-        });
+        }).finally(() => wait.end());
       }
-      const res = await base(input, init);
+      const call = span('gemini', model, { attempt });
+      let res: Response;
+      try {
+        res = timeBody(await base(input, init), call);
+      } catch (err) {
+        call.end({ ok: false, meta: { status: 'network' } });
+        throw err;
+      }
       // replace the estimate with the tokens Gemini actually billed (non-blocking)
       if (slot && res.ok) void billedInputTokens(res).then((n) => n !== undefined && slot!.settle(n), () => {});
       try {
@@ -119,9 +128,40 @@ export function createRateLimitedFetch(opts: RateLimitedFetchOptions = {}): type
         log(`[llm] ${res.status} from Gemini; retrying in ${waitMs / 1000}s`);
       }
       await res.body?.cancel().catch(() => {});
+      const back = span('backoff', `${model} ${res.status}`);
       await sleep(waitMs);
+      back.end();
     }
   }) as typeof fetch;
+}
+
+/**
+ * The Gemini span covers the whole response: headers, first byte (ttft, after thinking) and the
+ * last byte of the stream. A failed status ends it right away.
+ */
+function timeBody(res: Response, call: ReturnType<typeof span>): Response {
+  if (!res.ok || !res.body) {
+    call.end({ ok: res.ok, meta: { status: res.status } });
+    return res;
+  }
+  let first = true;
+  const body = res.body.pipeThrough(
+    new TransformStream<Uint8Array, Uint8Array>({
+      transform(chunk, ctrl) {
+        if (first) {
+          first = false;
+          call.set({ ttft: call.elapsed() });
+        }
+        ctrl.enqueue(chunk);
+      },
+      flush() {
+        call.end({ ok: true, meta: { status: res.status } });
+      },
+    }),
+  );
+  const out = new Response(body, { status: res.status, statusText: res.statusText, headers: res.headers });
+  Object.defineProperty(out, 'url', { value: res.url });
+  return out;
 }
 
 /** promptTokenCount (+ tool-use prompt tokens) from a Gemini response, JSON or SSE. */

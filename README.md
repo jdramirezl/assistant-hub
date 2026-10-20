@@ -286,6 +286,24 @@ icon + what happened + what's next, one line.
   calls today per model (+ 429s) and peak RPM, budget used vs cap, the last 3 failures with their
   request ids, the deployed version.
 
+## Latency (`/velocidad`, `request_timings`)
+
+- Every request (text, voice, photo, approval, plan, purchase-card button, secure payment) gets a
+  timer under its req id. Spans: Gemini HTTP attempt (model, status, attempt, ttft, until the last
+  byte), retry backoff, pacer wait, MCP tool round trip (`server.tool`, ok/error code, timeout),
+  hub-side work around a tool, Telegram Bot API calls (method only, never the URL/token/body),
+  voice transcription, the Telegram message date → handler start (`queue`), and polling loops
+  (`cines.hold`, `cines.paypal`, `cines.purchase`, `cines.seat-pick-wait`) labelled `poll`.
+- Time is attributed exclusively (poll > pacer > Gemini > tools > hub > Telegram; uncovered = hub),
+  so the categories add up to the total. Active time = total − poll: a PayPal wait is not "slow".
+- One log line per request: `[req 7f3a2c] [timing] total=…ms gemini=…ms(n 503×k) tools=…ms(n)
+  pacer=… telegram=… hub=… [poll=…] intent=… dominant=…`.
+- Stored in LibSQL: `request_timings` (one row per request) and `request_spans`, kept 30 days.
+- **`/velocidad`** (allowlisted user, no model call): last 24 h and 7 d p50/p95 of active time by
+  intent (comidas, finanzas, cine, voz, charla), where the time went (% Gemini / espera de cuota /
+  apps / Telegram / hub), and the 5 slowest requests with their req id and dominant span.
+- The replay records the same timings (and spans) per scenario in its results file.
+
 ## Persona
 
 By default the assistant is **Alfred** (Alfred Pennyworth): formal, dry wit, "Master Julian" in
@@ -443,6 +461,7 @@ Keep the checkout clean: `deploy.sh` refuses to run with local edits.
 | `src/cines/` | Cines: contract adapter, purchase policy + secure input, images, approval cards |
 | `src/voice/`, `src/meal.ts` | Voice-note transcription; meal and language from the user's words |
 | `src/budget.ts` | Daily token/cost cap (counter + agent processor) |
+| `src/telemetry/timing.ts`, `src/status/velocidad.ts` | Request spans, `request_timings`, `/velocidad` |
 | `src/digest.ts`, `src/workflows/weekly-digest.ts` | Weekly digest and its schedule |
 | `src/notify.ts` | Proactive Telegram messages (digest, startup ping) |
 | `src/ops.ts` | Startup "I'm up" ping and healthchecks.io heartbeat |

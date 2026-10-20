@@ -2,6 +2,7 @@ import { AsyncLocalStorage } from 'node:async_hooks';
 import { randomBytes } from 'node:crypto';
 import type { Domain, Intent, Media } from './intent.js';
 import type { StatusTracker } from '../status/tracker.js';
+import type { RequestTimer } from './timing.js';
 
 /** What a model HTTP call belongs to. Set around each chat turn, resume, plan run and digest. */
 export interface UsageScope {
@@ -22,6 +23,8 @@ export interface UsageScope {
   chatId?: string;
   /** The request's live status message (Telegram). */
   status?: StatusTracker;
+  /** Where the request's wall-clock goes (spans); absent = nothing is timed. */
+  timer?: RequestTimer;
 }
 
 export const usageContext = new AsyncLocalStorage<UsageScope>();

@@ -48,6 +48,7 @@ import {
   type SecureKind,
   type SecureRequest,
 } from './contract.js';
+import { span, timed } from '../telemetry/timing.js';
 
 type Rec = Record<string, unknown>;
 export const SECURE_TTL_MS = 5 * 60_000;
@@ -434,7 +435,9 @@ export class CinesHub {
     // the seat map's run may still be open (its reply not sent yet): wait for it, then decide
     const until = this.now() + (opts.maxWaitMs ?? 90_000);
     if (!this.shownFor(chat).lastMap && opts.othersRunning?.()) this.log(`[cines] seat pick ${seats.join(',')} while another run is open; waiting for it`);
+    const wait = span('poll', 'cines.seat-pick-wait');
     while (!this.shownFor(chat).lastMap && opts.othersRunning?.() && this.now() < until) await new Promise((r) => setTimeout(r, 250));
+    wait.end();
     const map = this.shownFor(chat).lastMap;
     if (!map) {
       this.log(`[cines] seat pick ${seats.join(',')} but no seat map in play; the agent handles it`);
@@ -664,11 +667,12 @@ export class CinesHub {
     let result = given;
     const jobId = String((result as Rec | undefined)?.jobId ?? '');
     const unsure = (result as Rec | undefined)?.transport === true; // our call timed out: the server may have done it
-    if (tool === HOLD_TOOL && (result as Rec | undefined)?.status === 'in_progress') result = await this.waitForHold(input, jobId, unsure);
+    // polling loops are timed apart ("poll"): waiting for PayPal at the Mac is not slowness
+    if (tool === HOLD_TOOL && (result as Rec | undefined)?.status === 'in_progress') result = await timed('poll', 'cines.hold', () => this.waitForHold(input, jobId, unsure));
     else if ((tool === PURCHASE_TOOL || tool === SECURE_TOOL) && (result as Rec | undefined)?.status === 'in_progress') {
       const hid = holdIdOf(input) ?? ctx.holdId;
       const paypal = input.method === 'paypal' || (await this.hold(hid))?.method === 'paypal';
-      result = await this.waitForPurchase(jobId, unsure, { ...ctx, holdId: hid }, paypal);
+      result = await timed('poll', paypal ? 'cines.paypal' : 'cines.purchase', () => this.waitForPurchase(jobId, unsure, { ...ctx, holdId: hid }, paypal));
     }
     if (tool === PURCHASE_TOOL) {
       const e = (result as Rec | undefined)?.error as Rec | undefined;
@@ -755,7 +759,7 @@ export class CinesHub {
       return 'not shown (no chat); describe the proposal in words';
     }
     try {
-      const bytes = await fetchLoopbackPng(url, { fetch: this.d.fetch });
+      const bytes = await timed('tool', 'cines.image', () => fetchLoopbackPng(url, { fetch: this.d.fetch }));
       const messageId = await this.d.sendPhoto(chatId, bytes);
       this.log(`[photo] sent ${bytes.byteLength} bytes${messageId !== undefined ? ` (message ${messageId})` : ''}`);
       return 'sent to the user in the chat (do not describe or link it)';
