@@ -115,7 +115,7 @@ export interface FakeCinesOptions {
   /** cines_purchase returns {status:"in_progress"} (PayPal at the Mac); hold_status reports the outcome after N polls. */
   inProgress?: { polls: number; outcome: 'paid' | 'failed' | 'unknown' };
   /** cines_hold_seats returns in_progress; hold_status shows the hold after N polls (or failError). */
-  holdInProgress?: { polls: number; failError?: string };
+  holdInProgress?: { polls: number; failError?: string; legacyError?: boolean };
   /** Real (non-dryRun) payment armed on the server Mac; default true. false → "no está armado". */
   paymentArmed?: boolean;
   /** Successful purchases already in the server's ledger. */
@@ -298,6 +298,7 @@ export async function startFakeCines(opts: FakeCinesOptions = {}): Promise<FakeC
       }
       if (opts.inProgress) {
         const n = h.holdId.replace(/\D/g, '').padStart(3, '0');
+        lastJob = { jobId: `job_${n}`, tool: 'cines_purchase', status: 'running', startedAt: new Date().toISOString() };
         ledger.push({ purchaseId: `pur_${n}`, at: new Date().toISOString(), total: h.totalMxn, currency: 'MXN', status: 'started', dryRun: a.dryRun || undefined, holdId: h.holdId });
         polls = 0;
         return { status: 'in_progress', jobId: `job_${n}`, note: 'Sigue en curso; consulta con cines_hold_status.' };
@@ -314,11 +315,13 @@ export async function startFakeCines(opts: FakeCinesOptions = {}): Promise<FakeC
       return { status: 'paid', purchaseId: `pur_${n}`, dryRun: a.dryRun || undefined, bookingNumber: a.dryRun ? `DRYRUN-${n}` : `BK${n}`, total: h.totalMxn, currency: 'MXN', totalMxn: h.totalMxn, seats: h.seats, imageUrl: publish() };
     };
     let pendingHold: { args: Rec; polls: number } | undefined;
+    let lastJob: Rec | undefined;
     const holdNow = (a: Rec) => (opts.emailCode ? ask('email_code', 'Escribe el código de 6 dígitos que Cinépolis envió a tu correo.', () => finishHold(a)) : finishHold(a));
     Object.assign(handlers, {
       cines_hold_seats: (a: Rec) => {
         if (!opts.holdInProgress) return holdNow(a);
         pendingHold = { args: a, polls: 0 };
+        lastJob = { jobId: 'job_hold_1', tool: 'cines_hold_seats', status: 'running', startedAt: new Date().toISOString() };
         return { status: 'in_progress', jobId: 'job_hold_1', note: 'Sigue en curso; consulta con cines_hold_status.' };
       },
       cines_release_hold: (a: Rec) => {
@@ -333,13 +336,20 @@ export async function startFakeCines(opts: FakeCinesOptions = {}): Promise<FakeC
         if (pendingHold && ++pendingHold.polls >= opts.holdInProgress!.polls) {
           const a = pendingHold.args;
           pendingHold = undefined;
-          if (opts.holdInProgress!.failError) holdError = { code: 'CINES_BAD_REQUEST', message: opts.holdInProgress!.failError };
-          else holdNow(a);
+          if (opts.holdInProgress!.failError) {
+            // like 07ff4a2: the outcome is in lastJob (holdError only with legacyError)
+            if (opts.holdInProgress!.legacyError) holdError = { code: 'CINES_BAD_REQUEST', message: opts.holdInProgress!.failError };
+            else lastJob = { ...lastJob!, status: 'failed', error: { code: 'CINES_BAD_REQUEST', message: opts.holdInProgress!.failError, retryable: false }, finishedAt: new Date().toISOString() };
+          } else {
+            holdNow(a);
+            lastJob = { ...lastJob!, status: 'done', finishedAt: new Date().toISOString() };
+          }
         }
         // the in-progress purchase settles after N polls
         const last = ledger.at(-1);
         if (last && last.status === 'started' && opts.inProgress && ++polls >= opts.inProgress.polls) {
           last.status = opts.inProgress.outcome;
+          if (lastJob?.tool === 'cines_purchase') lastJob = { ...lastJob, status: opts.inProgress.outcome === 'paid' ? 'done' : 'failed', ...(opts.inProgress.outcome === 'paid' ? {} : { error: opts.inProgress.outcome === 'failed' ? { code: 'CINES_PAYMENT_FAILED', message: 'El banco rechazó el pago. No se cobró nada.', retryable: false } : { code: 'CINES_UNAVAILABLE', message: 'La página de pago no respondió.', retryable: false } }), finishedAt: new Date().toISOString() };
           const h = holds.get(String(last.holdId))!;
           if (last.status === 'paid') {
             last.bookingNumber = last.dryRun ? `DRYRUN-${String(last.purchaseId).slice(4)}` : `BK${String(last.purchaseId).slice(4)}`;
@@ -351,6 +361,7 @@ export async function startFakeCines(opts: FakeCinesOptions = {}): Promise<FakeC
         }
         const held = [...holds.values()].find((x) => x.status === 'held');
         return {
+          lastJob: lastJob ?? null,
           ...(holdError ? { holdError } : {}),
           // like the server: publicHold (totalMxn, cinemaName, …) + secondsLeft
           hold: held ? { ...held, secondsLeft: 500 } : null,

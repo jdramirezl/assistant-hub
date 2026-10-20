@@ -107,6 +107,12 @@ export interface CallContext {
   userText?: string;
 }
 
+/** lastJob of cines_hold_status when it is OUR background job (same jobId). */
+function jobOf(st: Rec, jobId: string): Rec | undefined {
+  const j = st.lastJob as Rec | null | undefined;
+  return j && jobId && String(j.jobId) === jobId ? j : undefined;
+}
+
 /** Seats the user picked in a short message ("elige c7", "F7 y F8", "quiero el D5"); undefined otherwise. */
 export function seatPickOf(text: string | undefined): string[] | undefined {
   const t = (text ?? '').trim().replace(/[.!¡¿?]+$/g, '').trim();
@@ -359,7 +365,7 @@ export class CinesHub {
    * cines_hold_status (no model calls, never re-calling the hold) until the hold appears; it is
    * then handled exactly like a direct "held" result (summary / purchase card).
    */
-  private async waitForHold(input: Rec): Promise<unknown> {
+  private async waitForHold(input: Rec, jobId = ''): Promise<unknown> {
     const started = this.now();
     const limit = this.d.holdWaitMs ?? 3 * 60_000;
     const every = this.d.holdPollMs ?? 5_000;
@@ -374,6 +380,8 @@ export class CinesHub {
       polls++;
       const st = (await this.d.toolbox.execute(STATUS_TOOL, {}, { raw: true })) as Rec;
       if (st?.error) continue;
+      const job = jobOf(st, jobId);
+      if (job?.status === 'failed') return this.jobFailed(job, polls, 'hold');
       const h = st.hold as Rec | null | undefined;
       const hSeats = [h?.seats ?? []].flat().map(String).map((x) => x.toUpperCase()).sort().join(',');
       if (h && typeof h.holdId === 'string' && (h.status ?? 'held') === 'held' && (!known.has(h.holdId) || (seats && hSeats === seats))) {
@@ -404,7 +412,13 @@ export class CinesHub {
    * returned in_progress. Poll cines_hold_status (no model calls, never re-calling
    * cines_purchase) until the newest purchase is paid / failed / unknown, or time runs out.
    */
-  private async waitForPurchase(): Promise<unknown> {
+  private jobFailed(job: Rec, polls: number, what: string): Rec {
+    const e = (job.error ?? {}) as Rec;
+    this.log(`[cines] ${what} job ${String(job.jobId)} failed after ${polls} polls: ${String(e.code ?? '?')} (not retried)`);
+    return { error: { code: String(e.code ?? 'CINES_UNAVAILABLE'), message: String(e.message ?? 'El trabajo en segundo plano falló.'), retryable: false } };
+  }
+
+  private async waitForPurchase(jobId = ''): Promise<unknown> {
     const started = this.now();
     const limit = ((this.d.paypalWaitMin ?? 15) + 2) * 60_000;
     const every = this.d.pollMs ?? 10_000;
@@ -417,6 +431,12 @@ export class CinesHub {
       polls++;
       const st = (await this.d.toolbox.execute(STATUS_TOOL, {}, { raw: true })) as Rec;
       if (st?.error) continue; // transient: keep waiting
+      const job = jobOf(st, jobId);
+      if (job?.status === 'failed') {
+        const e = this.jobFailed(job, polls, 'purchase');
+        // the server's "no está armado" etc. keep their own handling upstream
+        return (e.error as Rec).code === 'CINES_PAYMENT_FAILED' || NOT_ARMED.test(String((e.error as Rec).message)) ? e : { error: { ...(e.error as Rec), code: (e.error as Rec).code === 'CINES_UNAVAILABLE' ? 'CINES_PAYMENT_UNKNOWN' : (e.error as Rec).code } };
+      }
       const list = (st.purchases as Rec[] | undefined) ?? [];
       // the server lists the last purchases oldest first: the newest is ours
       const p = list.at(-1);
@@ -446,8 +466,9 @@ export class CinesHub {
    */
   async afterResult(tool: string, input: Rec, given: unknown, ctx: CallContext = {}): Promise<unknown> {
     let result = given;
-    if (tool === HOLD_TOOL && (result as Rec | undefined)?.status === 'in_progress') result = await this.waitForHold(input);
-    else if ((tool === PURCHASE_TOOL || tool === SECURE_TOOL) && (result as Rec | undefined)?.status === 'in_progress') result = await this.waitForPurchase();
+    const jobId = String((result as Rec | undefined)?.jobId ?? '');
+    if (tool === HOLD_TOOL && (result as Rec | undefined)?.status === 'in_progress') result = await this.waitForHold(input, jobId);
+    else if ((tool === PURCHASE_TOOL || tool === SECURE_TOOL) && (result as Rec | undefined)?.status === 'in_progress') result = await this.waitForPurchase(jobId);
     if (tool === PURCHASE_TOOL) {
       const e = (result as Rec | undefined)?.error as Rec | undefined;
       if (e && NOT_ARMED.test(String(e.message ?? ''))) {
