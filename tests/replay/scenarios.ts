@@ -415,6 +415,19 @@ export const SCENARIOS: Scenario[] = [
       ),
   },
   {
+    id: 'cines-hold-slow',
+    // cines-mx-mcp bd1f42f: the hold returns in_progress after 40 s; the hub polls hold_status
+    cines: { holdInProgress: { polls: 2 } },
+    turns: ['aparta el F7 para la función 570-1002 de Dune en el Toreo'],
+    ok: ({ cines, outgoing }) =>
+      both(
+        cines.calls.filter((t) => t === 'cines_hold_seats').length === 1 || 'hold re-called',
+        cines.calls.filter((t) => t === 'cines_hold_status').length >= 2 || 'did not poll',
+        /Apartando en Cinépolis/.test(outgoing) || 'no hold waiting status',
+        cines.actions.some((x) => x.op === 'hold') || 'no hold',
+      ),
+  },
+  {
     id: 'cines-buy',
     cines: { purchaseInputs: ['otp_3ds'] },
     turns: ['aparta y compra F7 y F8 para la función 570-1002 de Dune en el Toreo', { secret: 'Q8Z4K2' }],

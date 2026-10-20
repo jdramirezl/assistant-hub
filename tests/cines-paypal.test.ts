@@ -88,3 +88,43 @@ describe('payment not armed', () => {
     expect(await hub.kv.get('cines:attempt:hold_1')).toBeNull();
   });
 });
+
+describe('a hold that takes > 40 s: in_progress → the hub polls cines_hold_status', () => {
+  it('held: waiting status, then the purchase card from the hold (total from hold-status); hold never re-called', async () => {
+    const { sm, logs } = await buy({ holdInProgress: { polls: 3 }, inProgress: { polls: 1, outcome: 'paid' } });
+    await tg.waitFor(() => status().some((s) => /^✅ 🎟️ Compra confirmada/.test(s)), 10_000);
+    expect(status()).toContain('⏳ Apartando en Cinépolis…');
+    expect(cines.calls.filter((c) => c.tool === 'cines_hold_seats')).toHaveLength(1);
+    expect(logs.join('\n')).toMatch(/hold hold_1 appeared after 3 polls/);
+    // the purchase got the hold's total (from hold-status totalMxn), set by the hub
+    expect(cines.calls.find((c) => c.tool === 'cines_purchase')!.args).toMatchObject({ holdId: 'hold_1', expectedTotal: 99, userApproved: true });
+    expect(tg.calls.some((c) => /Confirmar compra[\s\S]*\$99 MXN/.test(String(c.body.text ?? '').replace(/\\/g, '')))).toBe(true);
+    expect(sm.calls).toHaveLength(4); // no model calls while polling
+  });
+
+  it('a failed hold job: the server error, not retried', async () => {
+    tg = await new MockTelegram().start();
+    closers.push(() => tg.stop());
+    cines = await startFakeCines({ phase3: true, holdInProgress: { polls: 2, failError: 'Cinépolis respondió: la función ya no admite ventas.' } });
+    closers.push(cines.close);
+    const sm = scriptedModel([
+      { tool: 'cines_hold_seats', args: { showtimeId: '570-1002', seats: 'F7' } },
+      (p) => ({ text: /ya no admite ventas/.test(lastToolResult(p)) ? 'No se pudo.' : 'otro' }),
+    ]);
+    const hub: Hub = createHub(testConfig({ TELEGRAM_BOT_TOKEN: '1:abc', TELEGRAM_ALLOWED_USER_IDS: String(ME) }), {
+      model: sm.model as never,
+      cinesPollMs: 20,
+      registry: CINES_REGISTRY(cines.url),
+      telegram: { apiBaseUrl: tg.url, longPolling: { timeout: 0, retryDelayMs: 50 }, log: () => {} },
+    });
+    closers.push(() => hub.stop());
+    await hub.start();
+    tg.push(textUpdate(ME, 'aparta el F7 de la 570-1002'));
+    await tg.waitFor(() => !!findButton(tg, 'tool_approve:'), 10_000);
+    const b = findButton(tg, 'tool_approve:')!;
+    tg.push(callbackUpdate(ME, { message_id: b.messageId }, b.data));
+    await tg.waitFor(() => status().some((s) => /^❌/.test(s)), 10_000);
+    expect(status().at(-1)).toMatch(/^❌ .*Cinépolis respondió: la función ya no admite ventas/);
+    expect(cines.calls.filter((c) => c.tool === 'cines_hold_seats')).toHaveLength(1);
+  });
+});

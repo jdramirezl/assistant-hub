@@ -114,6 +114,8 @@ export interface FakeCinesOptions {
   paymentFails?: boolean;
   /** cines_purchase returns {status:"in_progress"} (PayPal at the Mac); hold_status reports the outcome after N polls. */
   inProgress?: { polls: number; outcome: 'paid' | 'failed' | 'unknown' };
+  /** cines_hold_seats returns in_progress; hold_status shows the hold after N polls (or failError). */
+  holdInProgress?: { polls: number; failError?: string };
   /** Real (non-dryRun) payment armed on the server Mac; default true. false → "no está armado". */
   paymentArmed?: boolean;
   /** Successful purchases already in the server's ledger. */
@@ -311,8 +313,14 @@ export async function startFakeCines(opts: FakeCinesOptions = {}): Promise<FakeC
       const n = h.holdId.replace(/\D/g, '').padStart(3, '0');
       return { status: 'paid', purchaseId: `pur_${n}`, dryRun: a.dryRun || undefined, bookingNumber: a.dryRun ? `DRYRUN-${n}` : `BK${n}`, total: h.totalMxn, currency: 'MXN', totalMxn: h.totalMxn, seats: h.seats, imageUrl: publish() };
     };
+    let pendingHold: { args: Rec; polls: number } | undefined;
+    const holdNow = (a: Rec) => (opts.emailCode ? ask('email_code', 'Escribe el código de 6 dígitos que Cinépolis envió a tu correo.', () => finishHold(a)) : finishHold(a));
     Object.assign(handlers, {
-      cines_hold_seats: (a: Rec) => (opts.emailCode ? ask('email_code', 'Escribe el código de 6 dígitos que Cinépolis envió a tu correo.', () => finishHold(a)) : finishHold(a)),
+      cines_hold_seats: (a: Rec) => {
+        if (!opts.holdInProgress) return holdNow(a);
+        pendingHold = { args: a, polls: 0 };
+        return { status: 'in_progress', jobId: 'job_hold_1', note: 'Sigue en curso; consulta con cines_hold_status.' };
+      },
       cines_release_hold: (a: Rec) => {
         const h = a.holdId ? holds.get(String(a.holdId)) : [...holds.values()].find((x) => x.status === 'held');
         if (!h) return { status: 'none', note: 'No había asientos apartados.' };
@@ -321,6 +329,13 @@ export async function startFakeCines(opts: FakeCinesOptions = {}): Promise<FakeC
         return { status: 'released', holdId: h.holdId, seats: h.seats };
       },
       cines_hold_status: () => {
+        let holdError: unknown;
+        if (pendingHold && ++pendingHold.polls >= opts.holdInProgress!.polls) {
+          const a = pendingHold.args;
+          pendingHold = undefined;
+          if (opts.holdInProgress!.failError) holdError = { code: 'CINES_BAD_REQUEST', message: opts.holdInProgress!.failError };
+          else holdNow(a);
+        }
         // the in-progress purchase settles after N polls
         const last = ledger.at(-1);
         if (last && last.status === 'started' && opts.inProgress && ++polls >= opts.inProgress.polls) {
@@ -334,8 +349,11 @@ export async function startFakeCines(opts: FakeCinesOptions = {}): Promise<FakeC
             state.actions.push({ op: 'purchase', detail: `${h.holdId} $${h.totalMxn}${last.dryRun ? ' dry-run' : ''}` });
           } else state.actions.push({ op: `purchase-${last.status}`, detail: h.holdId });
         }
+        const held = [...holds.values()].find((x) => x.status === 'held');
         return {
-          hold: [...holds.values()].find((x) => x.status === 'held') ?? null,
+          ...(holdError ? { holdError } : {}),
+          // like the server: publicHold (totalMxn, cinemaName, …) + secondsLeft
+          hold: held ? { ...held, secondsLeft: 500 } : null,
           purchases: ledger.slice(-3).map(({ holdId: _h, ...e }) => e),
           successfulPurchases: successes,
           purchaseApprovalRequired: successes < 3,

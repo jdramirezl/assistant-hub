@@ -76,6 +76,10 @@ export interface CinesHubDeps {
   paypalWaitMin?: number;
   /** Poll interval for an in-progress purchase (default 10 s). */
   pollMs?: number;
+  /** In-progress hold: poll interval (default 5 s) and limit (default 3 min). */
+  holdPollMs?: number;
+  holdWaitMs?: number;
+  holdWaitText?: () => string;
   /** "❓ C7 no se puede: …" for an invalid seat pick (persona). */
   seatInvalidText?: (seats: string, reason: string) => string;
   /** "⏳ Esperando que apruebe el pago en PayPal en el Mac…" (persona). */
@@ -351,6 +355,51 @@ export class CinesHub {
   }
 
   /**
+   * cines-mx-mcp returns {status:"in_progress"} for a hold that takes > ~40 s. Poll
+   * cines_hold_status (no model calls, never re-calling the hold) until the hold appears; it is
+   * then handled exactly like a direct "held" result (summary / purchase card).
+   */
+  private async waitForHold(input: Rec): Promise<unknown> {
+    const started = this.now();
+    const limit = this.d.holdWaitMs ?? 3 * 60_000;
+    const every = this.d.holdPollMs ?? 5_000;
+    const sleep = this.d.sleep ?? ((ms: number) => new Promise((r) => setTimeout(r, ms)));
+    const known = new Set(this.holds.keys());
+    const seats = [input.seats ?? []].flat().join(',').toUpperCase().split(/[,\s]+/).filter(Boolean).sort().join(',');
+    this.d.working?.(this.d.holdWaitText?.() ?? '⏳ Apartando en Cinépolis…');
+    this.log(`[cines] hold in progress; polling every ${Math.round(every / 1000)} s for up to ${Math.round(limit / 60_000)} min`);
+    let polls = 0;
+    while (this.now() - started < limit) {
+      await sleep(every);
+      polls++;
+      const st = (await this.d.toolbox.execute(STATUS_TOOL, {}, { raw: true })) as Rec;
+      if (st?.error) continue;
+      const h = st.hold as Rec | null | undefined;
+      const hSeats = [h?.seats ?? []].flat().map(String).map((x) => x.toUpperCase()).sort().join(',');
+      if (h && typeof h.holdId === 'string' && (h.status ?? 'held') === 'held' && (!known.has(h.holdId) || (seats && hSeats === seats))) {
+        this.log(`[cines] hold ${h.holdId} appeared after ${polls} polls`);
+        return {
+          ...h,
+          status: 'held',
+          cinema: h.cinema ?? h.cinemaName,
+          total: typeof h.total === 'number' ? h.total : h.totalMxn,
+          currency: h.currency ?? 'MXN',
+          ...(typeof st.purchaseApprovalRequired === 'boolean' ? { purchaseApprovalRequired: st.purchaseApprovalRequired } : {}),
+        };
+      }
+      // the server reports a failed hold job: show its error, never retry
+      const failure = [st.holdError, st.lastError, (st.job as Rec | undefined)?.error, (st.lastHold as Rec | undefined)?.error].find((x) => x);
+      if (failure) {
+        const f = typeof failure === 'object' ? (failure as Rec) : { message: String(failure) };
+        this.log(`[cines] hold failed after ${polls} polls (not retried)`);
+        return { error: { code: String(f.code ?? 'CINES_BAD_REQUEST'), message: String(f.message ?? failure), retryable: false } };
+      }
+    }
+    this.log(`[cines] hold not confirmed after ${Math.round(limit / 60_000)} min (not retried)`);
+    return { error: { code: 'CINES_UNAVAILABLE', message: 'Cinépolis no confirmó el apartado a tiempo; no lo reintento. Revise en un momento si quedó apartado.', retryable: false } };
+  }
+
+  /**
    * PayPal is approved at the Mac's screen (up to CINES_PAYPAL_WAIT_MIN): the purchase call
    * returned in_progress. Poll cines_hold_status (no model calls, never re-calling
    * cines_purchase) until the newest purchase is paid / failed / unknown, or time runs out.
@@ -397,7 +446,8 @@ export class CinesHub {
    */
   async afterResult(tool: string, input: Rec, given: unknown, ctx: CallContext = {}): Promise<unknown> {
     let result = given;
-    if ((tool === PURCHASE_TOOL || tool === SECURE_TOOL) && (result as Rec | undefined)?.status === 'in_progress') result = await this.waitForPurchase();
+    if (tool === HOLD_TOOL && (result as Rec | undefined)?.status === 'in_progress') result = await this.waitForHold(input);
+    else if ((tool === PURCHASE_TOOL || tool === SECURE_TOOL) && (result as Rec | undefined)?.status === 'in_progress') result = await this.waitForPurchase();
     if (tool === PURCHASE_TOOL) {
       const e = (result as Rec | undefined)?.error as Rec | undefined;
       if (e && NOT_ARMED.test(String(e.message ?? ''))) {

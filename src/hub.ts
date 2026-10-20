@@ -282,6 +282,8 @@ export function createHub(config: HubConfig, deps: HubDeps = {}): Hub {
     dryRun: config.cinesDryRun,
     paypalWaitMin: Number((deps.env ?? process.env).CINES_PAYPAL_WAIT_MIN ?? 15) || 15,
     pollMs: deps.cinesPollMs,
+    holdPollMs: deps.cinesPollMs,
+    holdWaitText: () => (config.persona.language === 'es' ? '⏳ Apartando en Cinépolis…' : '⏳ Holding the seats at Cinépolis…'),
     paypalWaitText: () => msgs.paypalWait(),
     seatInvalidText: (seats, reason) => msgs.seatInvalid(seats, reason),
     working: (text) => usageContext.getStore()?.status?.setActivity(text),
