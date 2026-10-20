@@ -48,7 +48,7 @@ describe('approval cards', () => {
     const { echo, env } = await setup();
     const { hub } = hubFor({ ...env, ITEM: 'a-1' }, echo.url);
     await askDelete(hub, 'a-1');
-    expect(tg.outgoingText(ME)).toMatch(/Requires approval/);
+    expect(tg.outgoingText(ME)).toMatch(/🗑️ Borrar el movimiento|Acción en echo que requiere su aprobación/);
     const btn = findButton(tg, 'tool_approve:')!;
     tg.push(callbackUpdate(ME, { message_id: btn.messageId }, btn.data));
     await tg.waitFor(() => wasDeleted('a-1'));

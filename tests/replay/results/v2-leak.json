@@ -1,0 +1,250 @@
+{
+ "label": "v2-leak",
+ "at": "2026-10-20T16:18:28.565Z",
+ "results": [
+  {
+   "id": "eggs-toast",
+   "calls": 2,
+   "rateLimited": 0,
+   "inputTokens": 13208,
+   "cachedTokens": 4015,
+   "outputTokens": 222,
+   "toolsSentAvg": 22,
+   "systemCharsAvg": 4513,
+   "actions": [
+    "mfp.log Breakfast: Egg, whole, large × 2 [1 large egg] = 144 kcal",
+    "mfp.log Breakfast: Toast, white bread × 1 [1 slice] = 75 kcal"
+   ],
+   "cards": [],
+   "ok": true,
+   "reply": "A la orden, Amo Julián. He registrado los elementos en el desayuno:\n\n- Desayuno: 2 items, 219 kcal (Huevo y Tostada).",
+   "status": "✅ Desayuno: 2 alimentos, 219 kcal",
+   "ms": 48363
+  },
+  {
+   "id": "plan-delete-breakfast",
+   "calls": 4,
+   "rateLimited": 0,
+   "inputTokens": 20294,
+   "cachedTokens": 12047,
+   "outputTokens": 362,
+   "toolsSentAvg": 22,
+   "systemCharsAvg": 4513,
+   "actions": [
+    "mfp.delete Breakfast: Coffee with milk",
+    "mfp.delete Breakfast: Egg, whole, large",
+    "mfp.delete Breakfast: Toast, white bread",
+    "mfp.delete Breakfast: Orange juice"
+   ],
+   "cards": [
+    "plan(4)"
+   ],
+   "ok": true,
+   "reply": "📋 Vaciar 2026-10-20 (desayuno): 4 entradas: ✅ 4/4 ejecutadas",
+   "status": "❓ Esperando su aprobación, Amo Julián.",
+   "ms": 79378
+  },
+  {
+   "id": "clear-readd",
+   "calls": 2,
+   "rateLimited": 0,
+   "inputTokens": 13484,
+   "cachedTokens": 4018,
+   "outputTokens": 461,
+   "toolsSentAvg": 22,
+   "systemCharsAvg": 4513,
+   "actions": [
+    "mfp.delete Breakfast: Coffee with milk",
+    "mfp.delete Breakfast: Egg, whole, large",
+    "mfp.delete Lunch: Rice, white, cooked",
+    "mfp.delete Dinner: Chicken breast, grilled",
+    "mfp.delete Breakfast: Oatmeal, cooked @2026-10-21",
+    "mfp.delete Snacks: Banana, medium @2026-10-21",
+    "mfp.log Breakfast: Egg, whole, large × 2 [1 large egg] = 144 kcal",
+    "mfp.log Breakfast: Arepa, white corn × 1 [1 arepa (100 g)] = 220 kcal"
+   ],
+   "cards": [
+    "plan(6)"
+   ],
+   "ok": true,
+   "reply": "📋 Vaciar 2026-10-20 y 2026-10-21: 6 entradas: ✅ 7/7 ejecutadas",
+   "status": "❓ Esperando su aprobación, Amo Julián.",
+   "ms": 54309
+  },
+  {
+   "id": "what-did-i-eat",
+   "calls": 3,
+   "rateLimited": 0,
+   "inputTokens": 13122,
+   "cachedTokens": 0,
+   "outputTokens": 189,
+   "toolsSentAvg": 22,
+   "systemCharsAvg": 4513,
+   "actions": [],
+   "cards": [],
+   "ok": true,
+   "reply": "Amo Julián, aquí tiene el resumen de su día:\n\n**Desayuno:**\n- Coffee with milk: 60 kcal\n- Egg, whole, large: 144 kcal\n- Toast, white bread: 75 kcal\n- Orange juice: 112 kcal\n\n**Almuerzo:**\n- Rice, white, cooked: 205 kcal\n\n**Total de calorías:** 596 kcal (Meta: 2,200 kcal).",
+   "status": "⏳ Consultando MyFitnessPal…",
+   "ms": 54017
+  },
+  {
+   "id": "correction",
+   "calls": 4,
+   "rateLimited": 0,
+   "inputTokens": 26307,
+   "cachedTokens": 8033,
+   "outputTokens": 305,
+   "toolsSentAvg": 22,
+   "systemCharsAvg": 4513,
+   "actions": [
+    "mfp.log Breakfast: Arepa, white corn × 1 [1 arepa (100 g)] = 220 kcal",
+    "mfp.modify Breakfast: Arepa, white corn → Arepa, white corn × 2 = 440 kcal"
+   ],
+   "cards": [
+    "tool:fitness_modify_food"
+   ],
+   "ok": true,
+   "reply": "Como ordene, Amo Julián. He corregido la cantidad a dos arepas para el desayuno.",
+   "status": "✅ 1 alimento corregido",
+   "ms": 110218
+  },
+  {
+   "id": "over-800",
+   "calls": 3,
+   "rateLimited": 0,
+   "inputTokens": 21062,
+   "cachedTokens": 12055,
+   "outputTokens": 1063,
+   "toolsSentAvg": 22,
+   "systemCharsAvg": 4513,
+   "actions": [
+    "mfp.log Dinner: Lasagna, family tray × 1 [1 tray] = 1700 kcal"
+   ],
+   "cards": [
+    "tool:fitness_log_food"
+   ],
+   "ok": true,
+   "reply": "Amo Julián, es de esperar que el apetito no le juegue una mala pasada.\n\nCena: 1 item, 1,700 kcal.",
+   "status": "✅ Cena: 1 alimento, 1700 kcal",
+   "ms": 70553
+  },
+  {
+   "id": "mixed",
+   "calls": 2,
+   "rateLimited": 0,
+   "inputTokens": 19756,
+   "cachedTokens": 0,
+   "outputTokens": 765,
+   "toolsSentAvg": 35,
+   "systemCharsAvg": 6114,
+   "actions": [
+    "mfp.log Lunch: Arepa, white corn × 1 [1 arepa (100 g)] = 220 kcal",
+    "finance.create EgresoNormal 18000 COP Nequi/Disponible 2026-10-20"
+   ],
+   "cards": [],
+   "ok": true,
+   "reply": "Enseguida, Amo Julián. \n\n- **Almuerzo registrado:** 1 item, 220 kcal (Arepa, white corn).\n- **Gasto registrado:** $18.000 COP en Nequi (Comida).",
+   "status": "✅ Almuerzo: 1 alimento, 220 kcal · 1 gasto, $18.000",
+   "ms": 65806
+  },
+  {
+   "id": "chat",
+   "calls": 2,
+   "rateLimited": 0,
+   "inputTokens": 9369,
+   "cachedTokens": 6030,
+   "outputTokens": 88,
+   "toolsSentAvg": 35,
+   "systemCharsAvg": 6114,
+   "actions": [],
+   "cards": [],
+   "ok": true,
+   "reply": "Muy bien, Amo Julián, a su entera disposición. ¿En qué puedo servirle hoy?",
+   "status": "⏳ Trabajando en ello…",
+   "ms": 39444
+  },
+  {
+   "id": "delete-one",
+   "calls": 3,
+   "rateLimited": 0,
+   "inputTokens": 20031,
+   "cachedTokens": 8028,
+   "outputTokens": 323,
+   "toolsSentAvg": 22,
+   "systemCharsAvg": 4513,
+   "actions": [
+    "mfp.delete Breakfast: Coffee with milk"
+   ],
+   "cards": [
+    "tool:fitness_delete_food",
+    "tool:fitness_delete_food"
+   ],
+   "ok": true,
+   "reply": "A su servicio, Amo Julián. He retirado el café con leche del desayuno.",
+   "status": "✅ 1 alimento borrado",
+   "ms": 94693
+  },
+  {
+   "id": "voice-mixed",
+   "calls": 8,
+   "rateLimited": 0,
+   "inputTokens": 33106,
+   "cachedTokens": 14074,
+   "outputTokens": 1774,
+   "toolsSentAvg": 26,
+   "systemCharsAvg": 4629,
+   "actions": [
+    "finance.create EgresoNormal 18000 COP Nequi/Disponible 2026-10-20",
+    "finance.create EgresoNormal 5000 COP Nequi/Disponible 2026-10-20",
+    "finance.create EgresoNormal 12000 COP Nequi/Disponible 2026-10-20",
+    "mfp.log Lunch: Rice, white, cooked × 1 [1 cup] = 205 kcal"
+   ],
+   "cards": [],
+   "ok": true,
+   "reply": "Con sumo gusto, Amo Julián. Sus gastos (18.000 de almuerzo, 5.000 de café y 12.000 de taxi) han sido registrados en Nequi, al igual que su almuerzo de arroz con pollo (205 kcal).",
+   "status": "✅ Almuerzo: 1 alimento, 205 kcal · 3 gastos, $35.000 · ❓ 1 alimento por confirmar",
+   "ms": 161621
+  },
+  {
+   "id": "expense-partial",
+   "calls": 3,
+   "rateLimited": 0,
+   "inputTokens": 15640,
+   "cachedTokens": 2002,
+   "outputTokens": 2047,
+   "toolsSentAvg": 15,
+   "systemCharsAvg": 4589,
+   "actions": [
+    "finance.create EgresoNormal 18000 COP Nequi/Disponible 2026-10-20",
+    "finance.create EgresoNormal 5000 COP Nequi/Disponible 2026-10-20"
+   ],
+   "cards": [],
+   "ok": true,
+   "reply": "Muy bien, Amo Julián. He registrado el almuerzo y el café, pero la camisa por $262.000 no pudo ser guardada: saldo insuficiente en Nequi.",
+   "status": "⚠️ Guardé 2 de 3 gastos. Falló: Ropa $262.000 — no hay saldo suficiente en ese bolsillo. ¿Lo cargo a otra cuenta o bolsillo?\n<code>VALIDATION_ERROR · req 11438d</code>",
+   "ms": 83873
+  },
+  {
+   "id": "cines-buy",
+   "calls": 4,
+   "rateLimited": 0,
+   "inputTokens": 16792,
+   "cachedTokens": 1999,
+   "outputTokens": 763,
+   "toolsSentAvg": 14,
+   "systemCharsAvg": 4740,
+   "actions": [
+    "cines.hold hold_1 570-1002 F7,F8 $198",
+    "cines.purchase hold_1 $198 dry-run"
+   ],
+   "cards": [
+    "tool:cines_hold_seats",
+    "tool:cines_purchase"
+   ],
+   "ok": true,
+   "reply": "Muy bien, Amo Julián. Sus asientos F7 y F8 para *Dune* en Parque Toreo han quedado adquiridos (simulación). Clave de reserva: **DRYRUN-001** por $198 MXN.",
+   "status": "⏳ Trabajando en ello…",
+   "ms": 126430
+  }
+ ]
+}

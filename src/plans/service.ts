@@ -54,6 +54,8 @@ export interface PlanServiceDeps {
   voice: Voice;
   language: Language;
   allowedUserIds: readonly string[];
+  /** Hub-local tools a plan may contain (e.g. log_meal after a clear_day). */
+  localTools?: Record<string, (args: Record<string, unknown>) => Promise<unknown>>;
   /** Unused: the result message is deterministic (kept for compatibility). */
   summarize?(plan: StoredPlan, results: ActionResult[]): Promise<string | undefined>;
   log?: (m: string) => void;
@@ -115,6 +117,16 @@ export function fallbackSummary(plan: StoredPlan, results: ActionResult[], lang:
   return [
     `📋 ${plan.title}: ${head}`,
     ...results.filter((r) => r.status !== 'ok').map((r) => `${r.status === 'skipped' ? '⏭️' : '❌'} ${r.n}. ${r.summary}${r.error ? ` (${r.error.code}: ${r.error.message})` : ''}`),
+    // a re-add (log_meal) that could not pick a food for some items: say which ones
+    ...results.flatMap((r) => {
+      const res = (r.result ?? {}) as { ambiguous?: { query?: string }[]; failed?: { query?: string }[]; needs_confirmation?: { query?: string }[] };
+      const open = [...(res.ambiguous ?? []), ...(res.needs_confirmation ?? [])].map((x) => x.query).filter(Boolean);
+      const bad = (res.failed ?? []).map((x) => x.query).filter(Boolean);
+      return [
+        ...(open.length ? [`❓ ${es ? 'Sin registrar, dígame la porción' : 'Not logged, tell me the serving'}: ${open.join(', ')}`] : []),
+        ...(bad.length ? [`❌ ${es ? 'No se pudo registrar' : 'Could not log'}: ${bad.join(', ')}`] : []),
+      ];
+    }),
   ].join('\n');
 }
 
@@ -137,10 +149,11 @@ export class PlanService {
   }
 
   /** propose_plan tool body. Returns what the model sees. */
-  async propose(input: PlanInput, meta: { owner: string; threadId?: string }): Promise<unknown> {
+  async propose(input: PlanInput, meta: { owner: string; threadId?: string; trusted?: boolean }): Promise<unknown> {
     const problems = await this.validate(input);
     if (problems.length) return sharedError('PLAN_INVALID', problems.slice(0, 10).join('; '), false);
-    if (usageContext.getStore()?.intent === 'plan') {
+    // hub-built plans (clear_day) come straight from the diary: no completeness check needed
+    if (!meta.trusted && usageContext.getStore()?.intent === 'plan') {
       const missing = await missingFromDeletePlan(input, this.d.toolbox).catch(() => undefined);
       if (missing?.length) {
         this.log(`[plan] incomplete delete-all plan: missing ${missing.length}`);
@@ -157,7 +170,7 @@ export class PlanService {
       await this.d.store.save(old);
       await this.d.presenter.update(old, this.t.superseded);
     }
-    const plan = await this.d.store.create(input, meta);
+    const plan = await this.d.store.create(input, { owner: meta.owner, threadId: meta.threadId });
     plan.messageIds = await this.d.presenter.show(plan);
     await this.d.store.save(plan);
     const total = input.groups.reduce((a, g) => a + g.actions.length, 0);
@@ -226,11 +239,12 @@ export class PlanService {
           results.push({ ...base, status: 'skipped', error: { code: 'SKIPPED', message: 'not run: an earlier action stopped the plan', retryable: true } });
           continue;
         }
-        if (a.tool === PROPOSE_PLAN || !tools[a.tool]) {
+        const local = this.d.localTools?.[a.tool];
+        if (a.tool === PROPOSE_PLAN || (!tools[a.tool] && !local)) {
           results.push({ ...base, status: 'failed', error: { code: 'TOOL_UNAVAILABLE', message: `${a.tool} is not available right now`, retryable: true } });
           continue;
         }
-        const r = await this.d.toolbox.execute(a.tool, structuredClone(a.args));
+        const r = local ? await local(structuredClone(a.args)).catch((e: Error) => sharedError('TOOL_ERROR', e.message, false)) : await this.d.toolbox.execute(a.tool, structuredClone(a.args));
         const error = errorOf(r);
         results.push(error ? { ...base, status: 'failed', error } : { ...base, status: 'ok', result: r });
         if (error && STOP_CODES.has(error.code)) stopped = true;
@@ -255,6 +269,7 @@ export class PlanService {
     actions.forEach((a, i) => {
       if (a.tool === PROPOSE_PLAN) return void problems.push(`action ${i + 1}: a plan cannot contain propose_plan`);
       if (MONEY_TOOLS.has(a.tool) || HUB_ONLY_TOOLS.has(a.tool)) return void problems.push(`action ${i + 1}: ${a.tool} cannot be part of a plan (it has its own approval); call it directly`);
+      if (this.d.localTools?.[a.tool]) return;
       const tool = tools[a.tool];
       if (!tool) return void problems.push(`action ${i + 1}: unknown tool ${a.tool}`);
       const check = tool.inputSchema?.safeParse?.(a.args);

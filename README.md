@@ -106,6 +106,25 @@ Telegram shows ONE message: the plan grouped by section (meal / account), with
 - Backstop: if the model still calls 2+ gated tools in one step, they are not run and it is told to
   use `propose_plan`. A single gated action keeps the normal Approve/Deny card.
 
+## Only the final answer reaches the chat
+
+- Text the model writes in a step that calls tools (Gemini often narrates its plan there) is
+  dropped at the model layer; the live status shows what is happening instead.
+- A final reply that looks like planning (tool names, "Rule check", "Let's call", "the user wants
+  to"…) is retried once with feedback, then the leaking lines are removed.
+- After a plan card is shown, the model's text is dropped: the card is the message.
+- Every approval card is written for the user ("🗑️ Borrar de MyFitnessPal: Egg (desayuno)"),
+  never tool names or raw arguments. The replay fails any scenario whose messages leak.
+
+## Clearing days (`clear_day`)
+
+- "Borra todo el desayuno", "limpia hoy y mañana": the hub-side `clear_day({dates, meals,
+  then_log})` reads each day, builds the deletes itself (one per entry, from the diary) and shows
+  ONE compact card ("• Desayuno 2026-10-20: 4 entradas, 620 kcal"). After ✅ the hub runs every
+  delete in code, then the optional re-add (`then_log`, the same items as `log_meal`), and sends
+  one summary (items it could not log are listed). While the card waits, the status says
+  "❓ Esperando su aprobación"; "Ejecutando N…" only appears after ✅.
+
 ## MyFitnessPal logging quality
 
 - Meals go through the hub-side **`log_meal`** tool: one call with every item (English name, the

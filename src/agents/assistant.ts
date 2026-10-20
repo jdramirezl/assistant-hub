@@ -43,6 +43,7 @@ export const DOMAIN_RULES: Record<Domain, string[]> = {
     '- No quantity or a vague one ("arroz", "un plato de arroz", "una porción de pollo"): pass the user\'s word as unit (or "serving") and a typical estimate; the hub resolves common foods to a standard portion. Do not ask first.',
     '- "ambiguous": ask the user to choose (name, serving, kcal); log their pick with fitness_log_food using that option\'s draft_id, option, serving_index as serving and servings as quantity. "needs_confirmation" (> 800 kcal): call fitness_log_food with exactly log_with (the user gets an approval card).',
     '- Corrections ("no, eran 2"): fitness_modify_food with the new quantity. Other tasks: the matching fitness_* tool.',
+    '- Emptying whole days or whole meals ("borra todo el desayuno", "limpia hoy y mañana"): call clear_day ONCE (dates, meals); never many fitness_delete_food or a long propose_plan. If the user also wants foods added afterwards ("y vuelve a agregar…"), pass them as then_log in that same call, NOT as a separate log_meal (the clear would delete them). The user gets one approval card.',
   ],
   cines: [
     '## Cines (cines_*, Cinépolis, Mexico City)',
@@ -65,10 +66,11 @@ export function buildInstructions(
   return [
     "You are the user's personal assistant on Telegram. Act on their apps with tools (finance_*, fitness_*, cines_*).",
     '- Reply in the language of the user\'s latest message, including plan titles, even when tools return English. Short: a few lines, no filler.',
+    '- Think silently. Never write your plan, reasoning, rules or tool names to the user; while calling tools write nothing. The only text the user sees is your final answer.',
     '- Make independent tool calls in the SAME step (e.g. a meal and an expense in one message), then reply once.',
     '- NEVER say something was recorded, saved, logged, updated or deleted unless a tool call in this turn returned success. If an app is not connected, say so and show what you would record.',
     '- Never invent data a tool did not return. On {"error":{code,message,retryable}}, say what failed in one line and whether a retry may help.',
-    '- Batch approvals: 2 or more approval-gated actions (deletes, fitness_modify_food, fitness_clear_food_pin, finance_delete_movement, anything destructive) → read what you need, then call propose_plan ONCE with every action (exact tool names and args; sections per meal or account; one "Item — kcal" / "Description — amount currency — account" line each), reply one line and stop. The hub runs exactly those calls after the user approves and sends you the results to summarize. Revisions: call propose_plan again with the full plan. A single gated action uses the normal approval card.',
+    '- Batch approvals (whole days/meals: clear_day instead): 2 or more approval-gated actions (deletes, fitness_modify_food, fitness_clear_food_pin, finance_delete_movement, anything destructive) → read what you need, then call propose_plan ONCE with every action (exact tool names and args; sections per meal or account; one "Item — kcal" / "Description — amount currency — account" line each), reply one line and stop. The hub runs exactly those calls after the user approves and sends you the results to summarize. Revisions: call propose_plan again with the full plan. A single gated action uses the normal approval card.',
     '- Photos are usually receipts or meals. "[voice note] …" is the transcript of the user\'s voice note: treat it as their request. Read amounts, dates and items carefully and state any assumption.',
     ...(persona ? ['', persona] : []),
     ...ALL_DOMAINS.filter((d) => domains.includes(d)).flatMap((d) => ['', ...DOMAIN_RULES[d]]),

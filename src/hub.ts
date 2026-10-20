@@ -11,6 +11,7 @@ import { McpToolbox } from './mcp/toolbox.js';
 import { NutritionTracker } from './mcp/nutrition.js';
 import { trimForModel } from './mcp/trim.js';
 import { createLogMeal } from './mcp/log-meal.js';
+import { createClearDay } from './mcp/clear-day.js';
 import { FINANCE_WRITES, FinanceDirectory } from './mcp/finance-cache.js';
 import { ToolCallFilter } from '@mastra/core/processors';
 import { Budget, BudgetGuard } from './budget.js';
@@ -23,6 +24,7 @@ import { formatEstado, recentFailures, recordFailure } from './status/estado.js'
 import { hubVersion } from './version.js';
 import { CinesHub } from './cines/service.js';
 import { cinesApprovalCard } from './cines/card.js';
+import { genericApprovalCard } from './status/approval-card.js';
 import { HUB_ONLY_TOOLS, MONEY_TOOLS, PURCHASE_TOOL } from './cines/contract.js';
 import { withMalformedFallback } from './llm/escalate.js';
 import { createNotifier, type Notify } from './notify.js';
@@ -36,6 +38,7 @@ import { LogPlanPresenter, TelegramPlanPresenter } from './plans/presenter.js';
 import { createProposePlanTool } from './plans/tool.js';
 import { PlanGuard } from './plans/guard.js';
 import { notSavedText, withFalseSaveGuard } from './guards/false-save.js';
+import { withLeakGuard } from './guards/leak.js';
 import { addressOf } from './persona.js';
 import { TelegramApi } from './telegram-api.js';
 import { UsageLog, formatUsageReport, summarize as summarizeUsage } from './telemetry/usage-log.js';
@@ -110,7 +113,7 @@ export function toolsForDomains<T>(tools: Record<string, T>, domains: readonly D
 }
 
 /** Tools that only read (no "✅ done" for them). Everything else from an app is a write. */
-const READ_TOOLS = /^(updateWorkingMemory$|propose_plan$|fitness_(get|search|draft|list|bulk)_|finance_(list|spending|convert|get)_|cines_(list_|listings|find|showtimes|best|upcoming|seat_map|validate|hold_status))/;
+const READ_TOOLS = /^(updateWorkingMemory$|propose_plan$|clear_day$|fitness_(get|search|draft|list|bulk)_|finance_(list|spending|convert|get)_|cines_(list_|listings|find|showtimes|best|upcoming|seat_map|validate|hold_status))/;
 
 /** Finance tools that take accountId + pocketId: the hub fills accountId from the pocket. */
 const POCKET_TOOLS: ReadonlySet<string> = new Set(['finance_create_movement']);
@@ -243,10 +246,19 @@ export function createHub(config: HubConfig, deps: HubDeps = {}): Hub {
     language: config.persona.language,
     allowedUserIds: config.telegram.allowedUserIds,
     log,
+    // a plan may re-add foods after a clear (clear_day then_log)
+    localTools: { log_meal: (args) => (logMeal as unknown as { execute(i: unknown, c: unknown): Promise<unknown> }).execute(args, {}) },
     summarize: (plan, results) =>
       summarizePlan(planResultsPrompt(plan, results), plan.threadId ? { thread: plan.threadId, resource: plan.owner } : undefined),
   });
   const proposePlan = createProposePlanTool(plans);
+  const clearDay = createClearDay({
+    toolbox,
+    propose: (input, meta) => plans.propose(input, meta),
+    today: () => bogotaDay(localNow(), config.timezone),
+    language: config.persona.language,
+    log,
+  });
 
   const usage = new UsageLog(client, deps.now);
   const observe = createUsageObserver(usage, { now: deps.now, primaryModel: 'gemini-3.5-flash-lite', onError: (e) => log(`[usage] ${e.message}`) });
@@ -255,17 +267,17 @@ export function createHub(config: HubConfig, deps: HubDeps = {}): Hub {
   const transcribeModel = deps.transcribeModel ?? gemini?.default;
   const transcribe = transcribeModel ? createTranscriber(transcribeModel, { providerOptions: PROVIDER_OPTIONS.default, log, record: (id, u) => budget.record(id, u) }) : undefined;
   const notSaved = () => notSavedText(config.persona.language, config.persona.persona === 'alfred' ? addressOf(config.persona) : config.persona.ownerName);
-  if (gemini) gemini.default = withFalseSaveGuard(withMalformedFallback(gemini.default, gemini.report, log), notSaved, log);
+  if (gemini) gemini.default = withFalseSaveGuard(withLeakGuard(withMalformedFallback(gemini.default, gemini.report, log), log), notSaved, log);
   const assistant = createAssistantAgent({
     timezone: config.timezone,
-    model: deps.model ? withFalseSaveGuard(withMalformedFallback(deps.model, deps.escalationModel, log), notSaved, log) : modelChain('default', gemini!),
+    model: deps.model ? withFalseSaveGuard(withLeakGuard(withMalformedFallback(deps.model, deps.escalationModel, log), log), notSaved, log) : modelChain('default', gemini!),
     memory,
     persona: config.persona,
     now: localNow,
     tools: async () => {
       const all = Object.fromEntries(Object.entries(await toolbox.getTools()).filter(([n]) => !HUB_ONLY_TOOLS.has(n)));
       const app = toolsForDomains(all, usageContext.getStore()?.domains);
-      return { ...app, ...('fitness_log_food' in app ? { log_meal: logMeal } : {}), propose_plan: proposePlan };
+      return { ...app, ...('fitness_log_food' in app ? { log_meal: logMeal, clear_day: clearDay } : {}), propose_plan: proposePlan };
     },
     extraInstructions: async () => {
       const domains = usageContext.getStore()?.domains;
@@ -328,7 +340,10 @@ export function createHub(config: HubConfig, deps: HubDeps = {}): Hub {
     onPlanAction: (actionId, userId) => plans.handleAction(actionId, userId),
     commands: { usage: () => usageReport(), estado: () => estadoReport() },
     transcribe,
-    approvalCard: (event) => cinesApprovalCard(event, cinesHub, config.persona.language),
+    approvalCard: (event) => {
+      if (event.kind === 'approval') log(`[approval] card: ${event.toolName}`);
+      return cinesApprovalCard(event, cinesHub, config.persona.language) ?? genericApprovalCard(event, config.persona.language, { kcal: (a) => nutrition.estimateLogKcal(a) });
+    },
     secureInput: {
       pending: (chatId) => cinesHub.pending(chatId),
       cancel: (chatId) => cinesHub.cancelSecure(chatId),

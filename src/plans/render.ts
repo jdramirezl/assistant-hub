@@ -20,9 +20,14 @@ export function renderPlan(plan: PlanInput & { id: string }, lang: Language, ttl
   const total = plan.groups.reduce((a, g) => a + g.actions.length, 0);
   const lines = [`📋 ${plan.title}`, `${total} ${total === 1 ? t.action : t.actions}`];
   let n = 0;
-  for (const g of plan.groups) {
-    lines.push('', g.label);
-    for (const a of g.actions) lines.push(`${++n}. ${a.summary}`);
+  if (plan.compact) {
+    lines.push('');
+    for (const g of plan.groups) lines.push(`• ${g.label}: ${g.summary ?? `${g.actions.length} ${g.actions.length === 1 ? t.action : t.actions}`}`);
+  } else {
+    for (const g of plan.groups) {
+      lines.push('', g.label);
+      for (const a of g.actions) lines.push(`${++n}. ${a.summary}`);
+    }
   }
   lines.push('', `⏳ ${t.expires(ttlMinutes)}`);
 

@@ -20,6 +20,7 @@ import { startFinanceReplica, startMasonReplica, type ReplicaState } from './rep
 import { SCENARIOS, type Msg, type Scenario } from './scenarios.js';
 import { devGeminiKey } from '../support/dev-key.js';
 import { startFakeCines } from '../support/fake-cines.js';
+import { leaks } from '../../src/guards/leak.js';
 
 const RESULTS = join(import.meta.dirname, 'results');
 const FIXTURES = join(import.meta.dirname, '..', 'support', 'fixtures');
@@ -92,7 +93,7 @@ async function runScenario(s: Scenario, pacer: ReturnType<typeof pacedFetch>, ap
   const today = bogotaDay(Date.now(), 'America/Bogota');
   const yesterday = bogotaDay(Date.now() - 86_400_000, 'America/Bogota');
   const state: ReplicaState = {
-    diary: structuredClone(s.diary ?? []),
+    diary: structuredClone(s.diary ?? []).map((e) => (e.date === 'TOMORROW' ? { ...e, date: bogotaDay(Date.now() + 86_400_000, 'America/Bogota') } : e)),
     pins: structuredClone(s.pins ?? []),
     actions: [],
     calls: [],
@@ -135,6 +136,7 @@ async function runScenario(s: Scenario, pacer: ReturnType<typeof pacedFetch>, ap
   });
   await hub.start();
   const cards: string[] = [];
+  let toolCardsPressed = 0;
   const pressed = new Set<string>();
 
   /** Wait until the bot is idle: no model call in flight and no Telegram/model activity for 4 s. */
@@ -164,7 +166,9 @@ async function runScenario(s: Scenario, pacer: ReturnType<typeof pacedFetch>, ap
           pressed.add(data);
           const msgId = Number(call.body.message_id ?? (call.result as { message_id?: number } | undefined)?.message_id ?? 0);
           const text = String(call.body.text ?? (call.body.rich_message as { markdown?: string } | undefined)?.markdown ?? '');
-          cards.push(data.includes('plan:a:') ? `plan(${(text.match(/(\d+) (acciones|actions)/) ?? [])[1] ?? '?'})` : `tool:${(text.replace(/\\/g, '').match(/(?:fitness|finance)_\w+|\w+_\w+/) ?? ['?'])[0]}`);
+          // approval cards no longer show tool names: the hub logs which tool each card is for
+          const toolCards = logs.map((l) => l.match(/\[approval\] card: (\w+)/)?.[1]).filter(Boolean);
+          cards.push(data.includes('plan:a:') ? `plan(${(text.match(/(\d+) (acciones|actions|entradas|entries)/) ?? [])[1] ?? '?'})` : `tool:${toolCards[toolCardsPressed++] ?? '?'}`);
           tg.push(callbackUpdate(ME, { message_id: msgId, text }, data));
           found = true;
           await settle();
@@ -221,9 +225,17 @@ async function runScenario(s: Scenario, pacer: ReturnType<typeof pacedFetch>, ap
   };
   const cinesCalls = cines.calls.map((c) => c.tool);
   const photos = tg.sent('sendPhoto').length;
+  // only the final answer reaches the user: no planning, tool names or rules in any message
+  for (const c of tg.calls) {
+    if (!['sendMessage', 'editMessageText', 'sendRichMessage'].includes(c.method)) continue;
+    const t = String((c.body.rich_message as { markdown?: string } | undefined)?.markdown ?? c.body.text ?? '').replace(/\\/g, '');
+    if (leaks(t)) logs.push(`LEAK-PLANNING: ${t.slice(0, 160)}`);
+  }
   // a secret the user typed must never reach Gemini
   for (const t of s.turns) if (typeof t === 'object' && 'secret' in t && pacer.bodies.some((b) => b.includes(t.secret))) logs.push('LEAK: secret sent to Gemini');
-  const verdict = s.ok({ actions: state.actions, state, cards, reply, today, yesterday, cines: { calls: cinesCalls, args: cines.calls, actions: cines.actions, secrets: cines.secrets }, photos, logs, outgoing: tg.outgoingText(ME), status: status.at(-1) ?? '' });
+  const planningLeak = logs.find((l) => l.startsWith('LEAK-PLANNING'));
+  const verdict0 = s.ok({ actions: state.actions, state, cards, reply, today, yesterday, cines: { calls: cinesCalls, args: cines.calls, actions: cines.actions, secrets: cines.secrets }, photos, logs, outgoing: tg.outgoingText(ME), status: status.at(-1) ?? '' });
+  const verdict = planningLeak ? planningLeak : verdict0;
   result.ok = verdict === true ? true : String(verdict);
   if (process.env.REPLAY_DEBUG) console.log(`--- ${s.id} status: ${status.join(' → ')}`);
   if (process.env.REPLAY_DEBUG) console.log(`--- ${s.id} bot said:\n${tg.calls.filter((c) => /send|edit/.test(c.method) && c.method !== 'sendChatAction').map((c) => `  [${c.method}] ${String((c.body.rich_message as { markdown?: string } | undefined)?.markdown ?? c.body.text ?? '').slice(0, 300)}`).join('\n')}\n--- cines calls: ${JSON.stringify(cines.calls)}`);

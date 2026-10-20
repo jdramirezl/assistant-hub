@@ -91,6 +91,34 @@ export const SCENARIOS: Scenario[] = [
       `deletes=${actions.filter((a) => a.op === 'delete').length} cards=${cards.join(',')}`,
   },
   {
+    id: 'clear-readd',
+    // the live request: clear today + tomorrow, then re-add breakfast. ONE approval card, deletes
+    // run by the hub, then the re-add; no planning text in any message (checked for every scenario)
+    diary: [
+      { meal: 'Breakfast', name: 'Coffee with milk', calories: 60 },
+      { meal: 'Breakfast', name: 'Egg, whole, large', calories: 144 },
+      { meal: 'Lunch', name: 'Rice, white, cooked', calories: 205 },
+      { meal: 'Dinner', name: 'Chicken breast, grilled', calories: 284 },
+      { meal: 'Breakfast', name: 'Oatmeal, cooked', calories: 166, date: 'TOMORROW' },
+      { meal: 'Snacks', name: 'Banana, medium', calories: 105, date: 'TOMORROW' },
+    ],
+    turns: ['limpia hoy y mañana en MyFitnessPal, déjalos reiniciados, y vuelve a agregar al desayuno de hoy 2 huevos con una arepa y un melón'],
+    ok: ({ actions, state, cards, today }) => {
+      const deletes = actions.filter((a) => a.op === 'delete');
+      const firstLog = actions.findIndex((a) => a.op === 'log');
+      const lastDelete = actions.map((a) => a.op).lastIndexOf('delete');
+      const todayDiary = state.diary.filter((e) => !e.date || e.date === today);
+      return both(
+        cards.filter((c) => c.startsWith('plan')).length === 1 || `plan cards: ${cards.join(',') || 'none'}`,
+        !cards.some((c) => c.startsWith('tool')) || `tool cards: ${cards.join(',')}`,
+        deletes.length === 6 || `deletes: ${deletes.length}`,
+        firstLog < 0 || firstLog > lastDelete || 're-add ran before the clear',
+        state.diary.every((e) => !e.date || e.date === today) || 'tomorrow not empty',
+        (todayDiary.length >= 2 && todayDiary.every((e) => e.meal === 'Breakfast') && has(actions, /Egg/) && has(actions, /Arepa/)) || `today: ${todayDiary.map((e) => `${e.meal} ${e.name}`).join('; ')}`,
+      );
+    },
+  },
+  {
     id: 'expense-nequi',
     turns: ['gasté 25k en almuerzo con Nequi'],
     ok: ({ actions, today }) => {

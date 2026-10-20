@@ -8,11 +8,15 @@ export interface PlanAction {
 export interface PlanGroup {
   label: string;
   actions: PlanAction[];
+  /** Compact plans: one line for the whole group, e.g. "4 entradas, 620 kcal". */
+  summary?: string;
 }
 
 export interface PlanInput {
   title: string;
   groups: PlanGroup[];
+  /** Show one line per group instead of one per action (hub-built plans: clear_day). */
+  compact?: boolean;
 }
 
 export type PlanStatus = 'pending' | 'editing' | 'running' | 'done' | 'cancelled' | 'superseded' | 'expired' | 'invalid';

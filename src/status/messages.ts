@@ -72,6 +72,9 @@ export class StatusMessages {
     const app = tool.startsWith('fitness_') ? 'MyFitnessPal' : tool.startsWith('finance_') ? (es ? 'sus finanzas' : 'your finances') : tool.startsWith('cines_') ? 'Cinépolis' : '';
     return app ? (es ? `Consultando ${app}…` : `Checking ${app}…`) : es ? 'Trabajando en ello…' : 'Working on it…';
   }
+  awaitingApproval(): StatusText {
+    return { text: this.es ? `❓ Esperando su aprobación${this.addr}.` : `❓ Waiting for your approval${this.addr}.` };
+  }
   /** ONLY for a real Gemini 429. */
   quota(seconds: number): StatusText {
     return { text: this.es ? `⏸️ Gemini me pidió esperar ${seconds} s. Sigo en cuanto pueda.` : `⏸️ Gemini asked me to wait ${seconds} s. I will continue as soon as I can.` };

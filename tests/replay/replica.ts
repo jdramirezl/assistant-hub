@@ -95,6 +95,7 @@ export const FOODS: Record<string, Food[]> = {
   salad: [{ name: 'Green salad', servings: [{ label: '1 cup', kcal: 15 }, { label: '1 bowl', kcal: 35 }] }],
   banana: [{ name: 'Banana, medium', servings: [{ label: '1 medium', kcal: 105 }, { label: '100 g', kcal: 89 }] }],
   oat: [{ name: 'Oatmeal, cooked', servings: [{ label: '1 cup', kcal: 166 }, { label: '100 g', kcal: 71 }] }],
+  melon: [{ name: 'Melon, cantaloupe', servings: [{ label: '1 cup, cubes', kcal: 54 }, { label: '1 melon (552 g)', kcal: 188 }, { label: '1 wedge', kcal: 23 }] }],
   apple: [{ name: 'Apple, medium', servings: [{ label: '1 medium', kcal: 95 }, { label: '100 g', kcal: 52 }] }],
   almond: [{ name: 'Almonds', servings: [{ label: '1 oz (28 g)', kcal: 164 }, { label: '1 handful (28 g)', kcal: 164 }, { label: '100 g', kcal: 579 }] }],
   gum: [{ name: 'Fini watermelon gum candy', servings: [{ label: '1 piece', kcal: 0 }] }],
@@ -109,12 +110,14 @@ export const FOODS: Record<string, Food[]> = {
     { name: 'Chicken sandwich', servings: [{ label: '1 sandwich', kcal: 450 }] },
   ],
 };
-const SYNONYMS: Record<string, string> = { eggs: 'egg', huevo: 'egg', huevos: 'egg', tostada: 'toast', tostadas: 'toast', pan: 'bread', cafe: 'coffee', 'café': 'coffee', arroz: 'rice', pollo: 'chicken', ensalada: 'salad', banano: 'banana', avena: 'oat', oatmeal: 'oat', yogur: 'yogurt', queso: 'cheese', lasana: 'lasagna', 'lasaña': 'lasagna', jugo: 'juice', arepas: 'arepa', manzana: 'apple', almendras: 'almond', almonds: 'almond', chicle: 'gum', candy: 'gum' };
+const SYNONYMS: Record<string, string> = { eggs: 'egg', huevo: 'egg', huevos: 'egg', tostada: 'toast', tostadas: 'toast', pan: 'bread', cafe: 'coffee', 'café': 'coffee', arroz: 'rice', pollo: 'chicken', ensalada: 'salad', banano: 'banana', avena: 'oat', oatmeal: 'oat', yogur: 'yogurt', queso: 'cheese', lasana: 'lasagna', 'lasaña': 'lasagna', jugo: 'juice', arepas: 'arepa', manzana: 'apple', 'melón': 'melon', melones: 'melon', cantaloupe: 'melon', almendras: 'almond', almonds: 'almond', chicle: 'gum', candy: 'gum' };
 
 export interface DiaryEntry {
   meal: string;
   name: string;
   calories: number;
+  /** YYYY-MM-DD; default today. */
+  date?: string;
 }
 
 export interface Action {
@@ -155,8 +158,8 @@ export async function startMasonReplica(state: ReplicaState, today: string) {
   };
   const dayRecord = (day = today) => ({
     day,
-    nutrition: { day, calories: Math.round(state.diary.reduce((a, e) => a + e.calories, 0)), protein: null, carbs: null, fat: null, water_ml: null, weight: null, goal_calories: 2200 },
-    diary: state.diary.map((e) => ({ meal: e.meal, name: e.name, calories: e.calories, protein: null, carbs: null, fat: null })),
+    nutrition: { day, calories: Math.round(state.diary.filter((e) => (e.date ?? today) === day).reduce((a, e) => a + e.calories, 0)), protein: null, carbs: null, fat: null, water_ml: null, weight: null, goal_calories: 2200 },
+    diary: state.diary.filter((e) => (e.date ?? today) === day).map((e) => ({ meal: e.meal, name: e.name, calories: e.calories, protein: null, carbs: null, fat: null })),
     note: null,
     feel: null,
   });
@@ -178,10 +181,11 @@ export async function startMasonReplica(state: ReplicaState, today: string) {
       servings: o.servings.map((s, i) => ({ serving: i, label: s.label, calories: Math.round(s.kcal * d.quantity), protein: null, carbs: null, fat: null, fits_targets: true })),
     })),
   });
-  const logEntry = (name: string, serving: string, kcal: number, quantity: number, meal: string, source: string) => {
-    state.diary.push({ meal, name, calories: Math.round(kcal) });
-    record('log', `${meal}: ${name} × ${quantity} [${serving}] = ${Math.round(kcal)} kcal`);
-    return { ok: true, logged: name, food_id: 'f', weight_id: 'w', serving, quantity, meal: meal.toLowerCase(), date: today, source, day: dayRecord() };
+  const at = (date: string) => (date === today ? '' : ` @${date}`);
+  const logEntry = (name: string, serving: string, kcal: number, quantity: number, meal: string, source: string, date = today) => {
+    state.diary.push({ meal, name, calories: Math.round(kcal), ...(date !== today ? { date } : {}) });
+    record('log', `${meal}: ${name} × ${quantity} [${serving}] = ${Math.round(kcal)} kcal${at(date)}`);
+    return { ok: true, logged: name, food_id: 'f', weight_id: 'w', serving, quantity, meal: meal.toLowerCase(), date, source, day: dayRecord(date) };
   };
 
   const handlers: Record<string, Handler> = {
@@ -210,7 +214,7 @@ export async function startMasonReplica(state: ReplicaState, today: string) {
           state.pins = state.pins.filter((p) => p.query !== d.query);
           state.pins.push({ query: d.query, name: opt.name, serving: s.label, kcalPerServing: s.kcal });
         }
-        return logEntry(opt.name, s.label, s.kcal * q, q, a.meal ? mealOf(a.meal) : d.meal, 'draft');
+        return logEntry(opt.name, s.label, s.kcal * q, q, a.meal ? mealOf(a.meal) : d.meal, 'draft', String(a.date ?? d.day));
       }
       if (a.food_id) {
         const f = Object.values(FOODS).flat().find((x) => x.name === a.food_id);
@@ -239,13 +243,16 @@ export async function startMasonReplica(state: ReplicaState, today: string) {
     fitness_delete_food: (a) => {
       const meal = a.meal ? mealOf(a.meal) : undefined;
       const q = String(a.query).toLowerCase();
-      const matches = state.diary.filter((e) => e.name.toLowerCase().includes(q) && (!meal || e.meal === meal));
-      if (!matches.length) throw new Error(`No entry matching '${a.query}'. Logged: ${state.diary.filter((e) => !meal || e.meal === meal).map((e) => `${e.name} (${e.meal})`).join(', ') || 'nothing'}`);
+      const date = String(a.date ?? today);
+      const inDay = state.diary.filter((e) => (e.date ?? today) === date);
+      const matches = inDay.filter((e) => e.name.toLowerCase().includes(q) && (!meal || e.meal === meal));
+      if (!matches.length) throw new Error(`No entry matching '${a.query}'. Logged: ${inDay.filter((e) => !meal || e.meal === meal).map((e) => `${e.name} (${e.meal})`).join(', ') || 'nothing'}`);
       const exact = matches.filter((e) => e.name.toLowerCase() === q);
-      if (matches.length > 1 && exact.length !== 1) throw new Error(`'${a.query}' matches more than one entry: ${matches.map((e) => `${e.name} (${e.meal})`).join(', ')}; narrow the query`);
+      // like Mason: an exact name match wins (the first one if logged twice)
+      if (matches.length > 1 && exact.length === 0) throw new Error(`'${a.query}' matches more than one entry: ${matches.map((e) => `${e.name} (${e.meal})`).join(', ')}; narrow the query`);
       const entry = exact[0] ?? matches[0]!;
       state.diary.splice(state.diary.indexOf(entry), 1);
-      record('delete', `${entry.meal}: ${entry.name}`);
+      record('delete', `${entry.meal}: ${entry.name}${at(date)}`);
       return { removed: entry.name, meal: entry.meal.toLowerCase() };
     },
     fitness_modify_food: (a) => {

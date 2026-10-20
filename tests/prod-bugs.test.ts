@@ -100,7 +100,7 @@ describe('bugs 2 + 4: the mixed voice note (meal + 3 expenses from a pocket)', (
     const { sm } = await boot([
       { tool: 'finance_create_movement', args: { pocketId: 'pk-unknown', type: 'EgresoNormal', amount: 1000, date: '2026-10-19' } },
       { tool: 'log_meal', args: { items: [{ query: 'egg', quantity: 1, unit: 'unit', kcal_estimate: -5, meal: 'breakfast' }] } },
-      (p) => ({ text: `corrijo: ${lastToolResult(p).slice(0, 120)}` }),
+      () => ({ text: 'corrijo los datos' }),
     ]);
     tg.push(textUpdate(ME, 'gasté 1000 en Nequi y comí un huevo'));
     await tg.waitFor(() => tg.outgoingText(ME).includes('corrijo'), 10_000);

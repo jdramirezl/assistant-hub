@@ -19,7 +19,11 @@ function stable(v: unknown): unknown {
 
 /** Fingerprint of exactly what the user sees and approves (title + every tool, args, summary). */
 export function planHash(plan: PlanInput): string {
-  const body = { title: plan.title, groups: plan.groups.map((g) => ({ label: g.label, actions: g.actions.map((a) => ({ tool: a.tool, args: a.args, summary: a.summary })) })) };
+  const body = {
+    title: plan.title,
+    ...(plan.compact ? { compact: true } : {}),
+    groups: plan.groups.map((g) => ({ label: g.label, ...(g.summary ? { summary: g.summary } : {}), actions: g.actions.map((a) => ({ tool: a.tool, args: a.args, summary: a.summary })) })),
+  };
   return createHash('sha256').update(JSON.stringify(stable(body))).digest('hex');
 }
 
@@ -36,6 +40,7 @@ export class PlanStore {
       id: randomBytes(6).toString('base64url'),
       title: input.title,
       groups: input.groups,
+      ...(input.compact ? { compact: true } : {}),
       hash: planHash(input),
       status: 'pending',
       owner: meta.owner,

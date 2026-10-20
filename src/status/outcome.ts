@@ -95,7 +95,7 @@ export function summarizeOutcome(events: ToolOutcome[], isWrite: (tool: string) 
     }
     const r = (e.result ?? {}) as Rec;
     // not an outcome yet: waiting for a code, still running, or nothing to do
-    if (typeof r.status === 'string' && /^(needs_|waiting|in_progress|secure_input|none$)/.test(r.status)) {
+    if (typeof r.status === 'string' && /^(needs_|waiting|in_progress|secure_input|none$|shown_to_user$|nothing_to_delete$)/.test(r.status)) {
       if (/needs_|waiting|secure_input_busy/.test(r.status)) needInfo.push(lang === 'es' ? '🔒 esperando su código' : '🔒 waiting for your code');
       else if (r.status === 'in_progress') needInfo.push(lang === 'es' ? 'sigue en curso' : 'still running');
       return;

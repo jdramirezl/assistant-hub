@@ -318,7 +318,7 @@ describe('cines through Telegram (fake cines-mx-mcp)', () => {
       { tool: 'cines_hold_seats', args: { showtimeId: '570-1002', seats: 'F7' } },
       (p) => ({ tool: 'cines_purchase', args: { holdId: (JSON.parse(lastToolResult(p)).value ?? JSON.parse(lastToolResult(p))).holdId, expectedTotal: 99 } }),
       { tool: 'cines_purchase', args: { holdId: 'hold_1', expectedTotal: 99 } },
-      (p) => ({ text: `final: ${lastToolResult(p)}` }),
+      (p) => ({ text: `final: ${/never retried/.test(lastToolResult(p)) ? 'never retried' : 'otro'}` }),
     ];
     await boot(script, { phase3: true, paymentFails: true });
     tg.push(textUpdate(ME, 'compra F7 para la de las 20:30'));

@@ -55,6 +55,8 @@ export class StatusTracker {
   private activityText?: string;
   private transcript?: string;
   private runError?: unknown;
+  /** An approval card (or a plan card) is waiting for the user. */
+  private awaiting = false;
   private readonly pending = new Map<string, ToolOutcome>();
   private readonly outcomes: ToolOutcome[] = [];
   private readonly starts = new Map<string, number>();
@@ -110,6 +112,11 @@ export class StatusTracker {
       if (this.messageId !== undefined) void this.show(this.msgs.working(this.activityText));
       return;
     }
+    if (ev.kind === 'approval') {
+      this.awaiting = true;
+      return;
+    }
+    if (ev.kind === 'result' && /"status"\s*:\s*"shown_to_user"/.test(JSON.stringify(ev.result ?? ''))) this.awaiting = true;
     if (ev.kind === 'result' || ev.kind === 'error') {
       const base = this.pending.get(ev.toolCallId) ?? { tool: ev.toolName, args: (ev.args ?? {}) as Record<string, unknown> };
       this.pending.delete(ev.toolCallId);
@@ -133,6 +140,8 @@ export class StatusTracker {
       final = this.msgs.outcome(o, this.d.requestId);
       code = o.kind === 'partial' || o.kind === 'failed' ? o.failures[0]?.why.code : undefined;
     }
+    // waiting for the user's ✅: never "working/executing" before approval
+    if (this.awaiting && (!final || /^⏳/.test(final.text))) final = this.msgs.awaitingApproval();
     if (!final && this.transcript) final = this.msgs.transcribed(this.transcript, true);
     if (final) {
       await this.show(final, true, true);
