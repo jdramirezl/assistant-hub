@@ -86,3 +86,62 @@ export function sanitizeFilters(tool: string, args: Rec, userText: string | unde
   }
   return { args: out, dropped };
 }
+
+const WEEKDAY_WORDS = 'lunes|martes|miercoles|jueves|viernes|sabado|domingo|monday|tuesday|wednesday|thursday|friday|saturday|sunday';
+const RANGE_TOOLS = new Set(['cines_listings', 'cines_showtimes', 'cines_find_movie']);
+
+/**
+ * A date range in the user's words ("hasta el domingo", "este fin de semana", "esta semana",
+ * "los próximos 5 días") → {date, dateTo} (YYYY-MM-DD), or undefined.
+ */
+export function rangeFromText(text: string | undefined, timezone: string, now: number): { date: string; dateTo: string } | undefined {
+  const t = norm(text ?? '');
+  const today_ = today(timezone, now);
+  const until = t.match(new RegExp(`\\bhasta (?:el |la |este |el proximo )?(${WEEKDAY_WORDS}|pasado manana|manana)\\b`));
+  if (until) {
+    const to = resolveRelativeDate(until[1]!, timezone, now);
+    if (to) return { date: today_.ymd, dateTo: to };
+  }
+  if (/\b(fin de semana|finde|weekend)\b/.test(t)) {
+    const sat = today_.dow === 0 ? today_.ymd : addDays(today_.ymd, (6 - today_.dow + 7) % 7);
+    return { date: sat, dateTo: today_.dow === 0 ? today_.ymd : addDays(sat, 1) };
+  }
+  if (/\b(esta semana|this week)\b/.test(t)) return { date: today_.ymd, dateTo: addDays(today_.ymd, (7 - today_.dow) % 7) };
+  const n = t.match(/\b(?:los )?proximos (\d{1,2}) dias\b|\bnext (\d{1,2}) days\b/);
+  if (n) {
+    const days = Math.min(21, Number(n[1] ?? n[2]));
+    if (days > 1) return { date: today_.ymd, dateTo: addDays(today_.ymd, days - 1) };
+  }
+  return undefined;
+}
+
+/**
+ * Range arguments (cines-mx-mcp 6d7c617: dateTo/days): dateTo words resolved and checked like
+ * `date`; a range the user asked for but the model left out is added; a range listing covers all
+ * cinemas unless the user named some.
+ */
+export function sanitizeRange(tool: string, args: Rec, userText: string | undefined, timezone: string, now: number): { args: Rec; changes: string[]; error?: string } {
+  if (!RANGE_TOOLS.has(tool)) return { args, changes: [] };
+  const out = { ...args };
+  const changes: string[] = [];
+  if (out.dateTo !== undefined) {
+    const d = checkDate(out.dateTo, timezone, now);
+    if (d && 'error' in d) return { args, changes, error: `dateTo: ${d.error}` };
+    if (d) out.dateTo = d.date;
+  }
+  const asked = rangeFromText(userText, timezone, now);
+  if (asked && out.dateTo === undefined && out.days === undefined) {
+    const start = typeof out.date === 'string' ? checkDate(out.date, timezone, now) : undefined;
+    const startYmd = start && 'date' in start ? start.date : (out.date as string | undefined);
+    if (!startYmd || startYmd === today(timezone, now).ymd || startYmd === asked.date) {
+      out.date = asked.date;
+      out.dateTo = asked.dateTo;
+      changes.push(`dateTo=${asked.dateTo} (the user asked for a range)`);
+    }
+  }
+  if (tool === 'cines_listings' && out.dateTo !== undefined && out.dateTo !== out.date && out.cinema !== undefined && !namedCinemas(userText).length) {
+    changes.push(`cinema=${String(out.cinema)} dropped (a range covers all cinemas)`);
+    delete out.cinema;
+  }
+  return { args: out, changes };
+}

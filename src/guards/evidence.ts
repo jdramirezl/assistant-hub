@@ -28,7 +28,10 @@ const SEAT = /\b[A-N]\d{1,2}\b/;
 const UNAVAILABLE = /(no (?:est[aá]|se encuentra|queda|aparece) (?:disponible|libre)|ocupad[oa]s?|no disponible|ya (?:est[aá] )?vendid|not available|unavailable|taken|already sold)/i;
 const ONLY = /(\b(?:s[oó]lo|solamente|[uú]nicamente)\b[^.\n]{0,40}\b(?:doblad|subtitulad|en espa[nñ]ol|en ingl[eé]s)|\bonly\b[^.\n]{0,30}\b(?:dubbed|subtitled|in spanish)|\bno hay funciones?\b|\bno (?:la )?(?:pasan|dan|tienen|hay)\b[^.\n]{0,40}\b(?:subtitulad|doblad|en (?:el |la )?(?:toreo|miyana|carso|sat[eé]lite)))/i;
 
-export type Claim = 'seat' | 'only' | 'listing';
+/** "No está en cartelera": only from cines_find_movie found:false (6d7c617), citing what was searched. */
+const NOT_SHOWING = /(\bno (?:est[aá]|se encuentra|aparece|figura)[^.\n]{0,25}\ben (?:la )?cartelera|\bno (?:la|lo) (?:est[aá]n )?(?:dando|pasando|proyectando|exhibiendo)\b|\bya no (?:la|lo) (?:pasan|dan|tienen)\b|\bnot (?:showing|playing|in theaters)\b)/i;
+
+export type Claim = 'seat' | 'only' | 'listing' | 'not_showing';
 /** 3+ distinct clock times: a showtime listing (must come from a cines tool in this turn). */
 const listingLike = (text: string) => new Set(text.match(/\b(?:[01]?\d|2[0-3])[:.][0-5]\d\b/g) ?? []).size >= 3;
 export function claimsOf(text: string, opts: { cines?: boolean } = {}): Claim[] {
@@ -36,7 +39,8 @@ export function claimsOf(text: string, opts: { cines?: boolean } = {}): Claim[] 
   if (opts.cines && listingLike(text)) out.push('listing');
   const sentences = text.split(/(?<=[.!?\n])\s+/);
   if (sentences.some((s) => SEAT.test(s) && UNAVAILABLE.test(s))) out.push('seat');
-  if (ONLY.test(text)) out.push('only');
+  if (NOT_SHOWING.test(text)) out.push('not_showing');
+  else if (ONLY.test(text)) out.push('only');
   return out;
 }
 
@@ -53,8 +57,18 @@ function resultsThisTurn(prompt: Msg[]): { tool: string; json: string }[] {
   return out;
 }
 
-export function hasEvidence(claim: Claim, prompt: Msg[]): boolean {
+/** A found:false whose searched range the reply names (its last day or publishedThrough). */
+function citesMiss(rs: { tool: string; json: string }[], text: string): boolean {
+  return rs.some((r) => {
+    if (r.tool !== 'cines_find_movie' || !/"found":false/.test(r.json)) return false;
+    const days = [...r.json.matchAll(/"(?:to|publishedThrough)":"(\d{4})-(\d{2})-(\d{2})"/g)];
+    return days.some((d) => text.includes(`${d[1]}-${d[2]}-${d[3]}`) || new RegExp(`\\b0?${Number(d[3])}\\b`).test(text));
+  });
+}
+
+export function hasEvidence(claim: Claim, prompt: Msg[], text = ''): boolean {
   const rs = resultsThisTurn(prompt);
+  if (claim === 'not_showing') return citesMiss(rs, text);
   // a hub seat-pick check rides in the user turn itself
   const lastUser = [...prompt].reverse().find((m) => m.role === 'user');
   if (claim === 'listing') return rs.some((r) => r.tool.startsWith('cines_'));
@@ -65,12 +79,13 @@ export function hasEvidence(claim: Claim, prompt: Msg[]): boolean {
 const FEEDBACK: Record<Claim, string> = {
   listing: 'you listed showtimes, but no cines tool was called in this turn: those times are invented. Call the right cines_* tool (cines_listings for a cinema, cines_showtimes / cines_best_showtime for a movie) and answer only from its result',
   seat: 'you said a seat is unavailable/taken, but no seat check in this turn shows it. Call cines_validate_seats with the showtimeId of the seat map the user saw and their seats, then answer from its result',
+  not_showing: 'you said the movie is not showing, but only a cines_find_movie result with found:false in this turn can show that, and the reply must name what was searched. Call cines_find_movie {movie, altTitles: [its English / original / Spanish titles]} (e.g. ["Your Name","Kimi no Na wa","Tu Nombre"]); if it is found, say where and from which date; if found is false, say it does not appear between searched.from and searched.to at those cinemas (Cinépolis has published through publishedThrough)',
   only: 'you said only one version exists (or none) at a cinema, but no unfiltered listing in this turn shows it. Call cines_showtimes {movie, date, cinema} (no window/vip/format filters) for the cinemas in question, then say what exists there',
 };
 const strip = (text: string, claims: Claim[]) =>
   text
     .split(/(?<=[.!?])\s+/)
-    .filter((s) => !(claims.includes('listing') && listingLike(s)) && !(claims.includes('seat') && SEAT.test(s) && UNAVAILABLE.test(s)) && !(claims.includes('only') && ONLY.test(s)))
+    .filter((s) => !(claims.includes('listing') && listingLike(s)) && !(claims.includes('seat') && SEAT.test(s) && UNAVAILABLE.test(s)) && !(claims.includes('only') && ONLY.test(s)) && !(claims.includes('not_showing') && NOT_SHOWING.test(s)))
     .join(' ')
     .trim();
 
@@ -106,7 +121,7 @@ export function withEvidenceGuard(model: unknown, log: (m: string) => void = () 
     const prompt = ((options as { prompt?: Msg[] }).prompt ?? []) as Msg[];
     if (hasToolCall(parts)) return { ...first, stream: replay(parts) };
     const cinesTurn = cinesActive();
-    const missing = claimsOf(textOf(parts), { cines: cinesTurn }).filter((c) => !hasEvidence(c, prompt));
+    const missing = claimsOf(textOf(parts), { cines: cinesTurn }).filter((c) => !hasEvidence(c, prompt, textOf(parts)));
     if (!missing.length) return { ...first, stream: replay(parts) };
     log(`[guard] reply claims ${missing.join(' + ')} availability without evidence; retrying once with feedback`);
     markTiming('guard-evidence');
@@ -114,7 +129,7 @@ export function withEvidenceGuard(model: unknown, log: (m: string) => void = () 
     const retry = await m.doStream({ ...(options as object), prompt: [...prompt, { role: 'user', content: [{ type: 'text', text: fb }] }] });
     const again = await drain(retry.stream);
     if (hasToolCall(again)) return { ...retry, stream: replay(again) };
-    const still = claimsOf(textOf(again), { cines: cinesTurn }).filter((c) => !hasEvidence(c, prompt));
+    const still = claimsOf(textOf(again), { cines: cinesTurn }).filter((c) => !hasEvidence(c, prompt, textOf(again)));
     if (!still.length) return { ...retry, stream: replay(again) };
     log('[guard] still an unverified availability claim; removed it');
     return { ...retry, stream: replay(withText(again, strip(textOf(again), still))) };

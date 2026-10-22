@@ -19,7 +19,7 @@ import { createGeminiModels, modelChain, PROVIDER_OPTIONS } from './models.js';
 import type { Pacer } from './llm/pacer.js';
 import { createTranscriber } from './voice/transcribe.js';
 import { mealHint } from './meal.js';
-import { checkDate, sanitizeFilters } from './cines/args.js';
+import { checkDate, sanitizeFilters, sanitizeRange } from './cines/args.js';
 import { withEvidenceGuard } from './guards/evidence.js';
 import { StatusMessages, toPlain } from './status/messages.js';
 import { appName, appOfTool, errorOf, explain } from './status/errors.js';
@@ -242,6 +242,13 @@ export function createHub(config: HubConfig, deps: HubDeps = {}): Hub {
             return invalid(d.error);
           }
           if (d) input = { ...input, date: d.date };
+          const r = sanitizeRange(tool, input, usageContext.getStore()?.text, config.timezone, localNow());
+          if (r.error) {
+            log(`[cines] refused dateTo ${String(input.dateTo)} for ${tool}`);
+            return invalid(r.error);
+          }
+          if (r.changes.length) log(`[cines] ${tool}: ${r.changes.join('; ')}`);
+          input = r.args;
           const f = sanitizeFilters(tool, input, usageContext.getStore()?.text);
           if (f.dropped.length) log(`[cines] ${tool}: dropped filters the user did not ask for (${f.dropped.join(', ')})`);
           input = f.args;

@@ -20,18 +20,28 @@
  },
  {
   "name": "cines_listings",
-  "title": "Listings for a cinema and date",
-  "description": "Movies and showtimes at one or more of the user's cinemas for a date. `cinema` accepts names like 'toreo', 'toreo vip', 'miyana'. `date` accepts YYYY-MM-DD, 'hoy', 'ma\u00f1ana' or a weekday. Languages: SUB=subtitulada, ESP=doblada.",
+  "title": "Listings for cinemas and a date or date range",
+  "description": "Movies and showtimes at the user's cinemas for a date, or for a date range ('\u00bfqu\u00e9 hay hasta el domingo?' \u2192 date:'hoy', dateTo:'domingo'). `cinema` accepts names like 'toreo', 'toreo vip', 'miyana' or 'todos'; default: the home cinema for one day, ALL the user's cinemas for a range. One day returns times; a range returns one line per movie (dates, cinemas, languages) \u2014 call again with one cinema and date for times. Languages: SUB=subtitulada, ESP=doblada.",
   "inputSchema": {
    "type": "object",
    "properties": {
     "cinema": {
-     "description": "Cinema name or id; default: home cinema (Parque Toreo)",
+     "description": "Cinema name(s) or id(s), or 'todos'; default: home cinema (one day) / all cinemas (range)",
      "type": "string"
     },
     "date": {
-     "description": "YYYY-MM-DD, hoy, ma\u00f1ana, or weekday; default today",
+     "description": "YYYY-MM-DD, hoy, ma\u00f1ana, or weekday; default today (start of the range)",
      "type": "string"
+    },
+    "dateTo": {
+     "description": "Last date of a range (YYYY-MM-DD, ma\u00f1ana, weekday, e.g. 'domingo' for 'hasta el domingo')",
+     "type": "string"
+    },
+    "days": {
+     "description": "Range length in days starting at `date` (alternative to dateTo)",
+     "type": "integer",
+     "minimum": 1,
+     "maximum": 21
     }
    },
    "$schema": "http://json-schema.org/draft-07/schema#"
@@ -48,14 +58,40 @@
  },
  {
   "name": "cines_find_movie",
-  "title": "Which of my cinemas show a movie",
-  "description": "Find a movie by (partial) title and list which of the user's cinemas show it and on which dates.",
+  "title": "Where and when my cinemas show a movie",
+  "description": "Find a movie by title (Spanish, English or original; partial, accents and '(TBC)'-style suffixes ignored) across ALL the user's cinemas over a date range (default today + 7 days, extended to the furthest date Cin\u00e9polis has published, max 21). Returns each cinema with its first date and all dates. Pass `altTitles` with other names you know for it. If `found` is false, the result says exactly which range and cinemas were searched: never claim it is not showing outside that range.",
   "inputSchema": {
    "type": "object",
    "properties": {
     "movie": {
      "type": "string",
      "description": "Movie title, partial title, or id"
+    },
+    "altTitles": {
+     "description": "Other titles the user may mean (English/original/Japanese/Spanish), e.g. ['Your Name','Kimi no Na wa']",
+     "maxItems": 5,
+     "type": "array",
+     "items": {
+      "type": "string"
+     }
+    },
+    "cinema": {
+     "description": "Restrict to these cinemas; default all of the user's cinemas",
+     "type": "string"
+    },
+    "date": {
+     "description": "Range start; default today",
+     "type": "string"
+    },
+    "dateTo": {
+     "description": "Last date of a range (YYYY-MM-DD, ma\u00f1ana, weekday, e.g. 'domingo' for 'hasta el domingo')",
+     "type": "string"
+    },
+    "days": {
+     "description": "Range length in days starting at `date` (alternative to dateTo)",
+     "type": "integer",
+     "minimum": 1,
+     "maximum": 21
     }
    },
    "required": [
@@ -76,19 +112,38 @@
  {
   "name": "cines_showtimes",
   "title": "Showtimes for a movie",
-  "description": "All upcoming showtimes for a movie at the user's cinemas (or the given ones), optionally for one date, language or format. Use cines_best_showtime to recommend one.",
+  "description": "All upcoming showtimes for a movie at the user's cinemas (or the given ones), optionally for one date or a range (date + dateTo/days), language or format. Use cines_best_showtime to recommend one.",
   "inputSchema": {
    "type": "object",
    "properties": {
     "movie": {
      "type": "string"
     },
+    "altTitles": {
+     "description": "Other titles the user may mean (English/original/Japanese/Spanish), e.g. ['Your Name','Kimi no Na wa']",
+     "maxItems": 5,
+     "type": "array",
+     "items": {
+      "type": "string"
+     }
+    },
     "cinema": {
      "description": "Name(s) or id(s), comma separated; default all of the user's cinemas",
      "type": "string"
     },
     "date": {
+     "description": "One date, or the start of a range with dateTo/days; default: all published dates",
      "type": "string"
+    },
+    "dateTo": {
+     "description": "Last date of a range (YYYY-MM-DD, ma\u00f1ana, weekday, e.g. 'domingo' for 'hasta el domingo')",
+     "type": "string"
+    },
+    "days": {
+     "description": "Range length in days starting at `date` (alternative to dateTo)",
+     "type": "integer",
+     "minimum": 1,
+     "maximum": 21
     },
     "language": {
      "type": "string",
@@ -127,6 +182,14 @@
    "properties": {
     "movie": {
      "type": "string"
+    },
+    "altTitles": {
+     "description": "Other titles the user may mean (English/original/Japanese/Spanish), e.g. ['Your Name','Kimi no Na wa']",
+     "maxItems": 5,
+     "type": "array",
+     "items": {
+      "type": "string"
+     }
     },
     "date": {
      "description": "YYYY-MM-DD, hoy, ma\u00f1ana or weekday; default today",

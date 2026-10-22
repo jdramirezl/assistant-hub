@@ -113,7 +113,8 @@ describe('bug 3: an invented showtimeId on the hold', () => {
 
 describe('bug 4: a failed tool carries its real cause for the model', () => {
   it('the error result has user_message; the prompt tells the model not to invent another', async () => {
-    const { sm } = await boot([{ tool: 'cines_find_movie', args: { movie: 'Pelicula Inexistente' } }, { text: 'No la encontré.' }]);
+    // (cines_find_movie answers found:false since 6d7c617; cines_showtimes still errors)
+    const { sm } = await boot([{ tool: 'cines_showtimes', args: { movie: 'Pelicula Inexistente' } }, { text: 'No la encontré.' }]);
     tg.push(textUpdate(ME, '¿dónde pasan Pelicula Inexistente?'));
     await tg.waitFor(() => allText().includes('No la encontré'), 10_000);
     expect(JSON.stringify(sm.calls[1]!.prompt)).toMatch(/user_message.*no encontré esa película, cine o función/);

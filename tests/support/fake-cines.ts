@@ -57,6 +57,8 @@ export const MOVIES = [
   { id: 'm-dune3', title: 'Dune: Mesías', rating: 'B', minutes: 165 },
   { id: 'm-coco2', title: 'Coco 2', rating: 'A', minutes: 105 },
   { id: 'm-clayface', title: 'Clayface', rating: 'B15', minutes: 118 },
+  // the live miss (2026-10-21): only on the billboard from tomorrow, under its Spanish title
+  { id: 'm-tu-nombre', title: 'Tu Nombre', originalTitle: 'Kimi no Na wa', aka: ['your name'], rating: 'A', minutes: 106 },
 ];
 /** showtimeId → showtime. All "today" in the fake. */
 export const SHOWTIMES = [
@@ -77,7 +79,11 @@ export const SHOWTIMES = [
   { id: '572-2404', movieId: 'm-clayface', cinemaId: 'miyana', time: '20:30', language: 'SUB', format: 'VIP', priceMxn: 260 },
   { id: '419-48705', movieId: 'm-clayface', cinemaId: 'carso', time: '19:00', language: 'SUB', format: '2D', priceMxn: 95 },
   { id: '419-48706', movieId: 'm-clayface', cinemaId: 'carso', time: '21:30', language: 'SUB', format: '2D', priceMxn: 95 },
-];
+  // tomorrow only (day 1): not in today's listings
+  { id: '570-3001', movieId: 'm-tu-nombre', cinemaId: 'toreo', time: '18:00', language: 'SUB', format: '2D', priceMxn: 92, day: 1 },
+  { id: '573-3002', movieId: 'm-tu-nombre', cinemaId: 'toreo-vip', time: '20:10', language: 'SUB', format: 'VIP', priceMxn: 240, day: 1 },
+  { id: '572-3003', movieId: 'm-coco2', cinemaId: 'miyana', time: '13:00', language: 'ESP', format: 'VIP', priceMxn: 260, day: 3 },
+] as { id: string; movieId: string; cinemaId: string; time: string; language: string; format: string; priceMxn: number; day?: number }[];
 const cinemaById = (id: string) => CINEMAS.find((c) => c.id === id)!;
 /** The filters cines_showtimes / cines_best_showtime apply, like the real server. */
 function filtered(movieId: string, a: Rec, opts: { window?: boolean } = {}) {
@@ -154,9 +160,20 @@ const cinemaOf = (q: unknown) => {
   const n = norm(String(q ?? 'toreo'));
   return CINEMAS.find((c) => c.id === n || norm(c.name).includes(n) || n.includes(c.id));
 };
-const movieOf = (q: unknown) => {
-  const n = norm(String(q ?? ''));
-  return MOVIES.find((m) => m.id === n || norm(m.title).includes(n) || n.includes(norm(m.title).split(':')[0]!));
+/** Like cines-mx-mcp 6d7c617: title, original title or a known alias; "A - B" tries both parts. */
+const movieOf = (q: unknown, alt: unknown = []) => {
+  const queries = [String(q ?? ''), ...(Array.isArray(alt) ? alt.map(String) : [])].flatMap((x) => x.split(/\s+[-–|/]\s+/)).map(norm).filter(Boolean);
+  const names = (m: (typeof MOVIES)[number]) => [m.title, (m as { originalTitle?: string }).originalTitle, ...((m as { aka?: string[] }).aka ?? [])].filter(Boolean).map((x) => norm(x!));
+  return MOVIES.find((m) => queries.some((n) => m.id === n || names(m).some((t) => t.includes(n) || n.includes(t.split(':')[0]!))));
+};
+/** Local (America/Bogota, like the hub's default timezone) date, `offset` days from today. */
+const dayOf = (offset = 0) => new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Bogota' }).format(Date.now() + offset * 86_400_000);
+/** "domingo" / "hoy" / YYYY-MM-DD → a day offset from today (the hub resolves words first). */
+const offsetOf = (v: unknown) => {
+  if (v === undefined || v === null || v === '' || v === 'hoy') return 0;
+  if (v === 'mañana') return 1;
+  const m = String(v).match(/^\d{4}-\d{2}-\d{2}$/);
+  return m ? Math.round((Date.parse(`${v}T12:00:00Z`) - Date.parse(`${dayOf(0)}T12:00:00Z`)) / 86_400_000) : 0;
 };
 const compact = (s: (typeof SHOWTIMES)[number]) => ({
   showtimeId: s.id,
@@ -191,9 +208,27 @@ export async function startFakeCines(opts: FakeCinesOptions = {}): Promise<FakeC
   const handlers: Record<string, (a: Rec) => unknown> = {
     cines_list_cinemas: () => ({ cinemas: CINEMAS.map((c) => ({ id: c.id, name: c.name, distanceKm: c.distanceKm, vip: c.vip, available: true })) }),
     cines_listings: (a) => {
+      const from = offsetOf(a.date);
+      const to = a.dateTo ? offsetOf(a.dateTo) : a.days ? from + Number(a.days) - 1 : from;
+      if (to > from) {
+        // a range: all cinemas by default, one line per movie (like the real server)
+        const cs = a.cinema && a.cinema !== 'todos' ? [cinemaOf(a.cinema)].filter(Boolean).map((c) => c!.id) : CINEMAS.map((c) => c.id);
+        const st = SHOWTIMES.filter((s) => cs.includes(s.cinemaId) && (s.day ?? 0) >= from && (s.day ?? 0) <= to);
+        return {
+          date: dayOf(from),
+          dateTo: dayOf(to),
+          cinemas: cs.map((id) => cinemaById(id).name),
+          publishedThrough: dayOf(3),
+          movies: MOVIES.filter((m) => st.some((s) => s.movieId === m.id)).map((m) => {
+            const list = st.filter((s) => s.movieId === m.id);
+            const dates = [...new Set(list.map((s) => dayOf(s.day ?? 0)))].sort();
+            return { id: m.id, title: m.title, firstDate: dates[0], dates, cinemas: [...new Set(list.map((s) => cinemaById(s.cinemaId).name))], languages: [...new Set(list.map((s) => s.language))], showtimes: list.length };
+          }),
+        };
+      }
       const c = cinemaOf(a.cinema);
       if (!c) return err('CINES_NOT_FOUND', `No conozco el cine "${a.cinema}".`);
-      const st = SHOWTIMES.filter((s) => s.cinemaId === c.id);
+      const st = SHOWTIMES.filter((s) => s.cinemaId === c.id && (s.day ?? 0) === from);
       return {
         date: 'hoy',
         cinemas: [c.name],
@@ -206,13 +241,21 @@ export async function startFakeCines(opts: FakeCinesOptions = {}): Promise<FakeC
       };
     },
     cines_find_movie: (a) => {
-      const m = movieOf(a.movie);
-      if (!m) return err('CINES_NOT_FOUND', `No encontré "${a.movie}" en cartelera.`);
-      const cs = [...new Set(SHOWTIMES.filter((s) => s.movieId === m.id).map((s) => s.cinemaId))];
-      return { movie: { id: m.id, title: m.title }, cinemas: cs.map((id) => ({ cinema: CINEMAS.find((c) => c.id === id)!.name, dates: ['hoy', 'mañana'] })) };
+      const searched = { from: dayOf(0), to: dayOf(7), cinemas: CINEMAS.map((c) => c.name), publishedThrough: dayOf(3) };
+      const m = movieOf(a.movie, a.altTitles);
+      if (!m) {
+        return { found: false, query: a.movie, searched, closest: [], note: `No aparece en la cartelera publicada de ${searched.cinemas.join(', ')} entre ${searched.from} y ${searched.to} (Cinépolis ha publicado hasta ${searched.publishedThrough}). Puede estrenarse después o con otro título; no digas que no está en cartelera fuera de ese rango.` };
+      }
+      const list = SHOWTIMES.filter((s) => s.movieId === m.id);
+      const cs = [...new Set(list.map((s) => s.cinemaId))];
+      const cinemas = cs.map((id) => {
+        const dates = [...new Set(list.filter((s) => s.cinemaId === id).map((s) => dayOf(s.day ?? 0)))].sort();
+        return { cinema: cinemaById(id).name, firstDate: dates[0], dates, languages: [...new Set(list.filter((s) => s.cinemaId === id).map((s) => s.language))] };
+      });
+      return { found: true, movie: { id: m.id, title: m.title, original: (m as { originalTitle?: string }).originalTitle }, firstDate: cinemas.map((c) => c.firstDate).sort()[0], cinemas, searched };
     },
     cines_showtimes: (a) => {
-      const m = movieOf(a.movie);
+      const m = movieOf(a.movie, a.altTitles);
       if (!m) return err('CINES_NOT_FOUND', `No encontré "${a.movie}".`);
       const st = filtered(m.id, a);
       return { movie: { id: m.id, title: m.title }, count: st.length, showtimes: st.map(compact) };
