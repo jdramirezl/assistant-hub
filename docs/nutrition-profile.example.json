@@ -1,0 +1,47 @@
+{
+  "version": 1,
+  "_comment": "GENERIC EXAMPLE. The real profile is private health data: keep it outside git (e.g. ~/.config/assistant-hub/nutrition/profile.json, mode 0600) and point NUTRITION_PROFILE_PATH at it.",
+  "targets": {
+    "rest": { "kcal": [2000, 2000] },
+    "gimnasia": { "kcal": [2100, 2150] },
+    "pesas": { "kcal": [2050, 2100] },
+    "protein": [120, 140]
+  },
+  "schedule": { "mon": "gimnasia", "wed": "gimnasia", "sat": "gimnasia", "sun": "pesas" },
+  "defaults": {
+    "drinks": { "breakfast": "water enhancer", "other": "diet cola" },
+    "spray": "cooking spray"
+  },
+  "foods": [
+    { "name": "huevos", "aliases": ["huevo", "egg", "eggs", "large egg", "large eggs", "whole egg", "whole eggs"], "query": "Eggs", "unit": "unit", "kcal": 72, "protein": 6.3, "spray": true },
+    { "name": "cooking spray", "aliases": ["spray", "aceite en spray", "aceite", "oil spray", "vegetable oil", "oil", "pumps"], "query": "Cooking spray", "unit": "spray", "kcal": 2.4, "default_quantity": 5, "only_unit": true },
+    { "name": "arepa", "aliases": ["arepas", "arepa de maiz", "corn arepa", "white corn arepa"], "query": "Harina PAN", "unit": "unit", "per_unit": { "quantity": 40, "unit": "g" }, "per_gram": 0.3333, "kcal": 149, "protein": 3, "spray": true },
+    { "name": "water enhancer", "aliases": ["clight", "agua con clight", "water enhancer"], "query": "Clight", "unit": "unit", "kcal": 5, "drink": true },
+    { "name": "diet cola", "aliases": ["coca cola zero", "coca-cola zero", "coke zero", "coca zero", "diet coke", "diet cola"], "query": "Coca-Cola Zero", "unit": "unit", "kcal": 0, "drink": true },
+    { "name": "whey", "aliases": ["scoop de whey", "whey protein", "proteina en polvo", "protein powder"], "query": "Whey protein", "unit": "scoop", "kcal": 120, "protein": 24 },
+    { "name": "Cornetto Chocolate", "aliases": ["cornetto", "cornetto chocolate", "ice cream cone"], "query": "Cornetto Chocolate", "unit": "unit", "kcal": 208, "protein": 2 }
+  ],
+  "recipes": [
+    {
+      "name": "sopa de pollo",
+      "aliases": ["sopa", "chicken soup", "soup", "caldo de pollo"],
+      "portion": "1 plato (~450 g)",
+      "items": [
+        { "query": "Chicken breast, raw", "quantity": 120, "unit": "g", "kcal": 144, "protein": 27 },
+        { "query": "Potato, raw", "quantity": 150, "unit": "g", "kcal": 115, "protein": 3 },
+        { "query": "Carrot, raw", "quantity": 75, "unit": "g", "kcal": 31, "protein": 1 },
+        { "query": "Onion, raw", "quantity": 50, "unit": "g", "kcal": 20, "protein": 1 }
+      ]
+    }
+  ],
+  "context": {
+    "preferences": "Example: simple meals, few ingredients, repeat breakfasts.",
+    "dislikes": "Example: no seafood.",
+    "meal_prep": "Example: two meal-prep families per week.",
+    "backups": "Example: frozen pizza as a backup dinner.",
+    "schedule": "Example: training Mon/Wed 5–8 pm.",
+    "weight": "Example: look at 2–3 week trends, never one weigh-in.",
+    "events": "Example: a competition date.",
+    "cinema_snacks": "Example: prefer gum and diet soda at the cinema."
+  }
+}

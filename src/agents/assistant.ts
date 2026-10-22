@@ -106,6 +106,11 @@ export interface AssistantOptions {
   memory?: MastraMemory;
   /** Model config (hub passes the Gemini chain; tests pass a mock). */
   model: unknown;
+  /**
+   * Stable per-domain additions after the domain rules (nutrition style, the user's food
+   * dictionary): part of the cacheable prefix; changes only when the user's data does.
+   */
+  domainPrompt?: (domains: readonly Domain[]) => string | Promise<string>;
   /** Extra, per-request lines appended to the instructions (e.g. which apps are down). */
   extraInstructions?: () => string | Promise<string>;
   /** Processors that run in both the input and output phases (e.g. the budget guard). */
@@ -128,6 +133,10 @@ export function createAssistantAgent(opts: AssistantOptions): Agent {
     instructions: async () =>
       [
         buildInstructions(opts.timezone, new Date(), { persona: opts.persona, domains: usageContext.getStore()?.domains }),
+        ...(await (async () => {
+          const extra = await opts.domainPrompt?.(usageContext.getStore()?.domains ?? ALL_DOMAINS);
+          return extra ? ['', extra] : [];
+        })()),
         '',
         dynamicContext(opts.timezone, new Date(opts.now?.() ?? Date.now()), (await opts.extraInstructions?.()) ?? '', usageContext.getStore()?.language),
       ].join('\n'),

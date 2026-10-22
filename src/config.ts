@@ -63,6 +63,8 @@ const EnvSchema = z.object({
   DAILY_TOKEN_CAP: positiveNumber('DAILY_TOKEN_CAP'),
   DAILY_COST_CAP_USD: positiveNumber('DAILY_COST_CAP_USD'),
   MCP_REGISTRY_PATH: optionalValue.refine((v) => v === undefined || isAbsolute(v), 'MCP_REGISTRY_PATH must be an absolute path'),
+  /** Private nutrition profile (health data, outside git, mode 0600). Optional: features off without it. */
+  NUTRITION_PROFILE_PATH: optionalValue.transform((v) => (v?.startsWith('~/') ? join(homedir(), v.slice(2)) : v)).refine((v) => v === undefined || isAbsolute(v), 'NUTRITION_PROFILE_PATH must be an absolute path'),
 });
 
 export interface HubConfig {
@@ -85,6 +87,8 @@ export interface HubConfig {
   cinesDryRun: boolean;
   budget: { dailyTokenCap: number; dailyCostCapUsd: number };
   mcpRegistryPath: string;
+  /** NUTRITION_PROFILE_PATH: the private nutrition profile (undefined = nutrition brain off). */
+  nutritionProfilePath?: string;
 }
 
 /**
@@ -157,5 +161,6 @@ export function loadConfig(env: Record<string, string | undefined> = process.env
       dailyCostCapUsd: e.DAILY_COST_CAP_USD ?? 1,
     },
     mcpRegistryPath: e.MCP_REGISTRY_PATH ?? findUp('mcp-servers.json') ?? join(process.cwd(), 'mcp-servers.json'),
+    nutritionProfilePath: e.NUTRITION_PROFILE_PATH,
   };
 }

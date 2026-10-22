@@ -43,6 +43,13 @@ import { createProposePlanTool } from './plans/tool.js';
 import { PlanGuard } from './plans/guard.js';
 import { notSavedText, withFalseSaveGuard } from './guards/false-save.js';
 import { withLeakGuard } from './guards/leak.js';
+import { withAddressFix } from './guards/address.js';
+import { loadProfile } from './nutrition/profile.js';
+import { FoodBook } from './nutrition/book.js';
+import { DayPlanner, dayTypeFromText, targetsNote, type CalendarDayType } from './nutrition/day.js';
+import { contextFor } from './nutrition/context.js';
+import { DECOMPOSITION, STYLE_RULES, dictionaryPrompt } from './nutrition/prompt.js';
+import { createSaveFood, createSetDayType } from './nutrition/tools.js';
 import { addressOf } from './persona.js';
 import { TelegramApi } from './telegram-api.js';
 import { UsageLog, formatUsageReport, summarize as summarizeUsage } from './telemetry/usage-log.js';
@@ -87,6 +94,8 @@ export interface HubDeps {
   debug?: { allowWrites(): boolean };
   /** Gemini HTTP fetch (replay/tests): wrapped by the rate limiter and usage observer. */
   geminiFetch?: typeof fetch;
+  /** Hook for a future Calendar MCP: is a date a training day? (told by the user wins). */
+  calendarDayType?: CalendarDayType;
 }
 
 export interface Hub {
@@ -136,10 +145,10 @@ export function toolsForDomains<T>(tools: Record<string, T>, domains: readonly D
 }
 
 /** Tools that only read (no "✅ done" for them). Everything else from an app is a write. */
-const READ_TOOLS = /^(updateWorkingMemory$|propose_plan$|clear_day$|fitness_(get|search|draft|list|bulk)_|finance_(list|spending|convert|get)_|cines_(list_|listings|find|showtimes|best|upcoming|seat_map|validate|hold_status))/;
+const READ_TOOLS = /^(updateWorkingMemory$|propose_plan$|clear_day$|save_food$|set_day_type$|fitness_(get|search|draft|list|bulk)_|finance_(list|spending|convert|get)_|cines_(list_|listings|find|showtimes|best|upcoming|seat_map|validate|hold_status))/;
 
 /** Tools the hub itself provides to the agent. */
-const LOCAL_TOOLS: ReadonlySet<string> = new Set(['log_meal', 'clear_day', 'propose_plan', 'updateWorkingMemory', 'request_secure_input']);
+const LOCAL_TOOLS: ReadonlySet<string> = new Set(['log_meal', 'clear_day', 'propose_plan', 'updateWorkingMemory', 'request_secure_input', 'save_food', 'set_day_type']);
 
 /** An argument the model left as a placeholder ("...", "<showtimeId>", "xxx"): the field name, or undefined. */
 export function placeholderArg(args: Record<string, unknown>): string | undefined {
@@ -318,9 +327,16 @@ export function createHub(config: HubConfig, deps: HubDeps = {}): Hub {
   const isWrite = (tool: string) => tool === 'log_meal' || (!READ_TOOLS.test(tool) && !/workingmemory/i.test(tool) && toolbox.annotationsFor(tool)?.readOnlyHint !== true);
   const financeDir: FinanceDirectory = new FinanceDirectory(toolbox, { now: deps.now, timezone: config.timezone, available: async () => (await toolbox.getTools(), toolbox.status().finance?.state === 'up') });
   const localNow = deps.localNow ?? deps.now ?? Date.now;
+  // nutrition brain: private profile (never logged), dictionary + recipes, day targets
+  const profile = loadProfile(config.nutritionProfilePath, log);
+  const book = new FoodBook(profile, kv);
+  const planner = profile ? new DayPlanner(profile, kv, { calendar: deps.calendarDayType }) : undefined;
+  const today = () => bogotaDay(localNow(), config.timezone);
   const logMeal = createLogMeal(toolbox, log, {
     mealHint: (date) => mealHint(usageContext.getStore()?.text, { date, timezone: config.timezone, now: localNow() }),
+    ...(profile ? { nutrition: { book, planner, defaults: profile.defaults, userText: () => usageContext.getStore()?.text, today } } : {}),
   });
+  const nutritionTools: Record<string, ReturnType<typeof createSaveFood> | ReturnType<typeof createSetDayType>> = profile && planner ? { save_food: createSaveFood(book, log), set_day_type: createSetDayType(planner, today) } : {};
   const planStore = new PlanStore(kv, deps.now);
   const presenter = config.telegram.enabled
     ? new TelegramPlanPresenter(
@@ -374,22 +390,34 @@ export function createHub(config: HubConfig, deps: HubDeps = {}): Hub {
   const transcribeModel = deps.transcribeModel ?? gemini?.default;
   const transcribe = transcribeModel ? createTranscriber(transcribeModel, { providerOptions: PROVIDER_OPTIONS.default, log, record: (id, u) => budget.record(id, u) }) : undefined;
   const notSaved = () => notSavedText(config.persona.language, config.persona.persona === 'alfred' ? addressOf(config.persona) : config.persona.ownerName);
-  if (gemini) gemini.default = withFalseSaveGuard(withEvidenceGuard(withLeakGuard(withMalformedFallback(gemini.default, gemini.report, log), log), log), notSaved, log);
+  const address = addressOf(config.persona);
+  const fixAddress = (m: unknown) => (config.persona.persona === 'alfred' ? withAddressFix(m, address, log) : m);
+  if (gemini) gemini.default = fixAddress(withFalseSaveGuard(withEvidenceGuard(withLeakGuard(withMalformedFallback(gemini.default, gemini.report, log), log), log), notSaved, log)) as typeof gemini.default;
   const assistant = createAssistantAgent({
     timezone: config.timezone,
-    model: deps.model ? withFalseSaveGuard(withEvidenceGuard(withLeakGuard(withMalformedFallback(deps.model, deps.escalationModel, log), log), log), notSaved, log) : modelChain('default', gemini!),
+    model: deps.model ? fixAddress(withFalseSaveGuard(withEvidenceGuard(withLeakGuard(withMalformedFallback(deps.model, deps.escalationModel, log), log), log), notSaved, log)) : modelChain('default', gemini!),
     memory,
     persona: config.persona,
     now: localNow,
     tools: async () => {
       const all = Object.fromEntries(Object.entries(await toolbox.getTools()).filter(([n]) => !HUB_ONLY_TOOLS.has(n)));
       const app = toolsForDomains(all, usageContext.getStore()?.domains);
-      return { ...app, ...('fitness_log_food' in app ? { log_meal: logMeal, clear_day: clearDay } : {}), propose_plan: proposePlan };
+      return { ...app, ...('fitness_log_food' in app ? { log_meal: logMeal, clear_day: clearDay, ...nutritionTools } : {}), propose_plan: proposePlan };
     },
+    // nutrition style + decomposition rules + the user's dictionary: stable, with the fitness rules
+    domainPrompt: async (domains) => (profile && domains.includes('fitness') ? [...STYLE_RULES, '', ...DECOMPOSITION, '', await dictionaryPrompt(book)].join('\n') : ''),
     extraInstructions: async () => {
-      const domains = usageContext.getStore()?.domains;
+      const store = usageContext.getStore();
+      const domains = store?.domains;
       const fin = !domains || domains.includes('finance') ? await financeDir.prompt().catch(() => '') : '';
-      return [toolbox.statusNote(), fin].filter(Boolean).join('\n');
+      let food = '';
+      if (profile && planner && (!domains || domains.includes('fitness'))) {
+        // "hoy tengo gimnasia" / "hoy no entreno": remembered for today without a tool call
+        const said = dayTypeFromText(store?.text);
+        if (said) await planner.set(today(), said);
+        food = [await targetsNote(planner, profile, today()).catch(() => ''), contextFor(profile, store?.text)].filter(Boolean).join('\n');
+      }
+      return [toolbox.statusNote(), fin, food].filter(Boolean).join('\n');
     },
     guards: [guard],
     // Older turns keep their text but drop tool calls/results; the current run keeps all of them.
