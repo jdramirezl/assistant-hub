@@ -163,6 +163,34 @@ Telegram shows ONE message: the plan grouped by section (meal / account), with
 - Each log result carries `entry_kcal` and `meal_total`, so the agent reports e.g.
   "Breakfast logged: 3 items, 420 kcal".
 
+## Nutrition brain (`src/nutrition/`)
+
+Driven by a **private profile** (`NUTRITION_PROFILE_PATH`, e.g. `~/.config/assistant-hub/nutrition/profile.json`,
+mode 0600, outside git). It is health data: the repo has only the schema (`src/nutrition/profile.ts`) and a
+generic example (`docs/nutrition-profile.example.json`, also used by the replay); the hub logs only counts.
+Without a profile none of this is active.
+
+- **Classifier in `log_meal`**, per item: saved recipe → dictionary food → brand/chain → known dish → whole dish → plain.
+  - **Saved recipes** ("cené sopa") expand in code into their ingredients (one MFP entry each).
+  - **Dictionary foods** log with their known MFP query, unit and kcal (an arepa of 120 g masa = 40 g Harina PAN;
+    spray = pumps, never tbsp of oil). A food logged on 3 different days is proposed once (`save_food`);
+    one-off foods are only counted. Learned foods live in the hub database (backed up with it).
+  - **Branded / chain items** (Big Mac, McDonald's fries, Hershey's, Cornetto, Wingstop, Subway…) are ONE entry of that
+    brand, never decomposed; a chain item MFP lacks falls back to components (`not_in_mfp`, the user is told).
+  - **Known street/home dishes** (burrito/tacos al pastor, bandeja paisa; `src/nutrition/dishes.ts`) become their
+    components, also when the user named the dish and the model listed the parts itself; parts named twice
+    ("con papa y queso") are not logged twice. Any other unbranded whole dish is sent back to be decomposed
+    (unless MFP has a verified branded entry with a fixed serving).
+  - **Implied extras:** cooking spray for home-cooked foods; the profile's 0-kcal drink when a breakfast/lunch/dinner
+    names none (`assumed`, one line to the user).
+  - The 800 kcal guard and the 2× check apply to each component and to a dish/recipe total per portion.
+- **Day targets** by day type (rest / gimnasia / pesas): what the user said ("hoy tengo gimnasia", or `set_day_type`)
+  > a calendar hook (`calendarDayType`, for a future Calendar MCP) > the weekly schedule (a hint: Alfred asks lightly).
+  `log_meal` returns `day_total` (kcal, protein vs target).
+- **Prompt:** style + decomposition rules and the dictionary list go with the fitness rules (cacheable prefix);
+  today's targets go in the `## Now` tail; long-context sections only for planning/advice questions ("¿qué ceno?",
+  meal prep, progress…).
+
 ## Voice notes
 
 - A voice note is transcribed by the hub first (one flash-lite call, kind `transcribe` in `llm_calls`,
@@ -203,6 +231,10 @@ Telegram shows ONE message: the plan grouped by section (meal / account), with
   filters the user did not ask for are dropped (never `vip:"exclude"` with Miyana). When the user
   names cinemas, a best_showtime result also gets every unfiltered showtime there
   (`at_named_cinemas`).
+- **Finding a movie / ranges (cines-mx-mcp 6d7c617):** `cines_find_movie` gets `altTitles`; "no está en cartelera"
+  needs its `found:false` in the same turn and must name the range searched (else one retry, then removed).
+  "Hasta el domingo", "este fin de semana", "esta semana": the hub adds `dateTo` if the model left it out, and a
+  range listing covers all cinemas unless the user named some.
 - **No unverified availability:** "C7 no está disponible", "solo la hay doblada" or a list of
   showtimes need a matching cines result in the same turn; otherwise one retry with feedback,
   then the claim is removed.

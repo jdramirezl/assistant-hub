@@ -40,3 +40,11 @@ describe('"no está en cartelera" needs a found:false that it cites', () => {
     expect(hasEvidence('not_showing', [{ role: 'user', content: 'x' }], text)).toBe(false);
   });
 });
+
+describe('routing the live questions', () => {
+  it('"¿dónde están dando Your Name…?" and "¿qué películas hay hasta el domingo?" are cines', async () => {
+    const { domainsFor } = await import('../src/telemetry/intent.js');
+    expect(domainsFor('¿dónde están dando Your Name - Kimi no Na wa?')).toEqual(['cines']);
+    expect(domainsFor('¿qué películas hay hasta el domingo?')).toEqual(['cines']);
+  });
+});

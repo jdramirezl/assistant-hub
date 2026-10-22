@@ -7,6 +7,7 @@ describe('standard portions', () => {
   });
   it.each([
     ['rice', 1, 'plate', { quantity: 1.5, unit: 'cup' }],
+    ['honeydew melon', 1, 'unit', { quantity: 1, unit: 'cup' }], // "un melón" with breakfast: a cup, not the whole fruit
     ['white rice', 2, 'serving', { quantity: 2, unit: 'cup' }],
     ['rice', 1, '', { quantity: 1, unit: 'cup' }],
     ['chicken breast', 1, 'portion', { quantity: 1, unit: 'breast' }],

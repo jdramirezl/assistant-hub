@@ -5,7 +5,7 @@ import { normalizeUnit, standardPortion } from './common-foods.js';
 import type { FoodBook } from '../nutrition/book.js';
 import type { DayPlanner } from '../nutrition/day.js';
 import type { Food, Profile } from '../nutrition/profile.js';
-import { isCompositeDish, matchDish } from '../nutrition/dishes.js';
+import { dishKcal, isCompositeDish, matchDish, portionsInText, repeatsComponent, type Dish } from '../nutrition/dishes.js';
 import { brandOf, optionIsBrand, type Brand } from '../nutrition/brands.js';
 
 /**
@@ -211,10 +211,33 @@ export function createLogMeal(toolbox: MealToolbox, log: (m: string) => void = (
   const nut = opts.nutrition?.book.enabled ? opts.nutrition : undefined;
 
   /** Classify each item: recipe, dictionary food, brand (one entry), known dish (components), whole dish, plain. */
-  async function plan(items: Item[]): Promise<Planned[]> {
-    if (!nut) return items.map((item) => ({ item, source: 'model' as const }));
+  /**
+   * The user named a known dish but the model listed its parts itself (often without the
+   * cooking fat, with its own portions): use the dish's components instead.
+   */
+  function ownDish(items: Item[]): Item[] {
+    const text = nut!.userText() ?? '';
+    const d = matchDish(text);
+    if (!d || items.some((i) => matchDish(i.query))) return items;
+    const parts = items.filter((i) => repeatsComponent(d, i.query));
+    if (parts.length < 2) return items;
+    const portions = portionsInText(d, text) ?? 1;
+    log(`[log_meal] the user said "${d.name}": ${parts.length} parts the model listed → the dish's components × ${portions}`);
+    return [{ query: d.name, quantity: portions, unit: 'serving', kcal_estimate: Math.round(dishKcal(d) * portions), meal: parts[0]!.meal }, ...items.filter((i) => !parts.includes(i))];
+  }
+
+  async function plan(given: Item[]): Promise<Planned[]> {
+    if (!nut) return given.map((item) => ({ item, source: 'model' as const }));
+    const items = ownDish(given);
     const planned: Planned[] = [];
+    // a known dish in the message: its parts the user also named ("con papa y queso") are in it
+    const dishes = items.map((i) => ({ meal: i.meal, dish: matchDish(i.query) })).filter((x): x is { meal: Item['meal']; dish: Dish } => !!x.dish);
     for (const item of items) {
+      const of = !matchDish(item.query) && dishes.find((x) => x.meal === item.meal && repeatsComponent(x.dish, item.query));
+      if (of) {
+        log(`[log_meal] "${item.query}" is already part of ${of.dish.name}: not logged twice`);
+        continue;
+      }
       const unit = normalizeUnit(item.unit);
       const recipe = VAGUE_UNITS.has(unit) || /^(recipe|receta)$/.test(unit) ? await nut.book.recipe(item.query) : undefined;
       if (recipe) {

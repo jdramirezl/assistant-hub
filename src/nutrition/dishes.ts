@@ -15,6 +15,8 @@ export interface DishComponent {
   protein?: number;
   /** What the user sees ("tortilla de harina grande"). */
   label: string;
+  /** The same part named by the user or the model ("papa", "cheese"): not logged twice. */
+  key?: RegExp;
 }
 
 export interface Dish {
@@ -29,12 +31,12 @@ export const DISHES: Dish[] = [
     name: 'burrito de pastor',
     aliases: ['burrito al pastor', 'burrito de pastor', 'pastor burrito', 'al pastor burrito', 'burrito pastor'],
     components: [
-      { label: 'tortilla de harina grande', query: 'Flour tortilla, burrito size', quantity: 1, unit: 'unit', kcal: 220, protein: 6 },
-      { label: 'carne al pastor', query: 'Al pastor pork', quantity: 90, unit: 'g', kcal: 190, protein: 15 },
-      { label: 'papa', query: 'Potato, fried cubes', quantity: 60, unit: 'g', kcal: 90, protein: 1 },
-      { label: 'queso', query: 'Oaxaca cheese', quantity: 25, unit: 'g', kcal: 80, protein: 6 },
-      { label: 'cebolla', query: 'Onion, raw', quantity: 20, unit: 'g', kcal: 8 },
-      { label: 'grasa de plancha', query: 'Vegetable oil', quantity: 1, unit: 'tsp', kcal: 40 },
+      { label: 'tortilla de harina grande', query: 'Flour tortilla, burrito size', quantity: 1, unit: 'unit', kcal: 220, protein: 6 , key: /\b(tortillas?)\b/ },
+      { label: 'carne al pastor', query: 'Al pastor pork', quantity: 90, unit: 'g', kcal: 190, protein: 15 , key: /\b(pastor|pork|cerdo)\b/ },
+      { label: 'papa', query: 'Potato, fried cubes', quantity: 60, unit: 'g', kcal: 90, protein: 1 , key: /\b(potato(es)?|papas?)\b/ },
+      { label: 'queso', query: 'Oaxaca cheese', quantity: 25, unit: 'g', kcal: 80, protein: 6 , key: /\b(cheese|queso|oaxaca|mozzarella)\b/ },
+      { label: 'cebolla', query: 'Onion, raw', quantity: 20, unit: 'g', kcal: 8 , key: /\b(onions?|cebollas?)\b/ },
+      { label: 'grasa de plancha', query: 'Vegetable oil', quantity: 1, unit: 'tsp', kcal: 40 , key: /\b(oil|aceite|grasa)\b/ },
     ],
   },
   {
@@ -65,11 +67,32 @@ export const DISHES: Dish[] = [
   },
 ];
 
-const words = (s: string) => normFood(s).split(' ').filter(Boolean);
+/** Words with plurals folded ("burritos" → "burrito"), so the user's own text matches too. */
+const words = (s: string) => normFood(s).split(' ').filter(Boolean).map((w) => (w.length > 3 && w.endsWith('s') ? w.slice(0, -1) : w));
+
+const NUMBERS: Record<string, number> = { un: 1, una: 1, uno: 1, a: 1, one: 1, dos: 2, two: 2, tres: 3, three: 3, cuatro: 4, four: 4, cinco: 5, five: 5, medio: 0.5, media: 0.5 };
+/** "2 burritos de pastor", "dos tacos al pastor" → 2; undefined when no count is said. */
+export function portionsInText(d: Dish, text: string): number | undefined {
+  const t = normFood(text).split(' ');
+  const head = words(d.aliases[0]!)[0]!; // "burrito", "taco", "bandeja"
+  for (let i = 1; i < t.length; i++) {
+    const w = t[i]!.length > 3 && t[i]!.endsWith('s') ? t[i]!.slice(0, -1) : t[i]!;
+    if (w !== head) continue;
+    const n = /^\d+([.,]\d+)?$/.test(t[i - 1]!) ? Number(t[i - 1]!.replace(',', '.')) : NUMBERS[t[i - 1]!];
+    if (n) return n;
+  }
+  return undefined;
+}
 
 export function matchDish(query: string): Dish | undefined {
   const q = new Set(words(query));
   return DISHES.find((d) => d.aliases.some((a) => words(a).every((w) => q.has(w))));
+}
+
+/** A model item that repeats a part of this dish ("burrito… con papa y queso" → papa, queso). */
+export function repeatsComponent(d: Dish, query: string): boolean {
+  const q = normFood(query);
+  return d.components.some((c) => c.key?.test(q));
 }
 
 export const dishKcal = (d: Dish) => d.components.reduce((a, c) => a + c.kcal, 0);

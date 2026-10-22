@@ -105,6 +105,29 @@ describe('log_meal with the nutrition brain', () => {
     expect(s.mfp.logs()[0]!.args.quantity).toBe(2); // 2 tortillas
   });
 
+  it('parts the user named next to a known dish are not logged twice ("burritos de pastor con papa y queso")', async () => {
+    const s = setup({ text: 'almorcé 2 burritos de pastor con papa y queso' });
+    const r = await s.run([
+      { query: 'burrito al pastor', quantity: 2, unit: 'serving', kcal_estimate: 1150, meal: 'lunch' },
+      { query: 'potato', quantity: 150, unit: 'g', kcal_estimate: 115, meal: 'lunch' },
+      { query: 'Oaxaca cheese', quantity: 50, unit: 'g', kcal_estimate: 160, meal: 'lunch' },
+    ]);
+    expect(names(r).filter((n) => /Potato/.test(n))).toEqual(['Potato, fried cubes']);
+    expect(names(r).filter((n) => /cheese/i.test(n))).toEqual(['Oaxaca cheese']);
+  });
+
+  it('the model listed the parts of a dish the user named: the dish\'s components are used (with the cooking fat)', async () => {
+    const s = setup({ text: 'almorcé 2 burritos de pastor con papa y queso' });
+    const r = await s.run([
+      { query: 'flour tortilla', quantity: 2, unit: 'unit', kcal_estimate: 400, meal: 'lunch' },
+      { query: 'al pastor pork', quantity: 200, unit: 'g', kcal_estimate: 420, meal: 'lunch' },
+      { query: 'potato', quantity: 100, unit: 'g', kcal_estimate: 80, meal: 'lunch' },
+      { query: 'mozzarella cheese', quantity: 60, unit: 'g', kcal_estimate: 180, meal: 'lunch' },
+    ]);
+    expect(names(r)).toEqual(['Flour tortilla, burrito size', 'Al pastor pork', 'Potato, fried cubes', 'Oaxaca cheese', 'Onion, raw', 'Vegetable oil', 'Coca-Cola Zero']);
+    expect(r.dishes).toMatchObject([{ name: 'burrito de pastor', portions: 2 }]);
+  });
+
   it('"cené sopa": the saved recipe expands into its ingredients', async () => {
     const s = setup({ text: 'cené sopa' });
     const r = await s.run([{ query: 'chicken soup', quantity: 1, unit: 'serving', kcal_estimate: 300, meal: 'dinner' }]);

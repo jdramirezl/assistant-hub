@@ -18,12 +18,16 @@ export interface Scenario {
   financeReject?: RegExp;
   /** Per-server MCP timeout for the fake cines (default from mcp-servers.json). */
   cinesTimeoutMs?: number;
+  /** Hub kv seeds (e.g. nutrition:seen for the add-to-dictionary proposal). */
+  kv?: Record<string, unknown>;
   /** Fake cines-mx-mcp behavior (Phase 3 tools are always served). */
   cines?: FakeCinesOptions;
   /** No CINES_PURCHASE_DRY_RUN: the hub sends a "real" purchase to the FAKE server (the PIN step is skipped for dryRun). */
   fakeRealPayment?: boolean;
   /** Sanity check of the end state (the main check is "same actions as the baseline"). */
   ok(r: {
+    /** Foods the user saved to the dictionary during the run (save_food). */
+    nutritionFoods: { name: string }[];
     actions: Action[];
     state: ReplicaState;
     cards: string[];
@@ -42,6 +46,10 @@ export interface Scenario {
 }
 
 const logs = (a: Action[], meal?: string) => a.filter((x) => x.app === 'mfp' && x.op === 'log' && (!meal || x.detail.startsWith(`${meal}:`)));
+/** The extras the nutrition brain adds (spray, the implied 0-kcal drink). */
+const EXTRA = /: (Cooking spray|Clight drink mix[^×]*|Coca-Cola Zero Sugar) ×/;
+/** Logs without the hub's extras (regressions written before them). */
+const food = (a: Action[], meal?: string) => logs(a, meal).filter((x) => !EXTRA.test(x.detail));
 const fin = (a: Action[], op: string) => a.filter((x) => x.app === 'finance' && x.op === op);
 const none = (a: Action[]) => a.length === 0 || `unexpected actions: ${a.map((x) => x.detail).join('; ')}`;
 const kcalOf = (s: string) => Number(s.match(/= (\d+) kcal/)?.[1] ?? NaN);
@@ -68,16 +76,17 @@ export const SCENARIOS: Scenario[] = [
     id: 'eggs-toast',
     turns: ['registra 2 huevos y una tostada en el desayuno'],
     ok: ({ actions }) => {
-      const l = logs(actions, 'Breakfast');
-      return (l.length === 2 && has(l, /Egg, whole, large.*= 144 kcal/) && has(l, /Toast.*= 75 kcal/)) || l.map((x) => x.detail).join('; ') || 'nothing logged';
+      const l = food(actions, 'Breakfast');
+      // + the hub's extras: spray (eggs are cooked with it) and the breakfast Clight
+      return (l.length === 2 && has(l, /Egg, whole, large.*= 144 kcal/) && has(l, /Toast.*= 75 kcal/) && has(actions, /Clight/)) || logs(actions).map((x) => x.detail).join('; ') || 'nothing logged';
     },
   },
   {
     id: 'meal-3',
     turns: ['almorcé arroz blanco, una pechuga de pollo a la plancha y ensalada verde'],
     ok: ({ actions }) => {
-      const l = logs(actions, 'Lunch');
-      return (l.length === 3 && has(l, /Rice/) && has(l, /Chicken/) && has(l, /salad/i)) || l.map((x) => x.detail).join('; ') || 'nothing logged';
+      const l = food(actions, 'Lunch');
+      return (l.length === 3 && has(l, /Rice/) && has(l, /Chicken/) && has(l, /salad/i) && has(actions, /Coca-Cola Zero/)) || logs(actions).map((x) => x.detail).join('; ') || 'nothing logged';
     },
   },
   {
@@ -197,7 +206,7 @@ export const SCENARIOS: Scenario[] = [
     id: 'voice-meal',
     turns: [{ voice: 'voice-meal.wav' }],
     ok: ({ actions, reply }) => {
-      const l = logs(actions, 'Dinner');
+      const l = food(actions, 'Dinner');
       return both((l.length === 2 && has(l, /Rice/) && has(l, /Chicken/)) || actions.map((x) => x.detail).join('; ') || 'nothing logged', spanish(reply));
     },
   },
@@ -519,5 +528,109 @@ export const SCENARIOS: Scenario[] = [
         !/PayPal/.test(outgoing) || 'PayPal wording for a card purchase',
         /^✅ 🎟️ Compra confirmada: .*\$99 MXN · reserva DRYRUN-001/.test(status) || `status: ${status || 'none'}`,
       ),
+  },
+  /* ---------------------------------------------- nutrition brain (Phase 2.1) */
+  {
+    id: 'nutri-burrito-pastor',
+    turns: ['almorcé 2 burritos de pastor con papa y queso'],
+    ok: ({ actions }) => {
+      const l = logs(actions, 'Lunch');
+      return both(
+        (l.length >= 6 && has(l, /Flour tortilla.*× 2/) && has(l, /pastor/i) && has(l, /Potato/) && has(l, /cheese/i) && has(l, /Onion/) && has(l, /oil/i)) || l.map((x) => x.detail).join('; ') || 'nothing logged',
+        !l.some((x) => /: [^:]*burrito(?! size)/i.test(x.detail)) || 'logged a generic burrito',
+      );
+    },
+  },
+  {
+    id: 'nutri-bandeja-paisa',
+    turns: ['almorcé una bandeja paisa'],
+    ok: ({ actions }) => {
+      const l = logs(actions, 'Lunch');
+      return (l.length >= 8 && has(l, /Rice/) && has(l, /beans/i) && has(l, /Chorizo/) && has(l, /Plantain/) && has(l, /Chicharron/)) || l.map((x) => x.detail).join('; ') || 'nothing logged';
+    },
+  },
+  {
+    id: 'nutri-soup-recipe',
+    turns: ['cené sopa'],
+    ok: ({ actions }) => {
+      const l = logs(actions, 'Dinner');
+      return (has(l, /Chicken/) && has(l, /Potato, raw/) && has(l, /Carrot/) && has(l, /Onion/)) || l.map((x) => x.detail).join('; ') || 'nothing logged';
+    },
+  },
+  {
+    id: 'nutri-breakfast',
+    turns: ['desayuné 2 huevos con arepa y melón'],
+    ok: ({ actions, reply }) => {
+      const l = logs(actions, 'Breakfast');
+      return both(
+        (has(l, /Egg, whole, large × 2 .*= 144 kcal/) && has(l, /Harina PAN.*= 149 kcal/) && has(l, /Melon/) && has(l, /Cooking spray.*= 12 kcal/) && has(l, /Clight/)) || l.map((x) => x.detail).join('; ') || 'nothing logged',
+        !has(l, /Arepa, white corn/) || 'arepa logged as a generic arepa, not Harina PAN',
+        /clight|bebida|spray|aceite/i.test(reply) || `assumptions not stated: ${reply.slice(0, 160)}`,
+      );
+    },
+  },
+  {
+    id: 'nutri-oneoff',
+    localHour: 16,
+    turns: ['me comí un tamal de rajas'],
+    ok: ({ actions, reply, nutritionFoods }) =>
+      both((logs(actions).length === 1 && has(actions, /Tamal/)) || actions.map((x) => x.detail).join('; ') || 'nothing logged', !/diccionario|lo guardo|guardarlo/i.test(reply) || `proposed a one-off: ${reply.slice(0, 120)}`, nutritionFoods.length === 0 || 'saved a one-off food'),
+  },
+  {
+    id: 'nutri-repeat-propose',
+    localHour: 16,
+    // already logged on two earlier days: today is the third → Alfred offers to save it
+    kv: { 'nutrition:seen': { pandebono: { query: 'pandebono', quantity: 1, unit: 'unit', kcal: 190, days: ['2026-10-01', '2026-10-08'] } } },
+    turns: ['me comí un pandebono', 'sí, guárdalo'],
+    ok: ({ actions, nutritionFoods }) => both(has(actions, /Pandebono/) || 'pandebono not logged', nutritionFoods.some((f) => /pandebono/i.test(f.name)) || `not saved (foods: ${JSON.stringify(nutritionFoods)})`),
+  },
+  {
+    id: 'nutri-cornetto-fits',
+    diary: [
+      // 1,850 kcal: a Cornetto (208) fits a training day (2,100–2,150) but not a rest day (2,000)
+      { meal: 'Breakfast', name: 'Egg, whole, large', calories: 450 },
+      { meal: 'Lunch', name: 'Rice, white, cooked', calories: 900 },
+      { meal: 'Snacks', name: 'Almonds', calories: 500 },
+    ],
+    turns: ['¿me cabe un Cornetto?'],
+    ok: ({ actions, reply }) => both(none(actions), /208/.test(reply) || `no Cornetto kcal: ${reply.slice(0, 160)}`, (/\?/.test(reply) && /(gimnasia|entren|pesas|descanso)/i.test(reply)) || `did not ask about training: ${reply.slice(0, 200)}`),
+  },
+  {
+    id: 'nutri-bigmac',
+    localHour: 13,
+    turns: ['me comí una Big Mac y papas medianas'],
+    ok: ({ actions }) => {
+      const l = logs(actions, 'Lunch');
+      return (l.length === 3 && has(l, /: Big Mac ×/) && has(l, /French Fries, Medium/) && has(l, /Coca-Cola Zero/)) || l.map((x) => x.detail).join('; ') || 'nothing logged';
+    },
+  },
+  {
+    id: 'nutri-hershey',
+    localHour: 16,
+    turns: ["me comí un Hershey's"],
+    ok: ({ actions }) => (logs(actions).length === 1 && has(actions, /Hershey's Milk Chocolate Bar/)) || actions.map((x) => x.detail).join('; ') || 'nothing logged',
+  },
+  /* ---------------------------------------------- cines-mx-mcp 6d7c617 (the two live misses) */
+  {
+    id: 'cines-your-name',
+    turns: ['¿dónde están dando Your Name - Kimi no Na wa?'],
+    ok: ({ cines, reply, today }) =>
+      both(
+        called(cines.calls, 'cines_find_movie'),
+        // the fake shows it from tomorrow only (like Toreo on 22 Oct)
+        (/toreo/i.test(reply) && new RegExp(`(mañana|\\b${Number(new Date(Date.parse(`${today}T12:00:00Z`) + 86_400_000).toISOString().slice(8, 10))}\\b)`, 'i').test(reply)) || `reply: ${reply.slice(0, 160)}`,
+        !/no (est[aá]|se encuentra)[^.]{0,25}cartelera/i.test(reply) || 'said it is not showing',
+      ),
+  },
+  {
+    id: 'cines-until-sunday',
+    turns: ['¿qué películas hay hasta el domingo?'],
+    ok: ({ cines, reply }) => {
+      const l = cines.args.filter((c) => c.tool === 'cines_listings');
+      return both(
+        l.some((c) => !!c.args.dateTo && !c.args.cinema) || `listings args: ${JSON.stringify(l.map((c) => c.args))}`,
+        [/dune/i, /coco/i, /clayface/i, /tu nombre/i].filter((re) => re.test(reply)).length >= 3 || `reply: ${reply.slice(0, 200)}`,
+      );
+    },
   },
 ];

@@ -127,6 +127,8 @@ async function runScenario(s: Scenario, pacer: ReturnType<typeof pacedFetch>, ap
     CINES_MCP_URL: cines.url,
     ...(s.fakeRealPayment ? {} : { CINES_PURCHASE_DRY_RUN: '1' }),
     MCP_REGISTRY_PATH: join(process.cwd(), 'mcp-servers.json'),
+    // the generic example profile (never the private one): dictionary, recipes, targets
+    NUTRITION_PROFILE_PATH: join(process.cwd(), 'docs', 'nutrition-profile.example.json'),
   };
   const logs: string[] = [];
   // same registry as production, with an optional shorter cines timeout (timeout scenarios)
@@ -146,6 +148,7 @@ async function runScenario(s: Scenario, pacer: ReturnType<typeof pacedFetch>, ap
     resourceId: `telegram:${ME}`,
     workingMemory: '# User preferences\n- Name: Julián\n- Language preference: Spanish\n- Default currency: COP\n- Pockets / accounts: Nequi, Bancolombia, Nu México\n',
   });
+  for (const [k, v] of Object.entries(s.kv ?? {})) await hub.kv.set(k, v);
   await hub.start();
   const cards: string[] = [];
   let toolCardsPressed = 0;
@@ -253,7 +256,8 @@ async function runScenario(s: Scenario, pacer: ReturnType<typeof pacedFetch>, ap
   // a secret the user typed must never reach Gemini
   for (const t of s.turns) if (typeof t === 'object' && 'secret' in t && pacer.bodies.some((b) => b.includes(t.secret))) logs.push('LEAK: secret sent to Gemini');
   const planningLeak = logs.find((l) => l.startsWith('LEAK-PLANNING'));
-  const verdict0 = s.ok({ actions: state.actions, state, cards, reply, today, yesterday, cines: { calls: cinesCalls, args: cines.calls, actions: cines.actions, secrets: cines.secrets }, photos, logs, outgoing: tg.outgoingText(ME), status: status.at(-1) ?? '' });
+  const nutritionFoods = ((await hub.kv.get('nutrition:foods')) ?? []) as { name: string }[];
+  const verdict0 = s.ok({ nutritionFoods, actions: state.actions, state, cards, reply, today, yesterday, cines: { calls: cinesCalls, args: cines.calls, actions: cines.actions, secrets: cines.secrets }, photos, logs, outgoing: tg.outgoingText(ME), status: status.at(-1) ?? '' });
   const verdict = planningLeak ? planningLeak : verdict0;
   result.ok = verdict === true ? true : String(verdict);
   if (process.env.REPLAY_DEBUG) console.log(`--- ${s.id} status: ${status.join(' → ')}`);

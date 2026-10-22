@@ -47,6 +47,8 @@ const COMMON: Common[] = [
   { match: /\b(chicken breast|chicken|pechuga|pollo)\b/, standard: [1, 'breast'] },
   { match: /\b(eggs?|huevos?)\b/, standard: [1, 'unit'] },
   { match: /\b(bread|toast|pan|tostadas?)\b/, standard: [1, 'slice'] },
+  // a fruit you cut ("un melón" with breakfast) is a portion, not the whole fruit
+  { match: /\b(melon(es)?|honeydew|cantaloupe|sandia|watermelon|papaya|pineapple|pina)\b/, standard: [1, 'cup'] },
   { match: /\b(arepas?|bananas?|banano|apples?|manzanas?|oranges?|naranjas?|potato(es)?|papas?)\b/, standard: [1, 'unit'] },
 ];
 

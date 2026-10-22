@@ -71,6 +71,7 @@ async function serveMcp(name: string, tools: { name: string }[], handlers: Recor
 
 export interface Food {
   name: string;
+  brand?: string;
   servings: { label: string; kcal: number }[];
 }
 /** Keyword → candidates in MFP's (often unhelpful) search order. */
@@ -104,13 +105,57 @@ export const FOODS: Record<string, Food[]> = {
   lasagna: [{ name: 'Lasagna, family tray', servings: [{ label: '1 tray', kcal: 1700 }, { label: '1 cup', kcal: 300 }] }],
   pizza: [{ name: 'Pizza, pepperoni, large', servings: [{ label: '1 pizza', kcal: 2300 }, { label: '1 slice', kcal: 290 }] }],
   juice: [{ name: 'Orange juice', servings: [{ label: '1 cup', kcal: 112 }] }],
+  // nutrition brain: the dictionary's MFP entries, dish components, branded items
+  harina: [{ name: 'Arepa flour, Harina PAN (white corn)', servings: [{ label: '100 g', kcal: 373 }, { label: '1/4 cup (40 g)', kcal: 149 }] }],
+  spray: [{ name: 'Cooking spray', servings: [{ label: '1 spray', kcal: 2.4 }, { label: '1 serving (0.25 g)', kcal: 2 }] }],
+  clight: [{ name: 'Clight drink mix, prepared', servings: [{ label: '1 serving (2 g)', kcal: 5 }, { label: '1 cup (240 ml)', kcal: 5 }] }],
+  coca: [
+    { name: 'Coca-Cola', servings: [{ label: '1 can (355 ml)', kcal: 140 }] },
+    { name: 'Coca-Cola Zero Sugar', servings: [{ label: '1 can (355 ml)', kcal: 0 }, { label: '1 bottle (600 ml)', kcal: 0 }] },
+  ],
+  whey: [{ name: 'Whey protein powder', servings: [{ label: '1 scoop (31 g)', kcal: 120 }] }],
+  cornetto: [{ name: 'Cornetto Chocolate', brand: "Wall's", servings: [{ label: '1 cone', kcal: 208 }] }],
+  tortilla: [
+    { name: 'Flour tortilla, burrito size', servings: [{ label: '1 tortilla', kcal: 220 }, { label: '100 g', kcal: 310 }] },
+    { name: 'Corn tortilla', servings: [{ label: '1 tortilla', kcal: 52 }] },
+  ],
+  pastor: [{ name: 'Al pastor pork', servings: [{ label: '100 g', kcal: 210 }, { label: '1 taco serving (40 g)', kcal: 85 }] }],
+  potato: [
+    { name: 'Potato, fried cubes', servings: [{ label: '100 g', kcal: 150 }] },
+    { name: 'Potato, raw', servings: [{ label: '100 g', kcal: 77 }, { label: '1 medium (213 g)', kcal: 164 }] },
+  ],
+  oaxaca: [{ name: 'Oaxaca cheese', servings: [{ label: '100 g', kcal: 320 }, { label: '1 oz (28 g)', kcal: 90 }] }],
+  onion: [{ name: 'Onion, raw', servings: [{ label: '100 g', kcal: 40 }, { label: '1 medium (110 g)', kcal: 44 }] }],
+  oil: [{ name: 'Vegetable oil', servings: [{ label: '1 tsp', kcal: 40 }, { label: '1 tbsp', kcal: 120 }] }],
+  beans: [{ name: 'Red beans, cooked', servings: [{ label: '1 cup', kcal: 225 }, { label: '100 g', kcal: 127 }] }],
+  beef: [{ name: 'Ground beef, cooked', servings: [{ label: '100 g', kcal: 250 }] }],
+  chicharron: [{ name: 'Chicharron, fried pork belly', servings: [{ label: '100 g', kcal: 540 }] }],
+  chorizo: [{ name: 'Chorizo, pork', servings: [{ label: '1 link (60 g)', kcal: 170 }, { label: '100 g', kcal: 283 }] }],
+  plantain: [{ name: 'Plantain, ripe, fried', servings: [{ label: '100 g', kcal: 230 }] }],
+  avocado: [{ name: 'Avocado', servings: [{ label: '100 g', kcal: 160 }, { label: '1 fruit (200 g)', kcal: 322 }] }],
+  carrot: [{ name: 'Carrot, raw', servings: [{ label: '100 g', kcal: 41 }, { label: '1 medium (61 g)', kcal: 25 }] }],
+  pineapple: [{ name: 'Pineapple', servings: [{ label: '100 g', kcal: 50 }] }],
+  mac: [
+    { name: 'Big Mac copycat (homemade)', servings: [{ label: '1 burger', kcal: 700 }] },
+    { name: 'Big Mac', brand: "McDonald's", servings: [{ label: '1 sandwich', kcal: 590 }] },
+  ],
+  fries: [
+    { name: 'French fries, homemade', servings: [{ label: '1 cup', kcal: 300 }, { label: '100 g', kcal: 312 }] },
+    { name: 'French Fries, Medium', brand: "McDonald's", servings: [{ label: '1 medium', kcal: 320 }] },
+  ],
+  hershey: [
+    { name: 'Chocolate bar, milk, generic', servings: [{ label: '1 bar (44 g)', kcal: 235 }] },
+    { name: "Hershey's Milk Chocolate Bar", brand: "Hershey's", servings: [{ label: '1 bar (43 g)', kcal: 220 }] },
+  ],
+  tamal: [{ name: 'Tamal de rajas con queso', servings: [{ label: '1 tamal', kcal: 280 }] }],
+  pandebono: [{ name: 'Pandebono', servings: [{ label: '1 pandebono (50 g)', kcal: 190 }] }],
   sandwich: [
     { name: 'Club sandwich', servings: [{ label: '1 sandwich', kcal: 590 }] },
     { name: 'Ham and cheese sandwich', servings: [{ label: '1 sandwich', kcal: 350 }] },
     { name: 'Chicken sandwich', servings: [{ label: '1 sandwich', kcal: 450 }] },
   ],
 };
-const SYNONYMS: Record<string, string> = { eggs: 'egg', huevo: 'egg', huevos: 'egg', tostada: 'toast', tostadas: 'toast', pan: 'bread', cafe: 'coffee', 'café': 'coffee', arroz: 'rice', pollo: 'chicken', ensalada: 'salad', banano: 'banana', avena: 'oat', oatmeal: 'oat', yogur: 'yogurt', queso: 'cheese', lasana: 'lasagna', 'lasaña': 'lasagna', jugo: 'juice', arepas: 'arepa', manzana: 'apple', 'melón': 'melon', melones: 'melon', cantaloupe: 'melon', almendras: 'almond', almonds: 'almond', chicle: 'gum', candy: 'gum' };
+const SYNONYMS: Record<string, string> = { eggs: 'egg', huevo: 'egg', huevos: 'egg', tostada: 'toast', tostadas: 'toast', pan: 'bread', cafe: 'coffee', 'café': 'coffee', arroz: 'rice', pollo: 'chicken', ensalada: 'salad', banano: 'banana', avena: 'oat', oatmeal: 'oat', yogur: 'yogurt', queso: 'cheese', lasana: 'lasagna', 'lasaña': 'lasagna', jugo: 'juice', arepas: 'arepa', manzana: 'apple', 'melón': 'melon', melones: 'melon', cantaloupe: 'melon', almendras: 'almond', almonds: 'almond', chicle: 'gum', candy: 'gum', papas: 'potato', papa: 'potato', potatoes: 'potato', tortillas: 'tortilla', cebolla: 'onion', frijoles: 'beans', bean: 'beans', aguacate: 'avocado', platano: 'plantain', zanahoria: 'carrot', carrots: 'carrot', hersheys: 'hershey', fry: 'fries', tamales: 'tamal', cornettos: 'cornetto' };
 
 export interface DiaryEntry {
   meal: string;
@@ -173,7 +218,7 @@ export async function startMasonReplica(state: ReplicaState, today: string) {
     options: d.options.map((o, n) => ({
       option: n + 1,
       name: o.name,
-      brand: null,
+      brand: o.brand ?? null,
       verified: true,
       pinned: state.pins.some((p) => p.query === d.query && p.name === o.name),
       fits_targets: true,
