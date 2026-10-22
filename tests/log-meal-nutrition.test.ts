@@ -11,7 +11,7 @@ const EXAMPLE = loadProfile(join(import.meta.dirname, '..', 'docs', 'nutrition-p
 const TODAY = '2026-10-21';
 
 /** MFP-like catalog: keyword → foods with servings (kcal for ONE serving). */
-const CATALOG: [RegExp, { name: string; servings: [string, number][] }[]][] = [
+const CATALOG: [RegExp, { name: string; brand?: string; verified?: boolean; servings: [string, number][] }[]][] = [
   [/egg, fried/i, [{ name: 'Egg, fried', servings: [['1 large egg', 90]] }]],
   [/\beggs?\b/i, [{ name: 'Egg omelette, restaurant', servings: [['1 omelette', 850]] }, { name: 'Egg, whole, large', servings: [['100 g', 143], ['1 large egg', 72]] }]],
   [/harina pan/i, [{ name: 'Harina PAN, arepa flour', servings: [['100 g', 373]] }]],
@@ -33,10 +33,15 @@ const CATALOG: [RegExp, { name: string; servings: [string, number][] }[]][] = [
   [/rice/i, [{ name: 'Rice, white, cooked', servings: [['1 cup', 205]] }]],
   [/tamal/i, [{ name: 'Tamal de rajas', servings: [['1 tamal', 280]] }]],
   [/cornetto/i, [{ name: 'Cornetto Chocolate', servings: [['1 cone', 208]] }]],
+  [/big mac/i, [{ name: 'Big Mac copycat (homemade)', servings: [['1 burger', 700]] }, { name: 'Big Mac', brand: "McDonald's", verified: true, servings: [['1 sandwich', 590]] }]],
+  [/fries/i, [{ name: 'French fries, homemade', servings: [['1 cup', 300]] }, { name: 'French Fries, medium', brand: "McDonald's", verified: true, servings: [['1 medium', 320]] }]],
+  [/hershey/i, [{ name: "Hershey's Milk Chocolate Bar", brand: "Hershey's", verified: true, servings: [['1 bar (43 g)', 220]] }]],
+  [/whopper/i, [{ name: 'Burger, homemade', servings: [['1 burger', 600]] }]],
+  [/hamburguesa|burger/i, [{ name: 'Hamburger, plain', servings: [['1 burger', 500]] }, { name: 'Smash burger', brand: 'Shake Shack', verified: true, servings: [['1 burger', 550]] }]],
 ];
 
 function fakeMfp(diary: { meal: string; name: string; calories: number }[] = []) {
-  const drafts = new Map<string, { options: { name: string; servings: [string, number][] }[] }>();
+  const drafts = new Map<string, { options: { name: string; brand?: string; verified?: boolean; servings: [string, number][] }[] }>();
   const calls: { tool: string; args: Rec }[] = [];
   const day = () => ({ day: TODAY, nutrition: { calories: diary.reduce((a, e) => a + e.calories, 0), protein: 42 }, diary: diary.map((e) => ({ ...e })) });
   const toolbox = {
@@ -48,7 +53,7 @@ function fakeMfp(diary: { meal: string; name: string; calories: number }[] = [])
         if (!hit) return { error: { code: 'MFP_NOT_FOUND', message: `no food for ${args.query}`, retryable: false } };
         const id = `d${drafts.size + 1}`;
         drafts.set(id, { options: hit[1] });
-        return { draft_id: id, quantity: 1, options: hit[1].map((o, i) => ({ option: i + 1, name: o.name, suggested_serving: 0, servings: o.servings.map(([label, kcal], s) => ({ serving: s, label, calories: kcal })) })) };
+        return { draft_id: id, quantity: 1, options: hit[1].map((o, i) => ({ option: i + 1, name: o.name, brand: o.brand ?? null, verified: !!o.verified, suggested_serving: 0, servings: o.servings.map(([label, kcal], s) => ({ serving: s, label, calories: kcal })) })) };
       }
       if (tool === 'fitness_log_food') {
         const d = drafts.get(String(args.draft_id))!;
@@ -159,6 +164,35 @@ describe('log_meal with the nutrition brain', () => {
     // 410 + 360 + 192 = 962 kcal for one portion expected at 720 → confirm, nothing of it logged
     expect(names(r).filter((n) => n !== 'Coca-Cola Zero')).toEqual([]);
     expect((r.ambiguous as { query: string; reason: string }[])[0]).toMatchObject({ query: 'pasta box', reason: expect.stringMatching(/over 800/) });
+  });
+
+  it('branded: "una Big Mac y papas medianas" → 2 branded entries + the lunch Coke Zero, never parts', async () => {
+    const s = setup({ text: 'me comí una Big Mac y papas medianas' });
+    const r = await s.run([
+      { query: "McDonald's Big Mac", quantity: 1, unit: 'unit', kcal_estimate: 560, meal: 'lunch' },
+      { query: "McDonald's French Fries, medium", quantity: 1, unit: 'medium', kcal_estimate: 320, meal: 'lunch' },
+    ]);
+    expect(names(r)).toEqual(['Big Mac', 'French Fries, medium', 'Coca-Cola Zero']);
+    expect(r.decompose).toBeUndefined();
+  });
+
+  it('a packaged product ("un Hershey\'s") is one entry; snacks get no drink', async () => {
+    const s = setup({ text: "un Hershey's" });
+    const r = await s.run([{ query: "Hershey's milk chocolate bar", quantity: 1, unit: 'bar', kcal_estimate: 210, meal: 'snacks' }]);
+    expect(names(r)).toEqual(["Hershey's Milk Chocolate Bar"]);
+  });
+
+  it('a chain item MFP does not have falls back to components (not_in_mfp)', async () => {
+    const s = setup({ text: 'almorcé un Whopper' });
+    const r = await s.run([{ query: 'Burger King Whopper', quantity: 1, unit: 'unit', kcal_estimate: 660, meal: 'lunch' }]);
+    expect(r.decompose).toEqual([{ query: 'Burger King Whopper', meal: 'lunch', not_in_mfp: true }]);
+    expect(s.mfp.logs()).toHaveLength(0);
+  });
+
+  it('an unbranded whole dish with a verified branded MFP entry is one entry; without one it is decomposed', async () => {
+    const s = setup({ text: 'cené una hamburguesa' });
+    const r = await s.run([{ query: 'hamburger', quantity: 1, unit: 'unit', kcal_estimate: 550, meal: 'dinner' }]);
+    expect(names(r)).toEqual(['Smash burger', 'Coca-Cola Zero']);
   });
 
   it('without a profile, log_meal behaves as before (no extras)', async () => {

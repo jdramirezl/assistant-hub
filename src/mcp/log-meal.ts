@@ -6,6 +6,7 @@ import type { FoodBook } from '../nutrition/book.js';
 import type { DayPlanner } from '../nutrition/day.js';
 import type { Food, Profile } from '../nutrition/profile.js';
 import { isCompositeDish, matchDish } from '../nutrition/dishes.js';
+import { brandOf, optionIsBrand, type Brand } from '../nutrition/brands.js';
 
 /**
  * Hub-side composite tool: log a whole meal in ONE model step. For each item, in code:
@@ -43,6 +44,8 @@ interface Serving {
 interface Option {
   option: number;
   name: string;
+  brand?: string | null;
+  verified?: boolean;
   pinned?: boolean;
   suggested_serving?: number;
   servings: Serving[];
@@ -139,7 +142,7 @@ export interface LogMealResult {
   needs_confirmation: { query: string; name: string; kcal: number; log_with: Rec }[];
   failed: { query: string; error: unknown }[];
   /** Whole dishes the hub refused: the model must log their components instead. */
-  decompose: { query: string; meal: string }[];
+  decompose: { query: string; meal: string; not_in_mfp?: boolean }[];
   /** Extras the hub added (spray, the implied drink), in the user's words. */
   assumed: string[];
   /** Dishes/recipes logged as components, with their totals. */
@@ -182,6 +185,10 @@ interface Planned {
   source: Source;
   group?: { name: string; portions: number };
   food?: Food;
+  /** A branded / chain product: ONE entry of that brand (never decomposed). */
+  brand?: Brand;
+  /** A whole unbranded dish with no template: one entry only if MFP has a verified branded one. */
+  composite?: boolean;
 }
 interface Picked {
   planned: Planned;
@@ -203,8 +210,8 @@ const VAGUE_UNITS = new Set(['serving', 'portion', 'plate', 'bowl', 'unit', 'who
 export function createLogMeal(toolbox: MealToolbox, log: (m: string) => void = () => {}, opts: LogMealOptions = {}) {
   const nut = opts.nutrition?.book.enabled ? opts.nutrition : undefined;
 
-  /** Expand recipes and known dishes, rewrite dictionary foods; refuse undecomposed dishes. */
-  async function plan(items: Item[], out: LogMealResult): Promise<Planned[]> {
+  /** Classify each item: recipe, dictionary food, brand (one entry), known dish (components), whole dish, plain. */
+  async function plan(items: Item[]): Promise<Planned[]> {
     if (!nut) return items.map((item) => ({ item, source: 'model' as const }));
     const planned: Planned[] = [];
     for (const item of items) {
@@ -215,6 +222,18 @@ export function createLogMeal(toolbox: MealToolbox, log: (m: string) => void = (
         log(`[log_meal] recipe "${recipe.name}" × ${item.quantity} → ${recipe.items.length} ingredients`);
         continue;
       }
+      const food = await nut.book.food(item.query);
+      if (food) {
+        const b = nut.book.toItem(food, item.quantity, item.unit);
+        planned.push({ item: { query: b.query, quantity: b.quantity, unit: b.unit, kcal_estimate: b.kcal_estimate, meal: item.meal }, source: 'dictionary', food });
+        continue;
+      }
+      // classifier: a brand or chain item has fixed, published nutrition → one entry, never parts
+      const brand = brandOf(item.query);
+      if (brand) {
+        planned.push({ item, source: 'model', brand });
+        continue;
+      }
       const dish = matchDish(item.query);
       if (dish) {
         for (const c of dish.components) planned.push({ item: { query: c.query, quantity: Math.round(c.quantity * item.quantity * 100) / 100, unit: c.unit, kcal_estimate: Math.round(c.kcal * item.quantity), meal: item.meal }, source: 'dish', group: { name: dish.name, portions: item.quantity } });
@@ -222,14 +241,7 @@ export function createLogMeal(toolbox: MealToolbox, log: (m: string) => void = (
         continue;
       }
       if (isCompositeDish(item.query)) {
-        log(`[log_meal] "${item.query}" is a whole dish: sent back to be decomposed`);
-        out.decompose.push({ query: item.query, meal: item.meal });
-        continue;
-      }
-      const food = await nut.book.food(item.query);
-      if (food) {
-        const b = nut.book.toItem(food, item.quantity, item.unit);
-        planned.push({ item: { query: b.query, quantity: b.quantity, unit: b.unit, kcal_estimate: b.kcal_estimate, meal: item.meal }, source: 'dictionary', food });
+        planned.push({ item, source: 'model', composite: true });
         continue;
       }
       planned.push({ item, source: 'model' });
@@ -243,9 +255,30 @@ export function createLogMeal(toolbox: MealToolbox, log: (m: string) => void = (
     const meal = item.meal;
     // 2. draft (draft quantity 1: we convert the user's quantity into servings ourselves)
     const d = (await toolbox.execute('fitness_draft_food', { query: item.query, quantity: 1, meal, ...(date ? { date } : {}) }, { raw: true })) as Rec;
+    if (errOf(d) && p.composite) {
+      log(`[log_meal] "${item.query}" is a whole dish (no MFP entry): sent back to be decomposed`);
+      out.decompose.push({ query: item.query, meal });
+      return undefined;
+    }
     if (errOf(d)) return void out.failed.push({ query: item.query, error: errOf(d) });
-    const options = (d.options as Option[] | undefined) ?? [];
+    let options = (d.options as Option[] | undefined) ?? [];
     const draftQty = Number(d.quantity ?? 1);
+    const decompose = (notInMfp: boolean, why: string) => {
+      log(`[log_meal] "${item.query}" ${why}: sent back to be decomposed`);
+      out.decompose.push({ query: item.query, meal, ...(notInMfp ? { not_in_mfp: true } : {}) });
+      return undefined;
+    };
+    if (p.brand) {
+      const mine = options.filter((o) => optionIsBrand(p.brand!, o));
+      if (mine.length) options = mine;
+      else if (p.brand.chain) return decompose(true, `(${p.brand.brand}) is not in MFP`);
+    }
+    if (p.composite) {
+      // a whole dish: one entry only for a verified branded MFP item with a fixed serving
+      const fixed = options.filter((o) => o.verified && !!o.brand);
+      if (!fixed.length) return decompose(false, 'is a whole dish');
+      options = fixed;
+    }
     const asked = { ...item, unit: normalizeUnit(item.unit) }; // "taza" → cup, "rebanada" → slice
     const std = standardPortion(item.query, item.quantity, asked.unit);
     const stdItem = std ? { ...asked, quantity: std.quantity, unit: std.unit } : undefined;
@@ -265,6 +298,7 @@ export function createLogMeal(toolbox: MealToolbox, log: (m: string) => void = (
         break;
       }
     }
+    if (!pick && p.composite) return decompose(false, 'is a whole dish (no verified branded MFP match)');
     if (!pick) {
       const shown = (cands.length ? cands : options.flatMap((o) => o.servings.slice(0, 1).map((s) => ({ option: o.option, name: o.name, serving: s.serving, label: s.label, servings: 1, kcal: Math.round(Number(s.calories ?? 0)), pinned: false }))))
         .sort((a, b) => Math.abs(Math.log((a.kcal + 1) / (item.kcal_estimate + 1))) - Math.abs(Math.log((b.kcal + 1) / (item.kcal_estimate + 1))))
@@ -377,7 +411,7 @@ export function createLogMeal(toolbox: MealToolbox, log: (m: string) => void = (
       const items = hint ? given.map((i) => ({ ...i, meal: hint })) : given;
       if (hint && given.some((i) => i.meal !== hint)) log(`[log_meal] meal ${[...new Set(given.map((i) => i.meal))].join('/')} → ${hint} (from the user's words / local time)`);
       const out: LogMealResult = { logged: [], ambiguous: [], needs_confirmation: [], failed: [], decompose: [], assumed: [], dishes: [], meal_totals: [], possible_duplicates: [], note: '' };
-      const planned = await plan(items, out);
+      const planned = await plan(items);
       const picked: Picked[] = [];
       for (const p of planned) {
         try {
@@ -430,7 +464,7 @@ export function createLogMeal(toolbox: MealToolbox, log: (m: string) => void = (
       }
       const notes = [
         out.ambiguous.length ? 'Ask the user to choose for the ambiguous items (show name, serving, kcal); nothing was logged for them.' : '',
-        out.decompose.length ? `Not logged: ${out.decompose.map((x) => `"${x.query}"`).join(', ')} is a whole dish. Call log_meal again now with its components (standard portions), without asking.` : '',
+        out.decompose.length ? `Not logged: ${out.decompose.map((x) => `"${x.query}"`).join(', ')} (a whole dish${out.decompose.some((x) => x.not_in_mfp) ? '; not_in_mfp = the chain item is not in MFP: tell the user in one line' : ''}). Call log_meal again now with its components (standard portions), without asking.` : '',
         out.possible_duplicates.length ? 'possible_duplicates: these were already in this meal; tell the user and offer to remove the extra one.' : '',
       ].filter(Boolean);
       out.note = notes.join(' ');

@@ -3,6 +3,7 @@ import { join } from 'node:path';
 import { loadProfile, parseProfile } from '../src/nutrition/profile.js';
 import { FoodBook } from '../src/nutrition/book.js';
 import { matchDish, isCompositeDish } from '../src/nutrition/dishes.js';
+import { brandOf, optionIsBrand } from '../src/nutrition/brands.js';
 import { DayPlanner, dayTypeFromText } from '../src/nutrition/day.js';
 import { contextFor } from '../src/nutrition/context.js';
 import { dictionaryPrompt, STYLE_RULES } from '../src/nutrition/prompt.js';
@@ -95,6 +96,23 @@ describe('dish templates (proactive decomposition)', () => {
     expect(isCompositeDish('flour tortilla, burrito size')).toBe(false);
     expect(isCompositeDish('egg')).toBe(false);
     expect(isCompositeDish('hamburger')).toBe(true);
+  });
+});
+
+describe('branded classifier', () => {
+  it('chains and packaged products are recognized; street dishes are not', () => {
+    expect(brandOf("McDonald's Big Mac")).toMatchObject({ brand: "McDonald's", chain: true });
+    expect(brandOf('big mac')?.brand).toBe("McDonald's");
+    expect(brandOf("un Hershey's")).toMatchObject({ brand: "Hershey's", chain: false });
+    expect(brandOf('Wingstop boneless')?.chain).toBe(true);
+    expect(brandOf('burrito al pastor')).toBeUndefined();
+    expect(brandOf('tacos de suadero')).toBeUndefined();
+  });
+  it('an option is the brand by its brand field or name, not by a copycat name', () => {
+    const b = brandOf('big mac')!;
+    expect(optionIsBrand(b, { name: 'Big Mac', brand: "McDonald's" })).toBe(true);
+    expect(optionIsBrand(b, { name: "McDonald's - Big Mac", brand: null })).toBe(true);
+    expect(optionIsBrand(b, { name: 'Big Mac copycat (homemade)', brand: null })).toBe(false);
   });
 });
 
