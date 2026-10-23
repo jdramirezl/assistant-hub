@@ -178,6 +178,8 @@ export interface ReplicaState {
   /** Every tool call (reads too), for counting. */
   calls: string[];
   movements: Rec[];
+  /** Extra pockets for this scenario (appended to POCKETS). */
+  extraPockets?: { id: string; accountId: string; name: string; balance: number }[];
   /** finance_create_movement fails (VALIDATION_ERROR) when the notes match. */
   rejectCreate?: RegExp;
 }
@@ -363,12 +365,14 @@ const ferr = (code: string, message: string, retryable = false) => ({ error: { c
 
 export async function startFinanceReplica(state: ReplicaState, today: string, token: string) {
   const acc = (id: unknown) => ACCOUNTS.find((a) => a.id === id);
-  const pocket = (id: unknown) => POCKETS.find((p) => p.id === id);
+  // per-run copies: a movement changes its pocket's balance, like finance-app
+  const allPockets: { id: string; accountId: string; name: string; balance: number }[] = [...POCKETS, ...(state.extraPockets ?? [])].map((x) => ({ ...x }));
+  const pocket = (id: unknown) => allPockets.find((p) => p.id === id);
   const record = (op: string, detail: string) => state.actions.push({ app: 'finance', op, detail });
   let seq = state.movements.length;
   const handlers: Record<string, Handler> = {
     finance_list_accounts: () => ({ result: ACCOUNTS }),
-    finance_list_pockets: (a) => ({ result: POCKETS.filter((p) => !a.accountId || p.accountId === a.accountId) }),
+    finance_list_pockets: (a) => ({ result: allPockets.filter((p) => !a.accountId || p.accountId === a.accountId) }),
     finance_list_movements: (a) => {
       let list = [...state.movements].reverse();
       if (a.year && a.month) list = list.filter((m) => String(m.displayedDate).startsWith(`${a.year}-${String(a.month).padStart(2, '0')}`));
@@ -401,6 +405,7 @@ export async function startFinanceReplica(state: ReplicaState, today: string, to
       if (!/^\d{4}-\d{2}-\d{2}$/.test(String(a.displayedDate))) return ferr('VALIDATION_ERROR', 'displayedDate must be YYYY-MM-DD');
       const m = { id: `${String(++seq).padStart(8, '0')}-0000-4000-8000-000000000000`, ...a };
       state.movements.push(m);
+      if (!a.isPending) p.balance = Math.round((p.balance + (String(a.type).startsWith('Ingreso') ? 1 : -1) * Number(a.amount)) * 100) / 100;
       record('create', `${a.type} ${a.amount} ${account.currency} ${account.name}/${p.name} ${a.displayedDate}`);
       return m;
     },

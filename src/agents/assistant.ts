@@ -32,6 +32,8 @@ export const DOMAIN_RULES: Record<Domain, string[]> = {
   finance: [
     '## Finance (finance_*)',
     '- Use the account and pocket ids listed under "## Now"; call finance_list_accounts / finance_list_pockets only if one is missing. Never guess ids.',
+    '- Hierarchy: account → pocket → optional sub-pocket. accountId = the account line\'s id; pocketId = a "pocket" line\'s id (NEVER the account id); subPocketId only for a fixed-expense sub-pocket, otherwise omit it. E.g. "gasté 200 de Viajes en Nu" → {accountId:<Nu id>, pocketId:<id of pocket Viajes>} with no subPocketId.',
+    '- Balance corrections ("ajusta los saldos", "deja Cajita Turbo en 5.069", a screenshot of balances): call adjust_balances ONCE with every pocket and its NEW balance; the hub computes the differences and shows one approval card. Never record adjustments with finance_create_movement.',
     '- Types: EgresoNormal = expense, IngresoNormal = income, EgresoFijo / IngresoFijo = on a fixed-expense budget. Amounts are positive, in the account currency ("25k" = 25000, "4.2 millones" = 4200000). displayedDate is YYYY-MM-DD, local, default today.',
     '- Every expense, income or transfer the user reports MUST be saved with a tool call (finance_create_movement / finance_create_transfer) before you reply; a reply alone saves nothing. Fill accountId and pocketId from the ids under "## Now".',
     '- VALIDATION_ERROR / NOT_FOUND: say what is wrong and ask; it was not saved.',

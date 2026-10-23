@@ -12,6 +12,7 @@ import { NutritionTracker } from './mcp/nutrition.js';
 import { trimForModel } from './mcp/trim.js';
 import { createLogMeal } from './mcp/log-meal.js';
 import { createClearDay } from './mcp/clear-day.js';
+import { createAdjustBalances } from './mcp/adjust-balances.js';
 import { FINANCE_WRITES, FinanceDirectory } from './mcp/finance-cache.js';
 import { ToolCallFilter } from '@mastra/core/processors';
 import { Budget, BudgetGuard } from './budget.js';
@@ -145,10 +146,10 @@ export function toolsForDomains<T>(tools: Record<string, T>, domains: readonly D
 }
 
 /** Tools that only read (no "✅ done" for them). Everything else from an app is a write. */
-const READ_TOOLS = /^(updateWorkingMemory$|propose_plan$|clear_day$|save_food$|set_day_type$|fitness_(get|search|draft|list|bulk)_|finance_(list|spending|convert|get)_|cines_(list_|listings|find|showtimes|best|upcoming|seat_map|validate|hold_status))/;
+const READ_TOOLS = /^(updateWorkingMemory$|propose_plan$|clear_day$|adjust_balances$|save_food$|set_day_type$|fitness_(get|search|draft|list|bulk)_|finance_(list|spending|convert|get)_|cines_(list_|listings|find|showtimes|best|upcoming|seat_map|validate|hold_status))/;
 
 /** Tools the hub itself provides to the agent. */
-const LOCAL_TOOLS: ReadonlySet<string> = new Set(['log_meal', 'clear_day', 'propose_plan', 'updateWorkingMemory', 'request_secure_input', 'save_food', 'set_day_type']);
+const LOCAL_TOOLS: ReadonlySet<string> = new Set(['log_meal', 'clear_day', 'propose_plan', 'updateWorkingMemory', 'request_secure_input', 'save_food', 'set_day_type', 'adjust_balances']);
 
 /** An argument the model left as a placeholder ("...", "<showtimeId>", "xxx"): the field name, or undefined. */
 export function placeholderArg(args: Record<string, unknown>): string | undefined {
@@ -159,7 +160,9 @@ export function placeholderArg(args: Record<string, unknown>): string | undefine
 }
 
 /** Finance tools that take accountId + pocketId: the hub fills accountId from the pocket. */
-const POCKET_TOOLS: ReadonlySet<string> = new Set(['finance_create_movement']);
+const POCKET_TOOLS: ReadonlySet<string> = new Set(['finance_create_movement', 'finance_update_movement']);
+/** A balance correction ("Ajuste de saldo …"): only through adjust_balances (one approval card). */
+const ADJUSTMENT = /\b(ajuste de saldo|ajuste del saldo|ajustar saldo|balance adjust|balance correction)/i;
 
 /** accountId becomes optional in the schema (shown to the model and validated) when pocketId exists. */
 export function optionalAccountId(s: Record<string, unknown>): Record<string, unknown> {
@@ -254,7 +257,11 @@ export function createHub(config: HubConfig, deps: HubDeps = {}): Hub {
           input = f.args;
         }
         if (MONEY_TOOLS.has(tool) || tool === 'cines_validate_seats' || tool === 'cines_seat_map') return cines!.beforeCall(tool, input, { chatId: usageContext.getStore()?.chatId });
-        if (POCKET_TOOLS.has(tool)) return withOwningAccount(input);
+        if (tool === 'finance_create_movement' && usageContext.getStore()?.kind !== 'plan' && ADJUSTMENT.test(String(input.notes ?? ''))) {
+          log('[finance] balance adjustment outside adjust_balances: sent back');
+          return invalid('Balance adjustments are recorded with adjust_balances (one approval card with current → new for every pocket), not finance_create_movement. Call adjust_balances once with every pocket and its new balance (or delta).');
+        }
+        if (POCKET_TOOLS.has(tool)) return withOwningAccount(tool, input);
         return input === given ? undefined : Promise.resolve({ args: input });
       },
       // a hold/purchase that timed out may have happened at Cinépolis: poll for the outcome
@@ -323,12 +330,16 @@ export function createHub(config: HubConfig, deps: HubDeps = {}): Hub {
       : {}),
   });
   const cinesHub = cines;
-  const withOwningAccount = async (input: Record<string, unknown>): Promise<{ args: Record<string, unknown> } | { error: unknown }> => {
-    const args: Record<string, unknown> = await financeDir.fillAccount(input);
-    if (args.accountId) {
-      if (!input.accountId) log('[finance] accountId filled from the pocket');
-      return { args };
+  const withOwningAccount = async (tool: string, input: Record<string, unknown>): Promise<{ args: Record<string, unknown> } | { error: unknown }> => {
+    // account → pocket → sub-pocket checked against the cache before the server sees it
+    const r = await financeDir.repairPocket(input);
+    if ('error' in r) {
+      log(`[finance] ${tool}: pocketId is not a pocket; sent back to the model with the pocket list`);
+      return { error: { error: { code: 'VALIDATION_ERROR', message: r.error, retryable: false } } };
     }
+    if (r.fixed) log(`[finance] ${tool}: ${r.fixed}`);
+    const args = r.args;
+    if (args.accountId || tool !== 'finance_create_movement') return { args };
     return { error: { error: { code: 'VALIDATION_ERROR', message: 'accountId is required: use the accountId listed with the pocket under "## Now" (or pass a pocketId of that account).', retryable: false } } };
   };
   const isWrite = (tool: string) => tool === 'log_meal' || (!READ_TOOLS.test(tool) && !/workingmemory/i.test(tool) && toolbox.annotationsFor(tool)?.readOnlyHint !== true);
@@ -369,6 +380,7 @@ export function createHub(config: HubConfig, deps: HubDeps = {}): Hub {
       summarizePlan(planResultsPrompt(plan, results), plan.threadId ? { thread: plan.threadId, resource: plan.owner } : undefined),
   });
   const proposePlan = createProposePlanTool(plans);
+  const adjustBalances = createAdjustBalances({ directory: financeDir, propose: (input, meta) => plans.propose(input, meta), today: () => bogotaDay(localNow(), config.timezone), language: config.persona.language, log });
   const clearDay = createClearDay({
     toolbox,
     propose: (input, meta) => plans.propose(input, meta),
@@ -409,7 +421,7 @@ export function createHub(config: HubConfig, deps: HubDeps = {}): Hub {
     tools: async () => {
       const all = Object.fromEntries(Object.entries(await toolbox.getTools()).filter(([n]) => !HUB_ONLY_TOOLS.has(n)));
       const app = toolsForDomains(all, usageContext.getStore()?.domains);
-      return { ...app, ...('fitness_log_food' in app ? { log_meal: logMeal, clear_day: clearDay, ...nutritionTools } : {}), propose_plan: proposePlan };
+      return { ...app, ...('fitness_log_food' in app ? { log_meal: logMeal, clear_day: clearDay, ...nutritionTools } : {}), ...('finance_create_movement' in app ? { adjust_balances: adjustBalances } : {}), propose_plan: proposePlan };
     },
     // nutrition style + decomposition rules + the user's dictionary: stable, with the fitness rules
     domainPrompt: async (domains) => (profile && domains.includes('fitness') ? [...STYLE_RULES, '', ...DECOMPOSITION, '', await dictionaryPrompt(book)].join('\n') : ''),

@@ -105,6 +105,7 @@ async function runScenario(s: Scenario, pacer: ReturnType<typeof pacedFetch>, ap
     calls: [],
     movements: structuredClone(s.movements ?? []).map((m) => ({ ...m, displayedDate: m.displayedDate === 'TODAY' ? today : m.displayedDate })),
     ...(s.financeReject ? { rejectCreate: s.financeReject } : {}),
+    ...(s.extraPockets ? { extraPockets: s.extraPockets } : {}),
   };
   const mason = await startMasonReplica(state, today);
   const finance = await startFinanceReplica(state, today, 'replay-token');
@@ -112,7 +113,7 @@ async function runScenario(s: Scenario, pacer: ReturnType<typeof pacedFetch>, ap
   // fakeRealPayment: a non-dryRun purchase against the FAKE server only (the PIN step needs it; nothing real exists)
   const cines = await startFakeCines({ phase3: true, realPaymentDisabled: !s.fakeRealPayment, ...(s.cines ?? {}) });
   const tg = await new MockTelegram().start();
-  for (const f of ['receipt.png', 'voice-expense.wav', 'voice-meal.wav', 'voice-breakfast.wav', 'voice-snack.wav', 'voice-dinner-en.wav', 'voice-mixed.wav', 'voice-snack-items.wav']) {
+  for (const f of ['receipt.png', 'voice-expense.wav', 'voice-meal.wav', 'voice-breakfast.wav', 'voice-snack.wav', 'voice-dinner-en.wav', 'voice-mixed.wav', 'voice-snack-items.wav', 'balances.png']) {
     tg.addFile(f, { path: `files/${f}`, mime: f.endsWith('.png') ? 'image/png' : 'audio/wav', bytes: readFileSync(join(FIXTURES, f)) });
   }
   const dataDir = mkdtempSync(join(tmpdir(), 'replay-'));
@@ -183,7 +184,7 @@ async function runScenario(s: Scenario, pacer: ReturnType<typeof pacedFetch>, ap
           const text = String(call.body.text ?? (call.body.rich_message as { markdown?: string } | undefined)?.markdown ?? '');
           // approval cards no longer show tool names: the hub logs which tool each card is for
           const toolCards = logs.map((l) => l.match(/\[approval\] card: (\w+)/)?.[1]).filter(Boolean);
-          cards.push(data.includes('cines:b:') ? 'purchase-card' : data.includes('plan:a:') ? `plan(${(text.match(/(\d+) (acciones|actions|entradas|entries)/) ?? [])[1] ?? '?'})` : `tool:${toolCards[toolCardsPressed++] ?? '?'}`);
+          cards.push(data.includes('cines:b:') ? 'purchase-card' : data.includes('plan:a:') ? `plan(${(text.match(/(\d+) (acciones|actions|entradas|entries|ajustes|adjustments)/) ?? [])[1] ?? '?'})` : `tool:${toolCards[toolCardsPressed++] ?? '?'}`);
           tg.push(callbackUpdate(ME, { message_id: msgId, text }, data));
           found = true;
           await settle();

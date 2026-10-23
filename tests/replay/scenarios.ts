@@ -14,6 +14,8 @@ export interface Scenario {
   movements?: Record<string, unknown>[];
   /** Pin the local (Bogotá) hour the hub sees, e.g. for the meal-by-time fallback. */
   localHour?: number;
+  /** Extra finance pockets for this scenario. */
+  extraPockets?: ReplicaState['extraPockets'];
   /** finance-app replica rejects creates whose notes match (a real failure in the batch). */
   financeReject?: RegExp;
   /** Per-server MCP timeout for the fake cines (default from mcp-servers.json). */
@@ -630,6 +632,35 @@ export const SCENARIOS: Scenario[] = [
       return both(
         l.some((c) => !!c.args.dateTo && !c.args.cinema) || `listings args: ${JSON.stringify(l.map((c) => c.args))}`,
         [/dune/i, /coco/i, /clayface/i, /tu nombre/i].filter((re) => re.test(reply)).length >= 3 || `reply: ${reply.slice(0, 200)}`,
+      );
+    },
+  },
+  /* ---------------------------------------------- finance pockets (prod req 956597) */
+  {
+    id: 'finance-adjust-photo',
+    // 6 pockets in 2 accounts; the photo shows their NEW balances; one approval card, then the hub writes the deltas
+    extraPockets: [
+      { id: 'f8790365-8899-446c-a514-1e5c4feb489f', accountId: ACCOUNTS[2]!.id, name: 'Cajita Turbo', balance: 5000 },
+      { id: 'e72610ce-d408-4c8a-bcc7-2a31cefccec8', accountId: ACCOUNTS[2]!.id, name: 'Viajes', balance: 4000 },
+      { id: '3f043b05-d84b-4ecf-ae51-c827b955ba74', accountId: ACCOUNTS[2]!.id, name: 'Ahorros', balance: 2000 },
+      { id: '0b2fd392-cfa9-416e-a1cb-aa80cc5a1907', accountId: ACCOUNTS[2]!.id, name: 'Dinero de respaldo', balance: 1000 },
+      { id: '4fa35fb2-9a61-4fa4-b234-8087aa22fe8a', accountId: ACCOUNTS[1]!.id, name: 'Bono', balance: 1000000 },
+      { id: '5aa35fb2-9a61-4fa4-b234-8087aa22fe8b', accountId: ACCOUNTS[1]!.id, name: 'Para gastar', balance: 2000000 },
+    ],
+    turns: [{ photo: 'balances.png', caption: 'estos son mis saldos de hoy' }, 'ajusta los saldos de esos bolsillos a lo de la foto'],
+    ok: ({ actions, cards }) => {
+      const c = fin(actions, 'create');
+      const want = [
+        /IngresoNormal 69\.45 MXN Nu México\/Cajita Turbo/,
+        /IngresoNormal 70\.59 MXN Nu México\/Viajes/,
+        /IngresoNormal 22\.36 MXN Nu México\/Ahorros/,
+        /IngresoNormal 15\.78 MXN Nu México\/Dinero de respaldo/,
+        /IngresoNormal 55262\.51 COP Bancolombia\/Bono/,
+        /EgresoNormal 50000 COP Bancolombia\/Para gastar/,
+      ];
+      return both(
+        cards.filter((x) => x.startsWith('plan')).length === 1 || `cards: ${cards.join(',') || 'none'}`,
+        (c.length === 6 && want.every((re) => c.some((x) => re.test(x.detail)))) || c.map((x) => x.detail).join('; ') || 'nothing created',
       );
     },
   },

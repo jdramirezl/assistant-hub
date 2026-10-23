@@ -105,7 +105,7 @@ describe('bugs 2 + 4: the mixed voice note (meal + 3 expenses from a pocket)', (
     tg.push(textUpdate(ME, 'gasté 1000 en Nequi y comí un huevo'));
     await tg.waitFor(() => tg.outgoingText(ME).includes('corrijo'), 10_000);
     expect(sm.calls).toHaveLength(3);
-    expect(JSON.stringify(sm.calls[1]!.prompt)).toMatch(/accountId is required/);
+    expect(JSON.stringify(sm.calls[1]!.prompt)).toMatch(/pk-unknown is not a pocket id/); // checked against the cached pockets
     expect(JSON.stringify(sm.calls[2]!.prompt)).toMatch(/kcal_estimate/);
   });
 

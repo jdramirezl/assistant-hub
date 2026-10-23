@@ -22,8 +22,9 @@ const ACCOUNTS = [
   { id: 'acc-nu-mx', name: 'Nu México', currency: 'MXN' },
 ];
 const POCKETS = [
-  { id: 'pk-nequi-main', accountId: 'acc-nequi', name: 'Principal' },
-  { id: 'pk-nu-main', accountId: 'acc-nu-mx', name: 'Disponible' },
+  { id: 'pk-nequi-main', accountId: 'acc-nequi', name: 'Principal', balance: 850000 },
+  { id: 'pk-nu-main', accountId: 'acc-nu-mx', name: 'Disponible', balance: 12400 },
+  { id: 'pk-nu-turbo', accountId: 'acc-nu-mx', name: 'Cajita Turbo', balance: 5000 },
 ];
 const TYPES = ['IngresoNormal', 'EgresoNormal', 'IngresoFijo', 'EgresoFijo'] as const;
 
@@ -56,9 +57,12 @@ export async function startFakeFinance(token = 'test-token'): Promise<FakeFinanc
       inputSchema: z.object({
         accountId: z.string(),
         pocketId: z.string().optional(),
+        subPocketId: z.string().optional(),
+        notes: z.string().optional(),
+        displayedDate: z.string().optional(),
         type: z.enum(TYPES),
         amount: z.number(),
-        date: z.string(),
+        date: z.string().optional(),
         description: z.string().optional(),
       }),
       mcp: { annotations: rw },
@@ -66,8 +70,9 @@ export async function startFakeFinance(token = 'test-token'): Promise<FakeFinanc
         record('finance_create_movement', i);
         if (state.rejectCreate) return err('VALIDATION_ERROR', state.rejectCreate);
         if (!(i.amount > 0)) return err('VALIDATION_ERROR', 'amount must be positive');
-        if (!/^\d{4}-\d{2}-\d{2}$/.test(i.date)) return err('VALIDATION_ERROR', 'date must be YYYY-MM-DD');
+        if (!/^\d{4}-\d{2}-\d{2}$/.test(i.date ?? i.displayedDate ?? '')) return err('VALIDATION_ERROR', 'date must be YYYY-MM-DD');
         if (!ACCOUNTS.some((a) => a.id === i.accountId)) return err('NOT_FOUND', `account ${i.accountId} not found`);
+        if (i.pocketId && !POCKETS.some((p) => p.id === i.pocketId)) return err('NOT_FOUND', `Pocket with ID ${i.pocketId} not found`);
         return { id: 'mov-1', ...i };
       },
     }),
