@@ -1,0 +1,156 @@
+{
+ "label": "prod1024-transfer",
+ "at": "2026-10-24T22:04:04.458Z",
+ "results": [
+  {
+   "id": "transfer",
+   "calls": 2,
+   "rateLimited": 0,
+   "inputTokens": 10192,
+   "cachedTokens": 2007,
+   "outputTokens": 698,
+   "toolsSentAvg": 16,
+   "systemCharsAvg": 5880,
+   "actions": [
+    "finance.transfer 200000 Bancolombia/Principal → Nequi/Disponible 2026-10-24"
+   ],
+   "cards": [
+    "tool:finance_create_transfer"
+   ],
+   "ok": true,
+   "reply": "Como ordene, master Julian; he transferido los 200.000 COP de Bancolombia a Nequi.",
+   "status": "✅ 1 transferencia, $200.000",
+   "ms": 13236,
+   "timings": [
+    {
+     "intent": "expense",
+     "totalMs": 2167,
+     "activeMs": 2167,
+     "gemini": 2051,
+     "pacer": 0,
+     "tools": 11,
+     "telegram": 17,
+     "poll": 0,
+     "hub": 88,
+     "geminiCalls": 1,
+     "geminiRetries": 0,
+     "toolCalls": 2,
+     "dominant": "gemini:gemini-3.5-flash-lite",
+     "spans": [
+      "receive:telegram→hub -263-0",
+      "telegram:getChat 5-7",
+      "hub:finance_list_accounts 26-44",
+      "hub:finance_list_pockets 33-44",
+      "tool:finance.finance_list_accounts 33-44",
+      "tool:finance.finance_list_pockets 38-44",
+      "gemini:gemini-3.5-flash-lite 78-2129 ttft=2033",
+      "telegram:sendChatAction 2149-2164",
+      "telegram:sendChatAction 2153-2164",
+      "telegram:sendMessage 2156-2164"
+     ]
+    },
+    {
+     "intent": "resume-finance",
+     "totalMs": 2096,
+     "activeMs": 2096,
+     "gemini": 900,
+     "pacer": 0,
+     "tools": 6,
+     "telegram": 22,
+     "poll": 0,
+     "hub": 1168,
+     "geminiCalls": 1,
+     "geminiRetries": 0,
+     "toolCalls": 1,
+     "dominant": "hub:finance_create_transfer",
+     "spans": [
+      "telegram:editMessageText 2-4",
+      "hub:finance_create_transfer 41-47",
+      "tool:finance.finance_create_transfer 41-47",
+      "gemini:gemini-3.5-flash-lite 57-957 ttft=800",
+      "telegram:sendChatAction 966-975",
+      "telegram:sendMessage 967-975",
+      "telegram:editMessageText 2081-2082",
+      "telegram:sendChatAction 2085-2095"
+     ]
+    }
+   ]
+  },
+  {
+   "id": "big-transfer-needs-card",
+   "calls": 2,
+   "rateLimited": 0,
+   "inputTokens": 10264,
+   "cachedTokens": 4012,
+   "outputTokens": 770,
+   "toolsSentAvg": 16,
+   "systemCharsAvg": 5880,
+   "actions": [
+    "finance.transfer 300000 Bancolombia/Ahorro → Bancolombia/Principal 2026-10-24"
+   ],
+   "cards": [
+    "tool:finance_create_transfer"
+   ],
+   "ok": true,
+   "reply": "Enseguida, Master Julian. He transferido los 300.000 COP de Ahorro a Principal en Bancolombia.",
+   "status": "✅ 1 transferencia, $300.000",
+   "ms": 13128,
+   "timings": [
+    {
+     "intent": "expense",
+     "totalMs": 2201,
+     "activeMs": 2201,
+     "gemini": 2135,
+     "pacer": 0,
+     "tools": 11,
+     "telegram": 24,
+     "poll": 0,
+     "hub": 31,
+     "geminiCalls": 1,
+     "geminiRetries": 0,
+     "toolCalls": 2,
+     "dominant": "gemini:gemini-3.5-flash-lite",
+     "spans": [
+      "receive:telegram→hub -397-0",
+      "telegram:getChat 2-3",
+      "hub:finance_list_accounts 12-27",
+      "hub:finance_list_pockets 16-27",
+      "tool:finance.finance_list_accounts 16-27",
+      "tool:finance.finance_list_pockets 21-27",
+      "gemini:gemini-3.5-flash-lite 33-2168 ttft=2109",
+      "telegram:sendChatAction 2178-2200",
+      "telegram:sendChatAction 2184-2200",
+      "telegram:sendMessage 2186-2200",
+      "telegram:sendMessage 2198-2201"
+     ]
+    },
+    {
+     "intent": "resume-finance",
+     "totalMs": 2052,
+     "activeMs": 2052,
+     "gemini": 848,
+     "pacer": 0,
+     "tools": 10,
+     "telegram": 27,
+     "poll": 0,
+     "hub": 1167,
+     "geminiCalls": 1,
+     "geminiRetries": 0,
+     "toolCalls": 1,
+     "dominant": "hub:finance_create_transfer",
+     "spans": [
+      "telegram:editMessageText 2-5",
+      "hub:finance_create_transfer 46-57",
+      "tool:finance.finance_create_transfer 46-56",
+      "gemini:gemini-3.5-flash-lite 61-909 ttft=763",
+      "telegram:sendChatAction 917-928",
+      "telegram:sendMessage 918-929",
+      "telegram:editMessageText 2037-2040",
+      "telegram:sendChatAction 2042-2051",
+      "telegram:sendMessage 2047-2051"
+     ]
+    }
+   ]
+  }
+ ]
+}

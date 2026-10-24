@@ -33,6 +33,7 @@ export const ItemSchema = z.object({
 export const LogMealInput = z.object({
   items: z.array(ItemSchema).min(1).max(12),
   date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional().describe('YYYY-MM-DD, default today'),
+  exact: z.boolean().optional().describe('Log exactly these items: no implied spray or drink (an overwrite with the user\'s own list)'),
 });
 type Item = z.infer<typeof ItemSchema>;
 
@@ -69,6 +70,8 @@ export function servingsFor(item: Pick<Item, 'quantity' | 'unit'>, label: string
   const l = full.replace(/\([^)]*\)/g, ' ').replace(/\s+/g, ' ').trim(); // "1 breast (172 g)" → "1 breast"
   if (unit === 'g' || unit === 'gr' || unit === 'gram' || unit === 'ml') {
     const m = full.match(MASS); // "1 cup (240 ml)" counts as 240 ml
+    const oz = !m && unit !== 'ml' ? full.match(/^(\d+(?:[.,]\d+)?)\s*oz\b/) : null; // "1 oz" = 28.35 g
+    if (oz) return item.quantity / (Number(oz[1]!.replace(',', '.')) * 28.35);
     if (!m) return undefined;
     const size = Number(m[1]!.replace(',', '.'));
     const sameKind = (m[2]!.toLowerCase() === 'ml') === (unit === 'ml');
@@ -127,6 +130,11 @@ export function choose(item: Item, cands: Candidate[]): Candidate | undefined {
   const pinned = ok.find((c) => c.pinned);
   if (pinned) return pinned;
   if (ok.length === 1) return ok[0];
+  // grams/ml: every option is priced for the same weight, so the closest within ~15% is a safe pick
+  if (/^(g|gr|gram|grams|ml)$/.test(norm(item.unit)) && est > 0) {
+    const tight = ok.filter((c) => within(c.kcal, est, 1.15)).sort((a, b) => Math.abs(a.kcal - est) - Math.abs(b.kcal - est));
+    if (tight.length) return tight[0];
+  }
   const close = ok.filter((c) => within(c.kcal, est, 1.35));
   const spread = Math.max(...ok.map((c) => c.kcal)) / Math.min(...ok.map((c) => c.kcal));
   if (spread <= 1.3) return ok[0]; // all plausible options agree: take MFP's top one
@@ -134,6 +142,29 @@ export function choose(item: Item, cands: Candidate[]): Candidate | undefined {
   if (near.length === 1) return near[0]; // e.g. black coffee estimated 0: 2 kcal, not 60
   if (close.length === 1) return close[0];
   return undefined;
+}
+
+/** Options log_meal showed as ambiguous (draft + serving + the servings that equal the user's quantity). */
+export interface AskedOption {
+  draft_id: string;
+  option: number;
+  serving_index: number;
+  servings: number;
+  quantity: number;
+  unit: string;
+}
+const ASKED: AskedOption[] = [];
+export const askedOptions = (): readonly AskedOption[] => ASKED;
+
+/**
+ * The model logs the user's pick with fitness_log_food but often passes the GRAMS as quantity
+ * (166 with a "100 g" serving = 166 servings, a bogus > 800 kcal card). When the call is exactly
+ * one of the options log_meal showed and quantity is the user's own quantity, use its servings.
+ */
+export function fixLoggedServings(args: Rec, asked: readonly AskedOption[] = ASKED): Rec | undefined {
+  const a = asked.find((x) => x.draft_id === args.draft_id && x.option === Number(args.option) && x.serving_index === Number(args.serving ?? 0));
+  if (!a || Number(args.quantity) !== a.quantity || a.quantity === a.servings) return undefined;
+  return { ...args, quantity: a.servings };
 }
 
 export interface LogMealResult {
@@ -336,6 +367,8 @@ export function createLogMeal(toolbox: MealToolbox, log: (m: string) => void = (
         ...(p.group ? { part_of: p.group.name } : {}),
         options: shown.map((c) => ({ name: c.name, serving: c.label, kcal: c.kcal, draft_id: String(d.draft_id), option: c.option, serving_index: c.serving, servings: c.servings })),
       });
+      for (const c of shown) ASKED.push({ draft_id: String(d.draft_id), option: c.option, serving_index: c.serving, servings: c.servings, quantity: item.quantity, unit: item.unit });
+      ASKED.splice(0, Math.max(0, ASKED.length - 60));
       return undefined;
     }
     const args = { draft_id: d.draft_id, option: pick.option, serving: pick.serving, quantity: pick.servings, meal, ...(date ? { date } : {}) };
@@ -429,7 +462,7 @@ export function createLogMeal(toolbox: MealToolbox, log: (m: string) => void = (
       'then call log_meal again with a more specific query. Items in "needs_confirmation" (> 800 kcal) must be logged with fitness_log_food using log_with (the user approves).' +
       (opts.nutrition?.book.enabled ? ' Complex dishes: one item per component (or a known dish/recipe name). "decompose": call again with the components. "assumed": extras the hub added (tell the user in one line).' : ''),
     inputSchema: LogMealInput,
-    execute: async ({ items: given, date }) => {
+    execute: async ({ items: given, date, exact }) => {
       const hint = opts.mealHint?.(date);
       const items = hint ? given.map((i) => ({ ...i, meal: hint })) : given;
       if (hint && given.some((i) => i.meal !== hint)) log(`[log_meal] meal ${[...new Set(given.map((i) => i.meal))].join('/')} → ${hint} (from the user's words / local time)`);
@@ -453,7 +486,7 @@ export function createLogMeal(toolbox: MealToolbox, log: (m: string) => void = (
         }
       }
       const meals = [...new Set(items.map((i) => i.meal))];
-      for (const m of meals) {
+      for (const m of exact ? [] : meals) {
         try {
           last = await extras(planned, m, date, last, out);
         } catch (err) {

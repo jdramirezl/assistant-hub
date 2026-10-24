@@ -22,6 +22,7 @@ export function planHash(plan: PlanInput): string {
   const body = {
     title: plan.title,
     ...(plan.compact ? { compact: true } : {}),
+    ...(plan.readback ? { readback: plan.readback } : {}),
     groups: plan.groups.map((g) => ({ label: g.label, ...(g.summary ? { summary: g.summary } : {}), actions: g.actions.map((a) => ({ tool: a.tool, args: a.args, summary: a.summary })) })),
   };
   return createHash('sha256').update(JSON.stringify(stable(body))).digest('hex');
@@ -41,6 +42,7 @@ export class PlanStore {
       title: input.title,
       groups: input.groups,
       ...(input.compact ? { compact: true } : {}),
+      ...(input.readback ? { readback: input.readback } : {}),
       hash: planHash(input),
       status: 'pending',
       owner: meta.owner,

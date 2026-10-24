@@ -52,6 +52,9 @@ export function createAdjustBalances(d: AdjustDeps) {
       const snap = await d.directory.snapshot({ fresh: true });
       if (!snap) return { error: { code: 'UNAVAILABLE', message: 'finance accounts could not be read right now; try again in a minute', retryable: true } };
       const date = input.displayedDate ?? d.today();
+      // a date read off a screenshot ("23 oct") often gets the wrong year: only the last 31 days
+      const age = (Date.parse(`${d.today()}T12:00:00Z`) - Date.parse(`${date}T12:00:00Z`)) / 86_400_000;
+      if (!(age >= 0 && age <= 31)) return { error: { code: 'MODEL_ARG', message: `displayedDate ${date} is not within the last 31 days (today is ${d.today()}). Omit it (today) or use a recent YYYY-MM-DD of this year.`, retryable: false } };
       const groups = new Map<string, PlanInput['groups'][number]>();
       const problems: string[] = [];
       let n = 0;

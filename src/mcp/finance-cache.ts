@@ -16,6 +16,24 @@ const listOf = (v: unknown): Rec[] | undefined => {
   return Array.isArray(r) ? (r as Rec[]) : undefined;
 };
 
+/** A movement this large (account currency) needs the user's approval card; ~5,000 MXN. */
+export const APPROVAL_THRESHOLD: Record<string, number> = { MXN: 5_000, COP: 1_000_000, USD: 250, EUR: 250 };
+/** "Retira / elimina / saca / quita X": expense or transfer? The card makes the user confirm which. */
+const WITHDRAW = /\b(retir\w*|elimin\w*|saca\w*|sacar|quit\w*|withdraw\w*|remove|take out)\b/i;
+
+/**
+ * Money movements that need an approval card: every transfer; a movement from the threshold up
+ * (in its account's currency); any movement when the user said "retirar/eliminar" an amount.
+ */
+export function moneyNeedsApproval(tool: string, args: Rec, currencyOf: (accountId: unknown) => string | undefined, userText: string | undefined): boolean {
+  if (tool === 'finance_create_transfer') return true;
+  if (tool !== 'finance_create_movement') return false;
+  if (WITHDRAW.test(userText ?? '')) return true;
+  const currency = currencyOf(args.accountId);
+  const limit = currency ? APPROVAL_THRESHOLD[currency.toUpperCase()] : undefined;
+  return limit !== undefined && Number(args.amount) >= limit; // unknown account/currency: no threshold
+}
+
 export interface CachedAccount {
   id: string;
   name: string;
@@ -78,6 +96,18 @@ export class FinanceDirectory {
     if (args.accountId || typeof args.pocketId !== 'string') return args;
     const accountId = await this.accountOf(args.pocketId);
     return accountId ? { ...args, accountId } : args;
+  }
+
+  /** "Bancolombia / Ahorro" for a pocket id, or the account name for an account id (cache only). */
+  label(id: unknown): string | undefined {
+    const p = this.pocketList.find((x) => x.id === id);
+    if (p) return `${this.accountList.find((a) => a.id === p.accountId)?.name ?? '?'} / ${p.name}`;
+    return this.accountList.find((a) => a.id === id)?.name;
+  }
+
+  /** An account's currency from the cache (undefined if unknown). */
+  currencyOf(accountId: unknown): string | undefined {
+    return this.accountList.find((a) => a.id === accountId)?.currency;
   }
 
   /** Accounts and pockets (with balances) from a FRESH read; undefined when finance cannot be listed. */

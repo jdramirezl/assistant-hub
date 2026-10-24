@@ -108,6 +108,11 @@ describe('adjust_balances: one summary card, deltas computed by the hub', () => 
     expect(JSON.stringify(bad)).toMatch(/ACCOUNT id/);
     expect(proposed).toHaveLength(1);
   });
+  it('a date off the screenshot with the wrong year is refused', async () => {
+    const { tool, proposed } = setup();
+    expect(JSON.stringify(await tool.execute({ adjustments: [{ pocketId: TURBO, delta: 5 }], displayedDate: '2025-10-23' }, {}))).toMatch(/not within the last 31 days/);
+    expect(proposed).toHaveLength(0);
+  });
   it('nothing to change → no card', async () => {
     const { tool, proposed } = setup();
     expect(await tool.execute({ adjustments: [{ pocketId: TURBO, newBalance: 5000 }] }, {})).toMatchObject({ status: 'nothing_to_adjust' });
@@ -168,5 +173,40 @@ describe('through the hub (fake finance-app)', async () => {
     expect(seen).toMatch(/adjust_balances[\s\S]*shown_to_user/);
     expect(creates(fin)).toEqual([]);
     expect(sm.calls[0]!.tools).toContain('adjust_balances');
+  });
+});
+
+describe('money movements behind a card (prod 2026-10-24)', async () => {
+  const { afterEach } = await import('vitest');
+  const { createHub } = await import('../src/hub.js');
+  const { testConfig } = await import('./helpers.js');
+  const { scriptedModel } = await import('./support/scripted-model.js');
+  const { startFakeFinance } = await import('./support/fake-finance.js');
+  const { withUsageScope } = await import('../src/telemetry/context.js');
+  const closers: (() => Promise<void>)[] = [];
+  afterEach(async () => {
+    for (const c of closers.splice(0).reverse()) await c();
+  });
+  async function run(args: Rec, text: string) {
+    const fin = await startFakeFinance('t0k');
+    closers.push(fin.close);
+    const sm = scriptedModel([{ tool: 'finance_create_movement', args }, { text: 'ok' }]);
+    const env = { FINANCE_MCP_URL: fin.url, FINANCE_MCP_TOKEN: 't0k' };
+    const hub = createHub(testConfig(), { model: sm.model as never, registry: { servers: { finance: { url: '${FINANCE_MCP_URL}', headers: { Authorization: { env: 'FINANCE_MCP_TOKEN', prefix: 'Bearer ' } } } } }, env });
+    closers.push(() => hub.stop());
+    const res = await withUsageScope({ requestId: 'r', intent: 'expense', media: 'text', kind: 'chat', domains: ['finance'], text }, () => hub.mastra.getAgentById('assistant').generate(text, { memory: { thread: 't', resource: 'dev:local' } }));
+    return { fin, res };
+  }
+  const base = { type: 'EgresoNormal', accountId: 'acc-nu-mx', pocketId: 'pk-nu-turbo', displayedDate: '2026-10-24' };
+  it('a 55,262.91 MXN movement waits for the card; nothing is written', async () => {
+    const { fin, res } = await run({ ...base, amount: 55262.91 }, 'registra un gasto para compensar');
+    expect(res.finishReason).toBe('suspended');
+    expect(fin.calls.filter((c) => c.tool === 'finance_create_movement')).toHaveLength(0);
+  });
+  it('"retira 200 de Cajita Turbo" waits for the card too; a small plain expense does not', async () => {
+    expect((await run({ ...base, amount: 200 }, 'retira 200 de Cajita Turbo')).res.finishReason).toBe('suspended');
+    const small = await run({ ...base, amount: 200 }, 'gasté 200 en café');
+    expect(small.res.finishReason).not.toBe('suspended');
+    expect(small.fin.calls.filter((c) => c.tool === 'finance_create_movement')).toHaveLength(1);
   });
 });

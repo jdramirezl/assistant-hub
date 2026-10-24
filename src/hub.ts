@@ -10,10 +10,10 @@ import { loadRegistry, parseRegistry } from './mcp/registry.js';
 import { McpToolbox } from './mcp/toolbox.js';
 import { NutritionTracker } from './mcp/nutrition.js';
 import { trimForModel } from './mcp/trim.js';
-import { createLogMeal } from './mcp/log-meal.js';
+import { createLogMeal, fixLoggedServings } from './mcp/log-meal.js';
 import { createClearDay } from './mcp/clear-day.js';
 import { createAdjustBalances } from './mcp/adjust-balances.js';
-import { FINANCE_WRITES, FinanceDirectory } from './mcp/finance-cache.js';
+import { FINANCE_WRITES, FinanceDirectory, moneyNeedsApproval } from './mcp/finance-cache.js';
 import { ToolCallFilter } from '@mastra/core/processors';
 import { Budget, BudgetGuard } from './budget.js';
 import { createGeminiModels, modelChain, PROVIDER_OPTIONS } from './models.js';
@@ -215,7 +215,15 @@ export function createHub(config: HubConfig, deps: HubDeps = {}): Hub {
     log,
     now: deps.now,
     hooks: {
-      approval: (tool) => (tool === 'fitness_log_food' ? (input) => nutrition.needsConfirmation(input) : undefined),
+      approval: (tool) =>
+        tool === 'fitness_log_food'
+          ? // priced AFTER the grams-as-quantity fix (else a 166 g pick looked like 166 servings: a bogus card)
+            (input) => nutrition.needsConfirmation(fixLoggedServings(input) ?? input)
+          : tool === 'finance_create_transfer' || tool === 'finance_create_movement'
+            ? // every transfer, big movements, and "retirar/eliminar X" get a card (expense vs transfer is on it)
+              // (a same-pocket transfer gets no card: beforeCall sends it back to the model first)
+              async (input) => !(tool === 'finance_create_transfer' && input.sourcePocketId && input.sourcePocketId === input.targetPocketId) && (await financeDir.prompt().catch(() => ''), moneyNeedsApproval(tool, input, (id) => financeDir.currencyOf(id), usageContext.getStore()?.text))
+            : undefined,
       approvalOverride: (tool) =>
         tool === PURCHASE_TOOL
           ? (input) => cines!.purchaseNeedsApproval(input)
@@ -262,6 +270,17 @@ export function createHub(config: HubConfig, deps: HubDeps = {}): Hub {
           return invalid('Balance adjustments are recorded with adjust_balances (one approval card with current → new for every pocket), not finance_create_movement. Call adjust_balances once with every pocket and its new balance (or delta).');
         }
         if (POCKET_TOOLS.has(tool)) return withOwningAccount(tool, input);
+        if (tool === 'finance_create_transfer' && input.sourcePocketId && input.sourcePocketId === input.targetPocketId) {
+          log('[finance] transfer to the same pocket: sent back');
+          return Promise.resolve({ error: { error: { code: 'VALIDATION_ERROR', message: `source and target are the same pocket (${financeDir.label(input.sourcePocketId) ?? String(input.sourcePocketId)}). Use the pocket the user named as each side.`, retryable: false } } });
+        }
+        if (tool === 'fitness_log_food') {
+          const fixed = fixLoggedServings(input);
+          if (fixed) {
+            log(`[log_meal] fitness_log_food quantity ${String(input.quantity)} was the user's grams; logged ${String(fixed.quantity)} servings`);
+            return Promise.resolve({ args: fixed });
+          }
+        }
         return input === given ? undefined : Promise.resolve({ args: input });
       },
       // a hold/purchase that timed out may have happened at Cinépolis: poll for the outcome
@@ -509,7 +528,7 @@ export function createHub(config: HubConfig, deps: HubDeps = {}): Hub {
     transcribe,
     approvalCard: (event) => {
       if (event.kind === 'approval') log(`[approval] card: ${event.toolName}`);
-      return cinesApprovalCard(event, cinesHub, config.persona.language) ?? genericApprovalCard(event, config.persona.language, { kcal: (a) => nutrition.estimateLogKcal(a) });
+      return cinesApprovalCard(event, cinesHub, config.persona.language) ?? genericApprovalCard(event, config.persona.language, { kcal: (a) => nutrition.estimateLogKcal(fixLoggedServings(a) ?? a), label: (id) => financeDir.label(id) });
     },
     // a pick typed while the seat-map run is still open waits for it (the map is remembered as
     // soon as cines_seat_map returns; the wait covers a pick sent before that)

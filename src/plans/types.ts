@@ -17,6 +17,8 @@ export interface PlanInput {
   groups: PlanGroup[];
   /** Show one line per group instead of one per action (hub-built plans: clear_day). */
   compact?: boolean;
+  /** After the run, read these meals back (fitness_get_day) and put what is there now in the summary. */
+  readback?: { dates: string[]; meals: string[] };
 }
 
 export type PlanStatus = 'pending' | 'editing' | 'running' | 'done' | 'cancelled' | 'superseded' | 'expired' | 'invalid';

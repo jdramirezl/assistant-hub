@@ -20,7 +20,7 @@ const meal = (m: unknown, lang: Lang) => (typeof m === 'string' ? (MEAL[m.toLowe
 const when = (a: Rec, lang: Lang) => [meal(a.meal, lang), typeof a.date === 'string' ? a.date : ''].filter(Boolean).join(', ');
 
 /** One line saying what the gated call will do. */
-export function describeAction(tool: string, a: Rec, lang: Lang, kcal?: number): string {
+export function describeAction(tool: string, a: Rec, lang: Lang, kcal?: number, label: (id: unknown) => string | undefined = () => undefined): string {
   const es = lang === 'es';
   const w = when(a, lang);
   const paren = w ? ` (${w})` : '';
@@ -35,6 +35,14 @@ export function describeAction(tool: string, a: Rec, lang: Lang, kcal?: number):
       return `📌 ${es ? 'Olvidar la elección guardada de' : 'Forget the saved choice for'}: ${String(a.query ?? '?')}`;
     case 'fitness_log_food':
       return `🍽️ ${es ? 'Registrar en MyFitnessPal' : 'Log in MyFitnessPal'}${kcal ? `: ${Math.round(kcal)} kcal` : ''}${paren}${kcal && kcal > 800 ? (es ? ' — es mucho, confírmelo' : ' — that is a lot, please confirm') : ''}`;
+    case 'finance_create_transfer':
+      return `🔁 ${es ? 'Transferir' : 'Transfer'} ${typeof a.amount === 'number' ? money(a.amount) : '?'}: ${label(a.sourcePocketId) ?? label(a.sourceAccountId) ?? '?'} → ${label(a.targetPocketId) ?? label(a.targetAccountId) ?? '?'}${a.notes ? ` «${a.notes}»` : ''}${a.displayedDate ? ` (${a.displayedDate})` : ''}${es ? ' — es una transferencia, no un gasto' : ' — a transfer, not an expense'}`;
+    case 'finance_create_movement': {
+      const income = String(a.type ?? '').startsWith('Ingreso');
+      const kind = income ? (es ? 'Registrar un INGRESO' : 'Record INCOME') : es ? 'Registrar un GASTO' : 'Record an EXPENSE';
+      const where = label(a.pocketId) ?? label(a.accountId);
+      return `💸 ${kind} ${typeof a.amount === 'number' ? money(a.amount) : '?'}${where ? ` ${es ? 'en' : 'in'} ${where}` : ''}${a.notes ? ` «${a.notes}»` : ''}${a.displayedDate ? ` (${a.displayedDate})` : ''}${income ? '' : es ? ' — sale del bolsillo (no es una transferencia)' : ' — leaves the pocket (not a transfer)'}`;
+    }
     case 'finance_delete_movement':
       return `🗑️ ${es ? 'Borrar el movimiento' : 'Delete the movement'}${a.description ? ` «${a.description}»` : ''}${typeof a.amount === 'number' ? ` ${money(a.amount)}` : ''}`;
     case 'finance_update_movement':
@@ -46,13 +54,13 @@ export function describeAction(tool: string, a: Rec, lang: Lang, kcal?: number):
   }
 }
 
-export function genericApprovalCard(event: ToolDisplayEvent, lang: Lang, opts: { kcal?: (args: Rec) => number | undefined } = {}): ToolDisplayResult | undefined {
+export function genericApprovalCard(event: ToolDisplayEvent, lang: Lang, opts: { kcal?: (args: Rec) => number | undefined; label?: (id: unknown) => string | undefined } = {}): ToolDisplayResult | undefined {
   const es = lang === 'es';
   const args = (event.args ?? {}) as Rec;
   if (event.kind === 'approved') return { kind: 'post', message: es ? '✅ Aprobado, en curso…' : '✅ Approved, working on it…' };
   if (event.kind === 'denied') return { kind: 'post', message: es ? '❌ Cancelado; no se hizo nada.' : '❌ Cancelled; nothing was done.' };
   if (event.kind !== 'approval') return undefined;
-  const line = describeAction(event.toolName, args, lang, opts.kcal?.(args));
+  const line = describeAction(event.toolName, args, lang, opts.kcal?.(args), opts.label);
   return {
     kind: 'post',
     message: Card({

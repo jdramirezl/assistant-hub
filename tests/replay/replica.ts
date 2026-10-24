@@ -147,6 +147,13 @@ export const FOODS: Record<string, Food[]> = {
     { name: 'Chocolate bar, milk, generic', servings: [{ label: '1 bar (44 g)', kcal: 235 }] },
     { name: "Hershey's Milk Chocolate Bar", brand: "Hershey's", servings: [{ label: '1 bar (43 g)', kcal: 220 }] },
   ],
+  pasta: [{ name: 'Pasta, cooked', servings: [{ label: '1 cup', kcal: 220 }, { label: '100 g', kcal: 158 }] }],
+  // several close options with gram servings (the live "ambiguous" chili beans)
+  chili: [
+    { name: 'Chili beans, Bush', brand: "Bush's", servings: [{ label: '1/2 cup (130 g)', kcal: 120 }] },
+    { name: 'Chili beans, canned', servings: [{ label: '100 g', kcal: 105 }, { label: '1 cup (256 g)', kcal: 269 }] },
+    { name: 'Chili con carne with beans', servings: [{ label: '100 g', kcal: 160 }, { label: '1 cup', kcal: 410 }] },
+  ],
   tamal: [{ name: 'Tamal de rajas con queso', servings: [{ label: '1 tamal', kcal: 280 }] }],
   pandebono: [{ name: 'Pandebono', servings: [{ label: '1 pandebono (50 g)', kcal: 190 }] }],
   sandwich: [

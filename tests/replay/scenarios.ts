@@ -664,4 +664,51 @@ export const SCENARIOS: Scenario[] = [
       );
     },
   },
+  /* ---------------------------------------------- prod 2026-10-24 */
+  {
+    id: 'overwrite-lunch-two-days',
+    diary: [
+      { meal: 'Lunch', name: 'Chicken breast, grilled', calories: 284 },
+      { meal: 'Lunch', name: 'Rice, white, cooked', calories: 205 },
+      { meal: 'Lunch', name: 'Rice, white, cooked', calories: 205, date: 'YESTERDAY' },
+      { meal: 'Breakfast', name: 'Egg, whole, large', calories: 144, date: 'YESTERDAY' },
+    ],
+    turns: ['sobrescribe el almuerzo de hoy y de ayer con 113 g de pasta cocida, 43 g de papa en air fryer y 166 g de chili beans'],
+    ok: ({ actions, cards, state, today, yesterday, outgoing }) => {
+      const lunch = (d: string) => state.diary.filter((e) => (e.date ?? today) === d && e.meal === 'Lunch').map((e) => e.name);
+      const want = (d: string) => (lunch(d).length === 3 && lunch(d).some((n) => /Pasta/.test(n)) && lunch(d).some((n) => /Potato/.test(n)) && lunch(d).some((n) => /Chili beans/.test(n))) || `${d} lunch: ${lunch(d).join(', ') || 'empty'}`;
+      return both(
+        cards.filter((c) => c.startsWith('plan')).length === 1 || `cards: ${cards.join(',') || 'none'}`,
+        !cards.some((c) => c.startsWith('tool')) || `per-item cards: ${cards.join(',')}`,
+        actions.filter((a) => a.op === 'delete').length === 3 || `deletes: ${actions.filter((a) => a.op === 'delete').map((a) => a.detail).join('; ')}`,
+        want(today),
+        want(yesterday),
+        state.diary.some((e) => e.date === yesterday && e.meal === 'Breakfast') || 'yesterday breakfast was touched',
+        new RegExp(`Almuerzo ${yesterday}: .*= \\d+ kcal`).test(outgoing) || 'no per-date readback in the summary',
+      );
+    },
+  },
+  {
+    id: 'ambiguous-grams',
+    turns: ['almorcé 166 g de chili beans y 43 g de papa en air fryer'],
+    ok: ({ actions, cards, reply }) => {
+      const l = food(actions, 'Lunch');
+      return both(
+        (l.length === 2 && has(l, /Chili beans, canned × 1\.66/) && has(l, /Potato/)) || l.map((x) => x.detail).join('; ') || 'nothing logged',
+        cards.length === 0 || `cards: ${cards.join(',')}`,
+        !/¿cu[aá]l|elija|prefiere/i.test(reply) || `asked: ${reply.slice(0, 120)}`,
+      );
+    },
+  },
+  {
+    id: 'big-transfer-needs-card',
+    turns: ['retira todo el valor del bolsillo Ahorro de Bancolombia y pásalo a Principal'],
+    ok: ({ actions, cards, reply }) => {
+      const writes = actions.filter((a) => a.app === 'finance');
+      const moneyCards = cards.filter((c) => /tool:finance_create_(transfer|movement)/.test(c));
+      return writes.length === 0
+        ? /\?/.test(reply) || `nothing written and nothing asked: ${reply.slice(0, 120)}`
+        : both(moneyCards.length >= writes.length || `writes without a card: ${writes.map((w) => w.detail).join('; ')} (cards: ${cards.join(',') || 'none'})`, writes.some((w) => w.op === 'transfer' && /300000 Bancolombia\/Ahorro → Bancolombia\/Principal/.test(w.detail)) || writes.map((w) => w.detail).join('; '));
+    },
+  },
 ];

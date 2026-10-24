@@ -269,7 +269,26 @@ export class PlanService {
     await this.d.presenter.update(plan, this.t.done(ok, total, failed, total - ok - failed));
     this.log(`[plan] ${plan.id} done: ${ok}/${total}`);
 
-    await this.d.presenter.say(fallbackSummary(plan, results, this.d.language));
+    const readback = plan.readback ? await this.readback(plan.readback).catch(() => []) : [];
+    await this.d.presenter.say([fallbackSummary(plan, results, this.d.language), ...readback].join('\n'));
+  }
+
+  /** "Almuerzo 2026-10-24: Pasta (177), … = 397 kcal": what each meal holds NOW, from the diary. */
+  private async readback(r: NonNullable<PlanInput['readback']>): Promise<string[]> {
+    const es = this.d.language === 'es';
+    const names: Record<string, [string, string]> = { breakfast: ['Desayuno', 'Breakfast'], lunch: ['Almuerzo', 'Lunch'], dinner: ['Cena', 'Dinner'], snacks: ['Merienda', 'Snacks'] };
+    const lines = [es ? '📖 Ahora en MyFitnessPal:' : '📖 Now in MyFitnessPal:'];
+    for (const date of r.dates) {
+      const day = (await this.d.toolbox.execute('fitness_get_day', { date }, { raw: true })) as { diary?: { meal?: string; name?: string; calories?: number }[] } | undefined;
+      if (!day || !Array.isArray(day.diary)) continue;
+      for (const meal of r.meals) {
+        const e = day.diary.filter((x) => mealKey(x.meal) === meal);
+        const label = `${names[meal]?.[es ? 0 : 1] ?? meal} ${date}`;
+        const kcal = Math.round(e.reduce((a, x) => a + Number(x.calories ?? 0), 0));
+        lines.push(e.length ? `• ${label}: ${e.map((x) => `${x.name} (${Math.round(Number(x.calories ?? 0))})`).join(', ')} = ${kcal} kcal` : `• ${label}: ${es ? 'vacío' : 'empty'}`);
+      }
+    }
+    return lines.length > 1 ? lines : [];
   }
 
   private async validate(input: PlanInput): Promise<string[]> {

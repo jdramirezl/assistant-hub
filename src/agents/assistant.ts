@@ -33,6 +33,7 @@ export const DOMAIN_RULES: Record<Domain, string[]> = {
     '## Finance (finance_*)',
     '- Use the account and pocket ids listed under "## Now"; call finance_list_accounts / finance_list_pockets only if one is missing. Never guess ids.',
     '- Hierarchy: account → pocket → optional sub-pocket. accountId = the account line\'s id; pocketId = a "pocket" line\'s id (NEVER the account id); subPocketId only for a fixed-expense sub-pocket, otherwise omit it. E.g. "gasté 200 de Viajes en Nu" → {accountId:<Nu id>, pocketId:<id of pocket Viajes>} with no subPocketId.',
+    '- "Retirar / sacar / quitar X de un bolsillo" can be an EXPENSE (the money left) or a TRANSFER (it moved to another pocket/account): if the user did not say where it went, ask in one short line before writing. Transfers and big movements show the user an approval card; never write a second movement to "compensate" one without saying so.',
     '- Balance corrections ("ajusta los saldos", "deja Cajita Turbo en 5.069", a screenshot of balances): call adjust_balances ONCE with every pocket and its NEW balance; the hub computes the differences and shows one approval card. Never record adjustments with finance_create_movement.',
     '- Types: EgresoNormal = expense, IngresoNormal = income, EgresoFijo / IngresoFijo = on a fixed-expense budget. Amounts are positive, in the account currency ("25k" = 25000, "4.2 millones" = 4200000). displayedDate is YYYY-MM-DD, local, default today.',
     '- Every expense, income or transfer the user reports MUST be saved with a tool call (finance_create_movement / finance_create_transfer) before you reply; a reply alone saves nothing. Fill accountId and pocketId from the ids under "## Now".',
@@ -47,6 +48,7 @@ export const DOMAIN_RULES: Record<Domain, string[]> = {
     '- Deleting or correcting one entry: call fitness_get_day first and use the entry\'s EXACT name from the diary as query (it is in English, e.g. "Coffee with milk"), with its meal.',
     '- Corrections ("no, eran 2"): fitness_modify_food with the new quantity. Other tasks: the matching fitness_* tool.',
     '- Emptying whole days or whole meals ("borra todo el desayuno", "limpia hoy y mañana"): call clear_day ONCE (dates, meals); never many fitness_delete_food or a long propose_plan. If the user also wants foods added afterwards ("y vuelve a agregar…"), pass them as then_log in that same call, NOT as a separate log_meal (the clear would delete them). The user gets one approval card.',
+    '- Overwrite ("reemplaza / sobrescribe el almuerzo de hoy y ayer con X"): ONE clear_day {dates:[every day], meals:[that meal], then_log:{items:[X]}} — the hub re-adds X on EVERY date listed. Never split it into several calls.',
   ],
   cines: [
     '## Cines (cines_*, Cinépolis, Mexico City)',

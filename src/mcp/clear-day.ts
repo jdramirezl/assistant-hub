@@ -32,7 +32,11 @@ const mealKey = (m: unknown) => String(m ?? '').toLowerCase();
 export const ClearDayInput = z.object({
   dates: z.array(z.string().regex(/^\d{4}-\d{2}-\d{2}$/)).min(1).max(7).optional().describe('Days to empty, YYYY-MM-DD; default today'),
   meals: z.array(z.enum(MEALS)).min(1).optional().describe('Only these meals; default the whole day'),
-  then_log: LogMealInput.optional().describe('Foods to log AFTER the clear (same items as log_meal). Use this, not a separate log_meal call, or the clear would delete them'),
+  // the model often sends then_log as the bare items array (live 2026-10-24, 4 times): accept both
+  then_log: z
+    .preprocess((v) => (Array.isArray(v) ? { items: v } : v), LogMealInput)
+    .optional()
+    .describe('Foods to log AFTER the clear: {items:[…same items as log_meal]} (an array of items also works). Overwriting a meal (with `meals`) and no date: re-added on EVERY date of `dates`; a whole-day clear re-adds on today unless then_log.date is given. Use this, not a separate log_meal call, or the clear would delete them'),
 });
 
 const errOf = (v: unknown) => (v && typeof v === 'object' && 'error' in (v as Rec) ? (v as Rec).error : undefined);
@@ -72,22 +76,32 @@ export function createClearDay(d: ClearDayDeps) {
           groups.push({ label: `${es ? 'Ejercicio' : 'Exercise'} ${date}`, summary: String(x.name ?? ''), actions: [{ tool: 'fitness_delete_exercise', args: { query: String(x.name), date }, summary: String(x.name) }] });
         }
       }
-      if (input.then_log) {
-        const items = input.then_log.items;
-        const date = input.then_log.date ?? d.today();
+      // overwrite: re-add on EVERY cleared date (unless then_log names its own date); exact items, no implied extras
+      // a whole-day clear ("limpia hoy y mañana… y agrega al desayuno de hoy") re-adds only today
+      const addDates = input.then_log ? (input.then_log.date ? [input.then_log.date] : meals ? dates : [d.today()]) : [];
+      for (const date of addDates) {
+        const items = input.then_log!.items;
+        const line = items.map((i) => `${i.query} ${i.quantity} ${i.unit}`).join(', ');
         groups.push({
           label: es ? `Luego agregar (${date})` : `Then add (${date})`,
-          summary: items.map((i) => i.query).join(', '),
-          actions: [{ tool: 'log_meal', args: { ...input.then_log, date }, summary: items.map((i) => i.query).join(', ') }],
+          summary: line,
+          actions: [{ tool: 'log_meal', args: { items, date, exact: true }, summary: line }],
         });
       }
       if (!total && !input.then_log) return { status: 'nothing_to_delete', note: 'Those days/meals are already empty. Tell the user in one line.' };
-      const title = es
+      const overwrite = !!input.then_log && !!meals;
+      const mealWords = meals ? [...meals].map((m) => MEAL_NAME[m]![d.language].toLowerCase()).join(', ') : '';
+      const title = overwrite
+        ? es
+          ? `Reemplazar ${mealWords} de ${dates.join(' y ')}: ${total} ${total === 1 ? 'entrada' : 'entradas'} fuera, ${input.then_log!.items.length} ${input.then_log!.items.length === 1 ? 'alimento' : 'alimentos'} por día`
+          : `Replace ${mealWords} on ${dates.join(' and ')}: ${total} ${total === 1 ? 'entry' : 'entries'} out, ${input.then_log!.items.length} ${input.then_log!.items.length === 1 ? 'food' : 'foods'} per day`
+        : es
         ? `Vaciar ${dates.join(' y ')}${meals ? ` (${[...meals].map((m) => MEAL_NAME[m]!.es.toLowerCase()).join(', ')})` : ''}: ${total} ${total === 1 ? 'entrada' : 'entradas'}`
         : `Clear ${dates.join(' and ')}${meals ? ` (${[...meals].join(', ')})` : ''}: ${total} ${total === 1 ? 'entry' : 'entries'}`;
       d.log?.(`[clear_day] ${dates.join(',')}${meals ? ` ${[...meals].join(',')}` : ''}: ${total} entries${input.then_log ? ` + re-add ${input.then_log.items.length}` : ''}`);
       const agent = (ctx as { agent?: { threadId?: string; resourceId?: string } } | undefined)?.agent;
-      return d.propose({ title, groups, compact: true }, { owner: agent?.resourceId ?? 'dev:local', threadId: agent?.threadId, trusted: true });
+      const readMeals = meals ? [...meals] : input.then_log ? [...new Set(input.then_log.items.map((i) => i.meal))] : [];
+      return d.propose({ title, groups, compact: true, ...(readMeals.length ? { readback: { dates: [...new Set([...dates, ...addDates])], meals: readMeals } } : {}) }, { owner: agent?.resourceId ?? 'dev:local', threadId: agent?.threadId, trusted: true });
     },
   });
 }

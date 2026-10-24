@@ -131,7 +131,7 @@ describe('through Telegram', () => {
     expect(card).toMatch(/📋 Vaciar \d{4}-\d{2}-\d{2}: 3 entradas/);
     expect(card).toMatch(/• Desayuno \d{4}-\d{2}-\d{2}: 2 entradas, 146 kcal/);
     expect(card).toMatch(/• Almuerzo \d{4}-\d{2}-\d{2}: 1 entrada, 205 kcal/);
-    expect(card).toMatch(/Luego agregar .*: egg, arepa, sandwich/);
+    expect(card).toMatch(/Luego agregar .*: egg 2 unit, arepa 1 unit, sandwich 1 unit/);
     expect(card).not.toMatch(/Ejecutando|Apruebe la solicitud/); // nothing runs (or is claimed) before ✅
     expect(mason.diary).toHaveLength(3);
     const modelCalls = sm.calls.length;

@@ -9,4 +9,12 @@ export class MemoryKv implements NutritionKv {
   async set(key: string, value: unknown): Promise<void> {
     this.data.set(key, structuredClone(value));
   }
+  async setIfNotExists(key: string, value: unknown): Promise<boolean> {
+    if (this.data.has(key)) return false;
+    this.data.set(key, structuredClone(value));
+    return true;
+  }
+  async delete(key: string): Promise<void> {
+    this.data.delete(key);
+  }
 }

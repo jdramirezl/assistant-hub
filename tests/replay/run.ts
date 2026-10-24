@@ -99,7 +99,7 @@ async function runScenario(s: Scenario, pacer: ReturnType<typeof pacedFetch>, ap
   const today = bogotaDay(Date.now(), 'America/Bogota');
   const yesterday = bogotaDay(Date.now() - 86_400_000, 'America/Bogota');
   const state: ReplicaState = {
-    diary: structuredClone(s.diary ?? []).map((e) => (e.date === 'TOMORROW' ? { ...e, date: bogotaDay(Date.now() + 86_400_000, 'America/Bogota') } : e)),
+    diary: structuredClone(s.diary ?? []).map((e) => (e.date === 'TOMORROW' ? { ...e, date: bogotaDay(Date.now() + 86_400_000, 'America/Bogota') } : e.date === 'YESTERDAY' ? { ...e, date: bogotaDay(Date.now() - 86_400_000, 'America/Bogota') } : e)),
     pins: structuredClone(s.pins ?? []),
     actions: [],
     calls: [],
@@ -184,7 +184,7 @@ async function runScenario(s: Scenario, pacer: ReturnType<typeof pacedFetch>, ap
           const text = String(call.body.text ?? (call.body.rich_message as { markdown?: string } | undefined)?.markdown ?? '');
           // approval cards no longer show tool names: the hub logs which tool each card is for
           const toolCards = logs.map((l) => l.match(/\[approval\] card: (\w+)/)?.[1]).filter(Boolean);
-          cards.push(data.includes('cines:b:') ? 'purchase-card' : data.includes('plan:a:') ? `plan(${(text.match(/(\d+) (acciones|actions|entradas|entries|ajustes|adjustments)/) ?? [])[1] ?? '?'})` : `tool:${toolCards[toolCardsPressed++] ?? '?'}`);
+          cards.push(data.includes('cines:b:') ? 'purchase-card' : data.includes('plan:a:') ? `plan(${(text.match(/(\d+) (acciones|actions|entradas|entries|ajustes|adjustments|alimentos)/) ?? [])[1] ?? '?'})` : `tool:${toolCards[toolCardsPressed++] ?? '?'}`);
           tg.push(callbackUpdate(ME, { message_id: msgId, text }, data));
           found = true;
           await settle();
