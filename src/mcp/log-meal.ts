@@ -278,7 +278,7 @@ export function createLogMeal(toolbox: MealToolbox, log: (m: string) => void = (
       }
       const food = await nut.book.food(item.query);
       if (food) {
-        const b = nut.book.toItem(food, item.quantity, item.unit);
+        const b = nut.book.toItem(food, item.quantity, item.unit, { mfpGrams: nut.book.namesMfpEntry(food, item.query) });
         planned.push({ item: { query: b.query, quantity: b.quantity, unit: b.unit, kcal_estimate: b.kcal_estimate, meal: item.meal }, source: 'dictionary', food });
         continue;
       }

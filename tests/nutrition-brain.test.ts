@@ -45,6 +45,11 @@ describe('food book', () => {
     const r = b.toItem((await b.food('arepa'))!, 120, 'g');
     expect(r).toMatchObject({ quantity: 40, unit: 'g' });
     expect(r.kcal_estimate).toBeCloseTo(149, 0);
+    // the MFP entry named directly ("Harina PAN 40 g"): those grams are flour already, not masa
+    const flour = (await b.food('Harina PAN'))!;
+    expect(b.namesMfpEntry(flour, 'Harina PAN')).toBe(true);
+    expect(b.namesMfpEntry(flour, 'arepa')).toBe(false);
+    expect(b.toItem(flour, 40, 'g', { mfpGrams: true })).toMatchObject({ quantity: 40, unit: 'g', kcal_estimate: 149 });
     const one = b.toItem((await b.food('arepa'))!, 1, 'unit');
     expect(one).toMatchObject({ quantity: 40, unit: 'g' });
   });

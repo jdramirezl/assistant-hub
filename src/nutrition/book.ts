@@ -103,8 +103,16 @@ export class FoodBook {
     return all.find((r) => [r.name, ...r.aliases].some((a) => normFood(a) === normFood(query))) ?? all.find((r) => [r.name, ...r.aliases].some((a) => names(query, a)));
   }
 
+  /**
+   * Did the query name the MFP entry itself ("Harina PAN blanca 40 g") rather than the user's
+   * thing ("arepa 120 g")? Then grams are already MFP grams (dry flour), not masa.
+   */
+  namesMfpEntry(food: Food, query: string): boolean {
+    return names(query, food.query) && ![food.name, ...food.aliases].some((a) => names(query, a));
+  }
+
   /** A dictionary food in log_meal terms (MFP query, quantity and unit; kcal from the dictionary). */
-  toItem(food: Food, quantity: number, unit: string): BookItem {
+  toItem(food: Food, quantity: number, unit: string, opts: { mfpGrams?: boolean } = {}): BookItem {
     const u = normalizeUnit(unit);
     const own = normalizeUnit(food.unit);
     const per = (n: number) => (food.per_unit ? { quantity: round(n * food.per_unit.quantity), unit: food.per_unit.unit } : { quantity: round(n), unit: food.unit });
@@ -112,7 +120,7 @@ export class FoodBook {
     if (food.only_unit && u !== own) return out(food.default_quantity ?? 1, per(food.default_quantity ?? 1));
     if (MASS.has(u) && !MASS.has(own)) {
       // grams of the user's thing: arepa masa → flour grams; else grams the food is weighed in
-      const g = food.per_gram ? quantity * food.per_gram : quantity;
+      const g = food.per_gram && !opts.mfpGrams ? quantity * food.per_gram : quantity;
       const base = food.per_unit && MASS.has(normalizeUnit(food.per_unit.unit)) ? food.per_unit.quantity : undefined;
       if (base) return out(g / base, { quantity: round(g), unit: food.per_unit!.unit });
     }
